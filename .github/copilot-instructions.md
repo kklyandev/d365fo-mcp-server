@@ -162,7 +162,7 @@ These tools are available via Model Context Protocol (MCP) and provide:
 - Table names: CustTable, VendTable, SalesTable, PurchTable, InventTable, LedgerJournalTable
 - Class suffixes: Helper, Service, Controller, Manager, Builder, Contract
 - Keywords: dimension, ledger, inventory, sales, purchase, financial
-- File types: AxClass, AxTable, AxForm, AxEnum, AxQuery
+- File types: AxClass, AxTable, AxForm, AxEnum, AxQuery, AxView
 - Requests like: "create class", "find method", "implement", "generate code"
 
 **Available MCP Tools (use these instead of built-in tools):**
@@ -381,8 +381,13 @@ These tools are available via Model Context Protocol (MCP) and provide:
 **IF user mentions ANY of these keywords, you are in X++ context:**
 - X++, D365FO, D365, Dynamics 365, Finance & Operations, AX, Axapta
 - Class names ending in: Table, Service, Helper, Contract, Controller, Builder
-- Table names: CustTable, VendTable, SalesTable, PurchTable, LedgerJournalTable
-- Any AxClass, AxTable, AxForm, AxEnum, EDT
+- Table names: CustTable, VendTable, SalesTable, PurchTable, InventTable, LedgerJournalTable
+- Any AxClass, AxTable, AxForm, AxEnum, AxQuery, AxView, EDT
+- **Form elements**: button, control, FormDataSource, FormControl, ButtonControl, FormButtonControl, FormGroupControl, FormGridControl, FormReferenceControl
+- **Form keywords**: editovatelné (editable), enabled, visible, datasource, ovládací prvek (control)
+- Button names like: AddFormEntityPair, RemoveFormEntityPair, NewButton, DeleteButton, etc.
+- **Query elements**: QueryRun, QueryBuildDataSource, QueryBuildRange, query datasource
+- **View elements**: AxView, data entity view, computed columns, view metadata
 - Financial dimensions, inventory, sales, purchase, ledger
 
 **WHEN IN X++ CONTEXT → IMMEDIATELY:**
@@ -416,7 +421,10 @@ These tools are available via Model Context Protocol (MCP) and provide:
 ```
 
 **WHEN TO USE WHAT:**
-- Looking for X++ class/table/enum → Use MCP `search()`
+- Looking for X++ class/table/enum/form/query/view → Use MCP `search()`
+- Looking for form controls/buttons → Use MCP `search(type='form')` with workspace
+- Looking for queries by name → Use MCP `search(type='query')`
+- Looking for views/data entities → Use MCP `search(type='view')`
 - Looking for file by name pattern in THIS workspace → OK to use `file_search()`
 - Looking for text/code patterns → Use MCP `search()` for X++ objects, `file_search` for workspace files
 
@@ -432,6 +440,9 @@ These tools are available via Model Context Protocol (MCP) and provide:
 |-----------------------|--------------|-------------|
 | "create class", "helper class" | `analyze_code_patterns()` + `search()` + `generate_code()` | ❌ code_search, ❌ direct code generation |
 | "create table/form/enum" | `create_d365fo_file(objectType=...)` | ❌ create_file |
+| "button", "form control", "FormDataSource" | `search(type='form', includeWorkspace=true)` | ❌ code_search |
+| "query", "QueryRun", "QueryBuildDataSource" | `search(type='query', includeWorkspace=true)` | ❌ code_search |
+| "view", "AxView", "data entity view" | `search(type='view')` | ❌ code_search |
 | "find X and Y and Z" (multiple) | `batch_search([{query:"X"}, {query:"Y"}, {query:"Z"}])` | ❌ multiple sequential searches |
 | "CustTable", "SalesTable", any Table | `get_table_info()` | ❌ code_search |
 | "dimension", "financial" | `search("dimension")` | ❌ code_search |

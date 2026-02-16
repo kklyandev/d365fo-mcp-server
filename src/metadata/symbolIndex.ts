@@ -581,6 +581,24 @@ export class XppSymbolIndex {
           this.indexTables(tablesPath, model);
         }
 
+        // Index forms
+        const formsPath = path.join(modelPath, 'forms');
+        if (fs.existsSync(formsPath)) {
+          this.indexForms(formsPath, model);
+        }
+
+        // Index queries
+        const queriesPath = path.join(modelPath, 'queries');
+        if (fs.existsSync(queriesPath)) {
+          this.indexQueries(queriesPath, model);
+        }
+
+        // Index views
+        const viewsPath = path.join(modelPath, 'views');
+        if (fs.existsSync(viewsPath)) {
+          this.indexViews(viewsPath, model);
+        }
+
         // Index enums
         const enumsPath = path.join(modelPath, 'enums');
         if (fs.existsSync(enumsPath)) {
@@ -746,6 +764,93 @@ export class XppSymbolIndex {
       } catch (error) {
         // Only log errors, don't stop processing
         console.error(`      ⚠️  Skipped enum ${file}: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+  }
+
+  private indexForms(formsPath: string, model: string): void {
+    const files = fs.readdirSync(formsPath).filter(f => f.endsWith('.json'));
+
+    for (const file of files) {
+      try {
+        const filePath = path.join(formsPath, file);
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const formData = JSON.parse(content);
+
+        // Use sourcePath from metadata (original XML file) instead of JSON file path
+        const sourceFilePath = formData.sourcePath || filePath;
+        const formName = formData.name || path.basename(file, '.json');
+
+        // Add form symbol
+        this.addSymbol({
+          name: formName,
+          type: 'form',
+          filePath: sourceFilePath,
+          model,
+          description: formData.caption || formData.label,
+        });
+      
+      } catch (error) {
+        // Only log errors, don't stop processing
+        console.error(`      ⚠️  Skipped form ${file}: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+  }
+
+  private indexQueries(queriesPath: string, model: string): void {
+    const files = fs.readdirSync(queriesPath).filter(f => f.endsWith('.json'));
+
+    for (const file of files) {
+      try {
+        const filePath = path.join(queriesPath, file);
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const queryData = JSON.parse(content);
+
+        // Use sourcePath from metadata (original XML file) instead of JSON file path
+        const sourceFilePath = queryData.sourcePath || filePath;
+        const queryName = queryData.name || path.basename(file, '.json');
+
+        // Add query symbol
+        this.addSymbol({
+          name: queryName,
+          type: 'query',
+          filePath: sourceFilePath,
+          model,
+          description: queryData.title || queryData.label,
+        });
+      
+      } catch (error) {
+        // Only log errors, don't stop processing
+        console.error(`      ⚠️  Skipped query ${file}: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+  }
+
+  private indexViews(viewsPath: string, model: string): void {
+    const files = fs.readdirSync(viewsPath).filter(f => f.endsWith('.json'));
+
+    for (const file of files) {
+      try {
+        const filePath = path.join(viewsPath, file);
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const viewData = JSON.parse(content);
+
+        // Use sourcePath from metadata (original XML file) instead of JSON file path
+        const sourceFilePath = viewData.sourcePath || filePath;
+        const viewName = viewData.name || path.basename(file, '.json');
+
+        // Add view symbol
+        this.addSymbol({
+          name: viewName,
+          type: 'view',
+          filePath: sourceFilePath,
+          model,
+          description: viewData.label,
+        });
+      
+      } catch (error) {
+        // Only log errors, don't stop processing
+        console.error(`      ⚠️  Skipped view ${file}: ${error instanceof Error ? error.message : error}`);
       }
     }
   }

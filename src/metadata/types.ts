@@ -89,7 +89,7 @@ export interface XppConstraintInfo {
 
 export interface XppSymbol {
   name: string;
-  type: 'class' | 'table' | 'method' | 'field' | 'enum' | 'edt';
+  type: 'class' | 'table' | 'form' | 'query' | 'view' | 'method' | 'field' | 'enum' | 'edt';
   parentName?: string;
   signature?: string;
   filePath: string;

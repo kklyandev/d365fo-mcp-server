@@ -58,6 +58,8 @@ interface ExtractionStats {
   classes: number;
   tables: number;
   forms: number;
+  queries: number;
+  views: number;
   enums: number;
   errors: number;
 }
@@ -97,6 +99,8 @@ async function extractMetadata() {
     classes: 0,
     tables: 0,
     forms: 0,
+    queries: 0,
+    views: 0,
     enums: 0,
     errors: 0,
   };
@@ -225,6 +229,15 @@ async function extractMetadata() {
       // Extract tables
       await extractTables(parser, modelPath, modelName, stats);
 
+      // Extract forms
+      await extractForms(parser, modelPath, modelName, stats);
+
+      // Extract queries
+      await extractQueries(parser, modelPath, modelName, stats);
+
+      // Extract views
+      await extractViews(parser, modelPath, modelName, stats);
+
       // Extract enums
       await extractEnums(parser, modelPath, modelName, stats);
     }
@@ -235,6 +248,9 @@ async function extractMetadata() {
   console.log(`   Total files: ${stats.totalFiles}`);
   console.log(`   Classes: ${stats.classes}`);
   console.log(`   Tables: ${stats.tables}`);
+  console.log(`   Forms: ${stats.forms}`);
+  console.log(`   Queries: ${stats.queries}`);
+  console.log(`   Views: ${stats.views}`);
   console.log(`   Enums: ${stats.enums}`);
   console.log(`   Errors: ${stats.errors}`);
 }
@@ -338,6 +354,165 @@ async function extractTables(
       await fs.writeFile(outputFile, JSON.stringify(tableInfo.data, null, 2));
 
       stats.tables++;
+    } catch (error) {
+      console.error(`   ❌ Error parsing ${file}:`, error);
+      stats.errors++;
+    }
+  }
+}
+
+async function extractForms(
+  parser: XppMetadataParser,
+  modelPath: string,
+  modelName: string,
+  stats: ExtractionStats
+) {
+  // Support both uppercase and lowercase directory names (Linux case-sensitivity)
+  let formsPath = path.join(modelPath, 'AxForm');
+  
+  try {
+    await fs.access(formsPath);
+  } catch {
+    // Try lowercase
+    formsPath = path.join(modelPath, 'axform');
+    try {
+      await fs.access(formsPath);
+    } catch {
+      return; // No forms in this model
+    }
+  }
+
+  const files = await fs.readdir(formsPath);
+  const xmlFiles = files.filter(f => f.endsWith('.xml'));
+
+  console.log(`   Forms: ${xmlFiles.length} files`);
+
+  for (const file of xmlFiles) {
+    const filePath = path.join(formsPath, file);
+    stats.totalFiles++;
+
+    try {
+      // Basic form parsing (name extraction)
+      const formName = path.basename(file, '.xml');
+      const formInfo = {
+        name: formName,
+        model: modelName,
+        sourcePath: filePath,
+        type: 'form'
+      };
+      
+      const outputDir = path.join(OUTPUT_PATH, modelName, 'forms');
+      await fs.mkdir(outputDir, { recursive: true });
+      const outputFile = path.join(outputDir, `${formName}.json`);
+      await fs.writeFile(outputFile, JSON.stringify(formInfo, null, 2));
+
+      stats.forms++;
+    } catch (error) {
+      console.error(`   ❌ Error parsing ${file}:`, error);
+      stats.errors++;
+    }
+  }
+}
+
+async function extractQueries(
+  parser: XppMetadataParser,
+  modelPath: string,
+  modelName: string,
+  stats: ExtractionStats
+) {
+  // Support both uppercase and lowercase directory names (Linux case-sensitivity)
+  let queriesPath = path.join(modelPath, 'AxQuery');
+  
+  try {
+    await fs.access(queriesPath);
+  } catch {
+    // Try lowercase
+    queriesPath = path.join(modelPath, 'axquery');
+    try {
+      await fs.access(queriesPath);
+    } catch {
+      return; // No queries in this model
+    }
+  }
+
+  const files = await fs.readdir(queriesPath);
+  const xmlFiles = files.filter(f => f.endsWith('.xml'));
+
+  console.log(`   Queries: ${xmlFiles.length} files`);
+
+  for (const file of xmlFiles) {
+    const filePath = path.join(queriesPath, file);
+    stats.totalFiles++;
+
+    try {
+      // Basic query parsing (name extraction)
+      const queryName = path.basename(file, '.xml');
+      const queryInfo = {
+        name: queryName,
+        model: modelName,
+        sourcePath: filePath,
+        type: 'query'
+      };
+      
+      const outputDir = path.join(OUTPUT_PATH, modelName, 'queries');
+      await fs.mkdir(outputDir, { recursive: true });
+      const outputFile = path.join(outputDir, `${queryName}.json`);
+      await fs.writeFile(outputFile, JSON.stringify(queryInfo, null, 2));
+
+      stats.queries++;
+    } catch (error) {
+      console.error(`   ❌ Error parsing ${file}:`, error);
+      stats.errors++;
+    }
+  }
+}
+
+async function extractViews(
+  parser: XppMetadataParser,
+  modelPath: string,
+  modelName: string,
+  stats: ExtractionStats
+) {
+  // Support both uppercase and lowercase directory names (Linux case-sensitivity)
+  let viewsPath = path.join(modelPath, 'AxView');
+  
+  try {
+    await fs.access(viewsPath);
+  } catch {
+    // Try lowercase
+    viewsPath = path.join(modelPath, 'axview');
+    try {
+      await fs.access(viewsPath);
+    } catch {
+      return; // No views in this model
+    }
+  }
+
+  const files = await fs.readdir(viewsPath);
+  const xmlFiles = files.filter(f => f.endsWith('.xml'));
+
+  console.log(`   Views: ${xmlFiles.length} files`);
+
+  for (const file of xmlFiles) {
+    const filePath = path.join(viewsPath, file);
+    stats.totalFiles++;
+
+    try {
+      // Basic view parsing (name extraction)
+      const viewName = path.basename(file, '.xml');
+      const viewInfo = {
+        name: viewName,
+        model: modelName,
+        sourcePath: filePath,
+        type: 'view'
+      };
+      
+      const outputDir = path.join(OUTPUT_PATH, modelName, 'views');
+      await fs.mkdir(outputDir, { recursive: true });
+      const outputFile = path.join(outputDir, `${viewName}.json`);
+      await fs.writeFile(outputFile, JSON.stringify(viewInfo, null, 2));
+
+      stats.views++;
     } catch (error) {
       console.error(`   ❌ Error parsing ${file}:`, error);
       stats.errors++;

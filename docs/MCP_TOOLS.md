@@ -20,15 +20,19 @@ This guide describes what you can ask GitHub Copilot when working with Dynamics 
 
 ## Search for Code
 
-### Find Classes and Tables
+### Find Classes, Tables, Forms, Queries, and Views
 
 **Ask Copilot:**
 - "Find all classes related to dimensions"
 - "Show me tables for customer management"
 - "Search for methods that calculate tax"
 - "Find enums for sales status"
+- "Find form AddFormEntityPair button"
+- "Search for forms with DataEntityGroup datasource"
+- "Find queries for customer transactions"
+- "Show me views related to ledger"
 
-**What happens:** Copilot searches through 500,000+ D365FO symbols instantly and shows you matching classes, tables, methods, or fields.
+**What happens:** Copilot searches through 500,000+ D365FO symbols instantly and shows you matching classes, tables, forms, queries, views, methods, or fields.
 
 **Examples:**
 ```
@@ -40,6 +44,15 @@ A: Shows: SalesTable, SalesLine, SalesFormLetter...
 
 Q: "Find methods for validating customer credit"
 A: Shows: CustTable.validateCreditLimit(), CreditManagement.checkCredit()...
+
+Q: "Find forms with AddFormEntityPair button"
+A: Shows: Forms in workspace containing AddFormEntityPair control...
+
+Q: "Search for queries with customer datasource"
+A: Shows: CustTransOpenQuery, CustBalanceQuery, CustAgedBalanceQuery...
+
+Q: "Find views for ledger transactions"
+A: Shows: LedgerTransView, GeneralJournalAccountEntryView...
 ```
 
 ---
@@ -143,6 +156,75 @@ A: Returns:
   - calcTax()
   - calcDiscount()
   - calcNetAmount()
+```
+
+---
+
+## Explore Forms, Queries, and Views
+
+### Find Forms and Controls
+
+**Ask Copilot:**
+- "Find form with DataEntityGroup datasource"
+- "Search for forms containing AddFormEntityPair button"
+- "Show me forms with customer table datasource"
+
+**What happens:** Copilot searches forms in both external metadata and your workspace, showing matching forms and their properties.
+
+**Example:**
+```
+Q: "Find forms with AddFormEntityPair button"
+
+A: Returns:
+  🔹 WORKSPACE: MyCustomForm (your project)
+  📦 EXTERNAL: StandardForm (Microsoft)
+  
+  Controls: AddFormEntityPair, RemoveFormEntityPair...
+  DataSources: DataEntityGroup, MainTable...
+```
+
+---
+
+### Find Queries
+
+**Ask Copilot:**
+- "Find queries for customer transactions"
+- "Search for queries with ledger datasource"
+- "Show me inventory queries"
+
+**What happens:** Copilot finds queries matching your criteria, including their datasources and usage.
+
+**Example:**
+```
+Q: "Find queries for customer transactions"
+
+A: Returns:
+  - CustTransOpenQuery - Open customer transactions
+  - CustBalanceQuery - Customer balance calculation
+  - CustAgedBalanceQuery - Aged balance report
+  - CustInvoiceQuery - Customer invoice selection
+```
+
+---
+
+### Find Views and Data Entities
+
+**Ask Copilot:**
+- "Find views for ledger transactions"
+- "Search for data entity views with customer data"
+- "Show me financial reporting views"
+
+**What happens:** Copilot finds views and data entities, which are used for reporting and data integration.
+
+**Example:**
+```
+Q: "Find views related to general ledger"
+
+A: Returns:
+  - LedgerTransView - Ledger transaction view
+  - GeneralJournalAccountEntryView - Journal entry view
+  - LedgerBalanceView - Ledger balance view
+  - GLBudgetView - Budget data view
 ```
 
 ---

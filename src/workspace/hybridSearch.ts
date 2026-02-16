@@ -26,7 +26,7 @@ export class HybridSearch {
   async search(
     query: string,
     options: {
-      types?: Array<'class' | 'table' | 'method' | 'field' | 'enum'>;
+      types?: Array<'class' | 'table' | 'form' | 'method' | 'field' | 'enum' | 'query' | 'view'>;
       limit?: number;
       workspacePath?: string;
       includeWorkspace?: boolean;
