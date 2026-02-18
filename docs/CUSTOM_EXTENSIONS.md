@@ -55,28 +55,6 @@ npm run build-database
 
 The server provides a dedicated tool for searching only in custom extensions:
 
-### Tool: `search_extensions`
-
-**Arguments:**
-- `query` (required): Search term
-- `prefix` (optional): Filter by extension prefix (e.g., "ISV_", "Custom_")
-- `limit` (optional): Maximum results (default: 20)
-
-**Example:**
-```json
-{
-  "name": "search_extensions",
-  "arguments": {
-    "query": "CustomClass",
-    "prefix": "ISV_",
-    "limit": 10
-  }
-}
-```
-
-**Response:**
-Results are grouped by custom model for easy identification.
-
 ## Benefits
 
 1. **Separate Indexing**: Index custom extensions separately from standard models
@@ -84,45 +62,3 @@ Results are grouped by custom model for easy identification.
 3. **Model Grouping**: Results grouped by custom model
 4. **Prefix Filtering**: Filter by ISV/partner prefix
 5. **Version Control**: Track only your custom models in source control
-
-## Deployment
-
-When deploying to Azure:
-
-1. Extract custom models separately
-2. Upload to Azure Blob Storage:
-   ```bash
-   az storage blob upload \
-     --account-name <storage> \
-     --container xpp-metadata \
-     --name databases/custom-extensions.db \
-     --file xpp-metadata.db
-   ```
-
-3. Update App Service configuration:
-   ```bash
-   az webapp config appsettings set \
-     --resource-group <rg> \
-     --name <app-name> \
-     --settings BLOB_DATABASE_NAME=databases/custom-extensions.db
-   ```
-
-## Example Workflow
-
-```bash
-# 1. Extract standard models once
-$env:EXTRACT_MODE="standard"
-npm run extract-metadata
-npm run build-database
-mv xpp-metadata.db xpp-standard.db
-
-# 2. Extract custom extensions regularly
-$env:EXTRACT_MODE="custom"
-$env:CUSTOM_MODELS="ISV_Sales,ISV_Inventory"
-npm run extract-metadata
-npm run build-database
-mv xpp-metadata.db xpp-custom.db
-
-# 3. Merge databases (or keep separate)
-# Use xpp-custom.db for development, deploy both to Azure
-```

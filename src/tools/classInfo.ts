@@ -158,6 +158,20 @@ export async function classInfoTool(request: CallToolRequest, context: XppServer
       output += `\`\`\`xpp\n${method.source.substring(0, 500)}${method.source.length > 500 ? '...' : ''}\n\`\`\`\n\n`;
     }
 
+    // Write to cache for 24 hours (normalize to shape expected by cache-hit path)
+    await cache.setClassInfo(cacheKey, {
+      name: cls.name,
+      extendsClass: cls.extends,
+      isFinal: cls.isFinal,
+      isAbstract: cls.isAbstract,
+      methods: cls.methods.map((m: any) => ({
+        name: m.name,
+        isStatic: m.isStatic,
+        returnType: m.returnType,
+        parameters: m.parameters.map((p: { type: string; name: string }) => `${p.type} ${p.name}`),
+      })),
+    });
+
     return {
       content: [
         {

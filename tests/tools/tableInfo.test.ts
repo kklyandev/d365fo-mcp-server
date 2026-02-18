@@ -65,6 +65,7 @@ describe('tableInfoTool', () => {
       cache: {
         get: vi.fn(async () => null),
         set: vi.fn(async () => {}),
+        setClassInfo: vi.fn(async () => {}),
         generateTableKey: vi.fn((tableName: string) => `table:${tableName}`),
       } as any,
     };

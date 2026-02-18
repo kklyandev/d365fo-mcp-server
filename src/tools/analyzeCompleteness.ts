@@ -15,6 +15,19 @@ export async function analyzeClassCompletenessTool(request: CallToolRequest, con
   try {
     const args = AnalyzeClassCompletenessArgsSchema.parse(request.params.arguments);
     const { symbolIndex, cache } = context;
+
+    // Check cache first — avoid unnecessary DB lookup on cache hit
+    const cacheKey = `completeness:${args.className}`;
+    const cachedResults = await cache.get<any>(cacheKey);
+
+    if (cachedResults) {
+      // classSymbol still needed for model/path display in formatAnalysis
+      const classSymbol = symbolIndex.getSymbolByName(args.className, 'class');
+      return {
+        content: [{ type: 'text', text: formatAnalysis(cachedResults, classSymbol) }],
+      };
+    }
+
     const classSymbol = symbolIndex.getSymbolByName(args.className, 'class');
     
     if (!classSymbol) {
@@ -28,16 +41,6 @@ export async function analyzeClassCompletenessTool(request: CallToolRequest, con
                 `- Ensure metadata has been extracted for this model`
         }],
         isError: true
-      };
-    }
-    
-    // Check cache first
-    const cacheKey = `completeness:${args.className}`;
-    const cachedResults = await cache.get<any>(cacheKey);
-    
-    if (cachedResults) {
-      return {
-        content: [{ type: 'text', text: formatAnalysis(cachedResults, classSymbol) }],
       };
     }
 

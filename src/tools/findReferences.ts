@@ -29,8 +29,15 @@ interface Reference {
 export async function findReferencesTool(request: CallToolRequest, context: XppServerContext) {
   try {
     const args = FindReferencesArgsSchema.parse(request.params.arguments);
-    const { symbolIndex } = context;
+    const { symbolIndex, cache } = context;
     const { targetName, targetType, scope, limit, includeContext } = args;
+
+    // Check cache first (30 min TTL — references can change as code evolves)
+    const cacheKey = `xpp:refs:${targetName}:${targetType || 'all'}:${scope}:${limit}`;
+    const cachedResult = await cache.get<any>(cacheKey);
+    if (cachedResult) {
+      return cachedResult;
+    }
 
     // --- Parse dotted notation (e.g. "SalesLineCopy.copy()" or "SalesLineCopy.copy") ---
     // Extract parent object name so we can cross-check its actual type in the DB
@@ -148,7 +155,7 @@ export async function findReferencesTool(request: CallToolRequest, context: XppS
       }
     }
 
-    return {
+    const finalResult = {
       content: [
         {
           type: 'text',
@@ -156,6 +163,11 @@ export async function findReferencesTool(request: CallToolRequest, context: XppS
         },
       ],
     };
+
+    // Cache for 30 minutes (references are more volatile than class/table metadata)
+    await cache.set(cacheKey, finalResult, 1800);
+
+    return finalResult;
   } catch (error) {
     return {
       content: [

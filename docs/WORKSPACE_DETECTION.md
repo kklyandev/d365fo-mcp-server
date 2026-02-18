@@ -19,9 +19,9 @@ GitHub Copilot passes workspace path to MCP server
            ↓
 Server finds MyProject.rnrproj
            ↓
-Model name extracted: "AslCore"
+Model name extracted: "MyModel"
            ↓
-New files created in K:\AosService\PackagesLocalDirectory\AslCore\...
+New files created in K:\AosService\PackagesLocalDirectory\MyModel\...
 ```
 
 ---

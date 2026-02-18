@@ -121,6 +121,19 @@ export async function tableInfoTool(request: CallToolRequest, context: XppServer
       }
     }
 
+    // Write to cache for 24 hours (normalize to shape expected by cache-hit path)
+    await cache.setClassInfo(cacheKey, {
+      name: table.name,
+      label: table.label,
+      extendsTable: null, // XppTableInfo does not carry inheritance info
+      fields: table.fields.map((f: any) => ({
+        name: f.name,
+        type: f.extendedDataType || f.type,
+        isMandatory: f.mandatory,
+        label: f.label,
+      })),
+    });
+
     return {
       content: [
         {

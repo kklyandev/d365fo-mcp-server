@@ -68,6 +68,7 @@ describe('classInfoTool', () => {
       cache: {
         get: vi.fn(async () => null),
         set: vi.fn(async () => {}),
+        setClassInfo: vi.fn(async () => {}),
         generateClassKey: vi.fn((className: string) => `class:${className}`),
       } as any,
     };

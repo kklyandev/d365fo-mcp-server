@@ -1,4 +1,4 @@
-# Azure Managed Redis Setup Guide (Standard/Premium Tiers)
+# Azure Managed Redis Setup Guide
 
 ## Overview
 
@@ -24,19 +24,21 @@ Azure Managed Redis with Private Link provides secure, managed Redis caching. Th
 - **Resource group**: `d365fo-mcp-server`
 - **DNS name**: `d365fo-mcp-cache` (or your preferred name)
 - **Location**: Same as your App Service (for best performance)
-- **Cache type** (Pricing tier):
-  - **Basic B0** (250MB) - ~$17/month - **Dev only** - No SLA, single node
-  - **Basic B1** (1GB) - ~$55/month - **Dev only** - No SLA, single node
-  - **Basic B2** (3GB) - ~$110/month - Dev/test - No SLA, single node
-  - **Basic B3** (6GB) - ~$220/month - Larger dev - No SLA, single node
-  - **Standard C0** (250MB) - ~$52/month - Dev with SLA
-  - **Standard C1** (1GB) - ~$76/month - Dev/test with SLA
-  - **Standard C2** (2.5GB) - ~$154/month - **Good for staging** - SLA, replica
-  - **Standard C3** (6GB) - ~$308/month - Pre-production
-  - **Premium P1** (6GB) - ~$616/month - **Production**
-  - **Premium P2** (13GB) - ~$1,232/month - Large production workloads
-- **Clustering**: Not needed for most use cases (Premium only)
-- **Redis version**: 6 (latest stable)
+- **Cache type** (Pricing tier — all tiers include Private Link, up to 99.999% SLA with HA, Entra ID auth):
+  - **Balanced B0** (1 GB, 2 vCores) - ~$13/month (no HA) / ~$26/month (with HA) - **Dev only**
+  - **Balanced B1** (1 GB, 2 vCores) - ~$26/month (no HA) / ~$51/month (with HA) - Dev/test
+  - **Balanced B3** (3 GB, 2 vCores) - ~$53/month (no HA) / ~$105/month (with HA) - Small cache
+  - **Balanced B5** (6 GB, 2 vCores) - ~$126/month (no HA) / ~$251/month (with HA) - Medium cache
+  - **Balanced B10** (12 GB, 4 vCores) - ~$253/month (no HA) / ~$507/month (with HA) - **Good for staging/production**
+  - **Balanced B20** (24 GB, 8 vCores) - ~$505/month (no HA) / ~$1,010/month (with HA) - Larger production
+  - **Memory Optimized M10** (12 GB, 2 vCores) - ~$174/month (no HA) / ~$347/month (with HA) - Memory-intensive workloads
+  - **Memory Optimized M20** (24 GB, 4 vCores) - ~$346/month (no HA) / ~$692/month (with HA)
+  - **Compute Optimized X3** (3 GB, 4 vCores) - ~$176/month (no HA) / ~$352/month (with HA) - High throughput
+  - **Compute Optimized X5** (6 GB, 4 vCores) - ~$234/month (no HA) / ~$467/month (with HA)
+  - **Flash Optimized A250** (256 GB, 8 vCores) - ~$1,253/month (no HA) / ~$2,505/month (with HA) - Large low-cost storage
+- **Clustering**: Available on all tiers
+- **High Availability**: Run with 2 nodes for SLA (recommended for production)
+- **Redis version**: Latest Redis innovations (RediSearch, RedisJSON, RedisBloom, RedisTimeSeries included)
 - **Eviction policy**: `volatile-lru` (recommended for cache)
 
 **Networking:**
@@ -218,31 +220,27 @@ redis-cli -h <old-redis>.redis.cache.windows.net -p 6380 -a <old-key> --tls --du
 
 ## Cost Optimization
 
-**Development (Cheapest):**
-- **Basic B0** (250MB) - ~$17/month - **Cheapest option** - Good for initial testing
-- **Basic B1** (1GB) - ~$55/month - **Recommended for dev** - Best value, sufficient cache
-- **Basic B2** (3GB) - ~$110/month - More cache, but no SLA (single node)
+> **Note:** All Azure Managed Redis tiers support Private Link, Microsoft Entra ID auth, and up to 99.999% SLA (when running with HA — 2 nodes). Prices below are per-node (without HA) / with HA.
 
-**Staging/Testing:**
-- **Standard C0** (250MB) - ~$52/month - Small staging with SLA
-- **Standard C1** (1GB) - ~$76/month - Good for test environments
-- **Standard C2** (2.5GB) - ~$154/month - **Recommended for staging** - SLA + replica
+**Development (Cheapest — single node, no HA):**
+- **Balanced B0** (1 GB) - ~$13/month - **Cheapest option** - Good for initial testing
+- **Balanced B1** (1 GB) - ~$26/month - **Recommended for dev** - Best value, full feature set
+- **Balanced B3** (3 GB) - ~$53/month - More cache space for dev
 
-**Pre-Production:**
-- **Standard C3** (6GB) - ~$308/month - Larger datasets
-- **Premium P1** (6GB) - ~$616/month - Production-like setup with VNet
+**Staging/Testing (with HA — 2 nodes):**
+- **Balanced B3** (3 GB) - ~$105/month - Small staging with HA
+- **Balanced B5** (6 GB) - ~$251/month - **Recommended for staging** - Good balance of cost and capacity
+- **Balanced B10** (12 GB) - ~$507/month - Larger staging datasets
 
-**Production:**
-- **Premium P1** (6GB) - ~$616/month - **Recommended** - VNet, clustering, persistence
-- **Premium P2** (13GB) - ~$1,232/month - Large workloads
-- **Premium P3** (26GB) - ~$2,464/month - Enterprise workloads
+**Production (with HA — 2 nodes):**
+- **Balanced B10** (12 GB) - ~$507/month - **Recommended entry-level production** - Good performance, full features
+- **Balanced B20** (24 GB) - ~$1,010/month - Larger production workloads
+- **Memory Optimized M10** (12 GB) - ~$347/month - Memory-intensive workloads at lower cost
+- **Memory Optimized M20** (24 GB) - ~$692/month - Large in-memory datasets
+- **Compute Optimized X5** (6 GB) - ~$467/month - Maximum throughput for mission-critical services
+- **Compute Optimized X10** (12 GB) - ~$936/month - High-performance production
 
-**Cost savings vs Enterprise:**
-- Basic B1 (~$55/month) vs Enterprise E10 (~$700/month) = **92% savings** ✅
-- Standard C2 (~$154/month) vs Enterprise E10 (~$700/month) = **78% savings**
-- Premium P1 (~$616/month) vs Enterprise E10 (~$700/month) = **12% savings**
-
-**Recommendation for dev:** Start with **Basic B1 (1GB, ~$55/month)** - cheapest with sufficient space for development. Upgrade to Standard C1/C2 when you need SLA and high availability for testing.
+**Recommendation for dev:** Start with **Balanced B0 (~$13/month)** or **B1 (~$26/month)** — significantly cheaper than previous tiers with full feature support. Upgrade to **B5 with HA (~$251/month)** for staging.
 
 ## Security Best Practices
 
@@ -279,41 +277,51 @@ redis-cli -h <old-redis>.redis.cache.windows.net -p 6380 -a <old-key> --tls --du
 
 ## Comparison: Tiers for Development
 
-| Tier | Size | Price/Month | SLA | High Availability | Private Link | VNet Injection | Best For |
-|------|------|-------------|-----|-------------------|--------------|----------------|----------|
-| **Basic B0** | 250MB | ~$17 | ❌ No | ❌ Single node | ❌ | ❌ | Initial testing |
-| **Basic B1** | 1GB | ~$55 | ❌ No | ❌ Single node | ❌ | ❌ | **Dev (best value)** |
-| **Basic B2** | 3GB | ~$110 | ❌ No | ❌ Single node | ❌ | ❌ | Dev (more cache) |
-| **Basic B3** | 6GB | ~$220 | ❌ No | ❌ Single node | ❌ | ❌ | Larger dev cache |
-| **Standard C0** | 250MB | ~$52 | ✅ Yes | ✅ Replica | ✅ Yes | ❌ | Small test with SLA |
-| **Standard C1** | 1GB | ~$76 | ✅ Yes | ✅ Replica | ✅ Yes | ❌ | Test environments |
-| **Standard C2** | 2.5GB | ~$154 | ✅ Yes | ✅ Replica | ✅ Yes | ❌ | **Staging** |
-| **Standard C3** | 6GB | ~$308 | ✅ Yes | ✅ Replica | ✅ Yes | ❌ | Pre-production |
-| **Premium P1** | 6GB | ~$616 | ✅ Yes | ✅ Replica | ✅ Yes | ✅ Yes | **Production** |
-| **Premium P2** | 13GB | ~$1,232 | ✅ Yes | ✅ Replica | ✅ Yes | ✅ Yes | Large production |
+> All Azure Managed Redis tiers support Private Link, Entra ID auth, zone redundancy, data persistence, clustering, and up to 99.999% SLA (with HA). Prices shown as: **no HA / with HA**.
 
-**Key differences:**
-- **Basic (B series)** - No SLA, single node (data loss risk), no Private Link
-- **Standard (C series)** - SLA, replica (high availability), Private Link support
-- **Premium (P series)** - Everything in Standard + VNet injection, clustering, persistence
+| Tier | Size | vCores | Price/Month (no HA / with HA) | Best For |
+|------|------|--------|-------------------------------|----------|
+| **Balanced B0** | 1 GB | 2 | ~$13 / ~$26 | Initial testing — cheapest option |
+| **Balanced B1** | 1 GB | 2 | ~$26 / ~$51 | **Dev (best value)** |
+| **Balanced B3** | 3 GB | 2 | ~$53 / ~$105 | Dev with more cache |
+| **Balanced B5** | 6 GB | 2 | ~$126 / ~$251 | **Staging** |
+| **Balanced B10** | 12 GB | 4 | ~$253 / ~$507 | **Entry-level production** |
+| **Balanced B20** | 24 GB | 8 | ~$505 / ~$1,010 | Larger production workloads |
+| **Balanced B50** | 60 GB | 16 | ~$1,010 / ~$2,019 | Large-scale production |
+| **Memory Opt. M10** | 12 GB | 2 | ~$174 / ~$347 | Memory-intensive, lower CPU needs |
+| **Memory Opt. M20** | 24 GB | 4 | ~$346 / ~$692 | Large in-memory datasets |
+| **Compute Opt. X3** | 3 GB | 4 | ~$176 / ~$352 | High throughput, small cache |
+| **Compute Opt. X5** | 6 GB | 4 | ~$234 / ~$467 | Mission-critical, max throughput |
+| **Compute Opt. X10** | 12 GB | 8 | ~$468 / ~$936 | High-performance production |
+| **Flash Opt. A250** *(Preview)* | 256 GB | 8 | ~$1,253 / ~$2,505 | Large cache at low cost/GB |
 
-**For development:** Use **Basic B1 (1GB, ~$55/month)** - best value for development. Upgrade to **Basic B2 (3GB, ~$110/month)** if you need more cache space.
+**Key differences between tier families:**
+- **Balanced (B series)** — Best general-purpose tier; balanced CPU-to-memory ratio for most workloads
+- **Memory Optimized (M series)** — High memory-to-core ratio; ideal for large datasets with lower CPU requirements
+- **Compute Optimized (X series)** — High CPU-to-memory ratio; best for maximum throughput and mission-critical services
+- **Flash Optimized (A series)** *(Preview)* — NVMe storage + RAM; lowest cost per GB for very large caches (no RediSearch/Bloom/TimeSeries)
 
-**For staging/testing:** Use **Standard C1 (~$76/month)** or **Standard C2 (~$154/month)** for SLA and high availability.
+**For development:** Use **Balanced B0 (~$13/month)** or **B1 (~$26/month)** — significantly cheaper than before with full feature support.
 
-**For production:** Use **Premium P1 (~$616/month)** or higher for VNet injection, clustering, and persistence.
+**For staging/testing:** Use **Balanced B5 with HA (~$251/month)** — good capacity with high availability.
 
-## Comparison: Premium vs Standard with Private Link
+**For production:** Use **Balanced B10 with HA (~$507/month)** as entry point; choose Memory Optimized or Compute Optimized based on your workload profile.
 
-| Feature | Standard + Private Link | Premium + VNet |
-|---------|------------------------|----------------|
-| **Price (6GB)** | ~$308/month (C3) | ~$616/month (P1) |
-| **Networking** | Private Link | VNet Injection or Private Link |
-| **Performance** | Good | Better |
-| **Clustering** | No | Yes (optional) |
-| **Persistence** | No | Yes (RDB/AOF) |
-| **Geo-replication** | No | Yes |
-| **Import/Export** | Limited | Full |
-| **Best for** | Pre-production, staging | Production, high availability |
+## Comparison: Tier Families
 
-**Recommendation:** Use **Basic B1 (~$55/month)** for dev, **Standard C2 (~$154/month)** for staging, and **Premium P1 (~$616/month)** for production.
+| Feature | Balanced (B) | Memory Optimized (M) | Compute Optimized (X) | Flash Optimized (A) |
+|---------|-------------|---------------------|----------------------|--------------------|
+| **Memory range** | 1 GB – 960 GB | 12 GB – 1,920 GB | 3 GB – 720 GB | 256 GB – 4,723 GB |
+| **Use case** | General purpose | Large datasets, lower CPU | Max throughput | Large cache, low cost/GB |
+| **Price entry (with HA)** | ~$26/month (B1) | ~$347/month (M10) | ~$352/month (X3) | ~$2,505/month (A250) |
+| **Private Link** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| **SLA (with HA)** | Up to 99.999% | Up to 99.999% | Up to 99.999% | Up to 99.999% |
+| **Clustering** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Persistence** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Geo-replication** | Active-Active | Active-Active | Active-Active | ❌ No |
+| **RediSearch** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
+| **RedisJSON** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| **RedisBloom** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
+| **Redis on Flash** | ❌ No | ❌ No | ❌ No | ✅ Yes |
+
+**Recommendation:** Use **Balanced B1 (~$26/month with HA)** for dev, **Balanced B5 with HA (~$251/month)** for staging, and **Balanced B10 with HA (~$507/month)** or higher for production.

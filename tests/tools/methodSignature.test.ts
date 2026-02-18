@@ -2,7 +2,7 @@
  * Tests for get_method_signature tool
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { getMethodSignatureTool } from '../../src/tools/methodSignature.js';
 import type { XppServerContext } from '../../src/types/context.js';
 import { XppSymbolIndex } from '../../src/metadata/symbolIndex.js';
@@ -108,7 +108,11 @@ describe('get_method_signature tool', () => {
     context = {
       symbolIndex,
       parser: {} as any,
-      cache: undefined as any,
+      cache: {
+        get: vi.fn(async () => null),
+        set: vi.fn(async () => {}),
+        setClassInfo: vi.fn(async () => {}),
+      } as any,
       workspaceScanner: {} as any,
       hybridSearch: {} as any,
       termRelationshipGraph: {} as any,

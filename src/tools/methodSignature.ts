@@ -36,8 +36,15 @@ interface MethodSignature {
 export async function getMethodSignatureTool(request: CallToolRequest, context: XppServerContext) {
   try {
     const args = GetMethodSignatureArgsSchema.parse(request.params.arguments);
-    const { symbolIndex } = context;
+    const { symbolIndex, cache } = context;
     const { className, methodName, modelName } = args;
+
+    // Check cache first (method signatures are static — 24h TTL via setClassInfo)
+    const cacheKey = `xpp:method-sig:${className}:${methodName}`;
+    const cachedResult = await cache.get<any>(cacheKey);
+    if (cachedResult) {
+      return cachedResult;
+    }
 
     // 1. Find the class
     let stmt;
@@ -93,7 +100,9 @@ export async function getMethodSignatureTool(request: CallToolRequest, context: 
     const extractedMethod = await readMethodMetadata(classRow.model, className, methodName);
     if (extractedMethod) {
       const jsonSignature = buildSignatureFromExtractedMethod(extractedMethod);
-      return formatOutput(className, methodName, jsonSignature, classRow.model);
+      const result = formatOutput(className, methodName, jsonSignature, classRow.model);
+      await cache.setClassInfo(cacheKey, result);
+      return result;
     }
 
     // 3b. SECONDARY: XML file (only works when running on D365FO VM with correct paths)
@@ -107,12 +116,16 @@ export async function getMethodSignatureTool(request: CallToolRequest, context: 
     }
 
     if (methodSignature) {
-      return formatOutput(className, methodName, methodSignature, classRow.model);
+      const result = formatOutput(className, methodName, methodSignature, classRow.model);
+      await cache.setClassInfo(cacheKey, result);
+      return result;
     }
 
     // 3c. FALLBACK: reconstruct from DB signature column
     const fallbackSignature = buildFallbackSignature(methodRow as any);
-    return formatOutput(className, methodName, fallbackSignature, classRow.model);
+    const result = formatOutput(className, methodName, fallbackSignature, classRow.model);
+    await cache.setClassInfo(cacheKey, result);
+    return result;
 
   } catch (error) {
     return {
