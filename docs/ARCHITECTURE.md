@@ -35,7 +35,7 @@ graph TB
     subgraph "MCP Server Components"
         HTTP[HTTP Transport Layer<br/>Express + Rate Limiting]
         PROTO[MCP Protocol Handler<br/>JSON-RPC 2.0]
-        TOOLS[Tool Handlers<br/>22 MCP Tools]
+        TOOLS[Tool Handlers<br/>20 MCP Tools]
         DB[(SQLite Database<br/>FTS5 Full-Text Search<br/>584,799 symbols)]
         CACHE[Redis Cache<br/>Optional]
     end
@@ -79,7 +79,7 @@ sequenceDiagram
     alt Initialize
         MCP-->>IDE: Server Capabilities
     else Tools List
-        MCP-->>IDE: 22 Tool Definitions
+        MCP-->>IDE: 20 Tool Definitions
     else Tool Call
         MCP->>Handler: Route to Handler
         Handler->>Tool: Execute Tool

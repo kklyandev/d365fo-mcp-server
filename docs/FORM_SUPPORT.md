@@ -112,7 +112,7 @@ types?: Array<'class' | 'table' | 'form' | 'method' | 'field' | 'enum' | 'query'
 
 **What happens now:**
 1. Recognizes "buttons", "form", "AddFormEntityPair" as D365FO form context
-2. Uses MCP `search(query="AddFormEntityPair", type="form", includeWorkspace=true)`
+2. Uses MCP `get_form_info(formName)` to retrieve form structure, datasources and controls
 3. Returns results in <100ms from SQL index
 4. Provides accurate form control information
 
@@ -158,12 +158,11 @@ This will:
 7. Verify workspace-aware search for forms works correctly
 8. Ensure no built-in code_search is triggered for form queries
 
-## Future Enhancements
+## Status
 
-Consider adding:
-- `get_form_info()` tool - Similar to get_class_info but for forms
-- Form control metadata parsing (from AxForm XML)
-- FormDataSource relationship detection
-- Button action method detection
-- Query datasource analysis
-- View field extraction from XML
+All originally planned enhancements have been implemented:
+- ✅ `get_form_info()` — returns datasources, controls, methods
+- ✅ `get_query_info()` — returns datasource joins, ranges, fields
+- ✅ `get_view_info()` — returns mapped fields, computed columns, relations
+- ✅ Form control metadata parsed from AxForm XML
+- ✅ FormDataSource relationship detection

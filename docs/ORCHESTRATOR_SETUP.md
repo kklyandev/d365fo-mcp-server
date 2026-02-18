@@ -207,17 +207,26 @@ Complete list of tools available in GitHub Copilot:
 
 | Tool | Description | Example Usage |
 |------|-------------|---------------|
-| `search` | Search X++ classes, tables, methods, fields | "Find all classes with 'Sales' in name" |
+| `search` | Search X++ classes, tables, methods, fields, enums | "Find all classes with 'Sales' in name" |
 | `batch_search` | Execute multiple searches in parallel | "Search for dimension, helper, and validation classes at once" |
 | `search_extensions` | Search only custom/ISV extensions | "Show my custom extensions" |
-| `get_class_info` | Detailed info about a class including methods | "What methods does CustTable have?" |
-| `get_table_info` | Detailed info about a table, fields, indexes | "Show CustTable structure" |
-| `code_completion` | IntelliSense for methods and fields | "What can I call on SalesLine?" |
-| `generate_code` | Generate X++ templates | "Generate batch job template" |
-| `analyze_code_patterns` | Learn common patterns for scenarios | "Analyze patterns for financial dimensions" |
-| `suggest_method_implementation` | Get implementation examples | "Suggest validate method implementation" |
-| `analyze_class_completeness` | Find missing methods in class | "Check what methods my Helper class needs" |
-| `get_api_usage_patterns` | See how to use APIs | "Show how to use DimensionAttributeValueSet" |
+| `get_class_info` | Full class structure — methods, inheritance, source code | "What methods does CustTable have?" |
+| `get_table_info` | Full table schema — fields, indexes, relations | "Show CustTable structure" |
+| `get_form_info` | Form structure — datasources, controls, methods | "Show buttons on SalesTable form" |
+| `get_query_info` | AOT query — datasource joins, ranges, fields | "Show structure of SalesTableListPage query" |
+| `get_view_info` | View/data entity — fields, computed columns | "Show fields of CustTransOpen view" |
+| `get_enum_info` | Enum values with integer values and labels | "What values does NoYes enum have?" |
+| `get_method_signature` | Exact method signature for CoC extensions | "Show signature of SalesTable.validateWrite" |
+| `code_completion` | IntelliSense — methods and fields starting with prefix | "What find methods does InventTrans have?" |
+| `find_references` | Find all places where a class/method/field is used | "Where is CustTable.AccountNum referenced?" |
+| `generate_code` | Generate X++ boilerplate templates | "Generate batch job template" |
+| `create_d365fo_file` | Create D365FO object file at correct AOT path | "Create a new class MyHelper in my model" |
+| `modify_d365fo_file` | Add/remove methods and fields in existing files | "Add a method to SalesHelper class" |
+| `generate_d365fo_xml` | Generate D365FO XML (fallback for Azure/cloud) | Used automatically when file system is unavailable |
+| `analyze_code_patterns` | Learn common patterns for a scenario | "Analyze patterns for financial dimensions" |
+| `suggest_method_implementation` | Get real implementation examples for a method | "Suggest validate method implementation" |
+| `analyze_class_completeness` | Find commonly expected methods missing from a class | "Check what methods my Helper class needs" |
+| `get_api_usage_patterns` | See how an API is typically initialized and used | "Show how to use DimensionAttributeValueSet" |
 
 ## Available Prompts
 
