@@ -17,6 +17,31 @@ import { initializeDatabase } from './database/download.js';
 import { initializeConfig } from './utils/configManager.js';
 import * as fs from 'fs/promises';
 
+// Filter debug logs unless DEBUG_LOGGING is enabled
+const originalConsoleError = console.error;
+const DEBUG_LOGGING = process.env.DEBUG_LOGGING === 'true';
+console.error = (...args: any[]) => {
+  if (DEBUG_LOGGING) {
+    originalConsoleError(...args);
+    return;
+  }
+  // Only log actual errors, not debug info from tool handlers
+  const firstArg = String(args[0]);
+  if (firstArg.includes('[create_d365fo_file]') || 
+      firstArg.includes('[generate_d365fo_xml]') ||
+      firstArg.includes('[ProjectFileManager]')) {
+    // Skip debug logs from tool handlers unless it's an actual error
+    if (firstArg.includes('Failed') || 
+        firstArg.includes('Error') || 
+        firstArg.includes('❌') ||
+        firstArg.includes('⚠️  Redis')) {
+      originalConsoleError(...args);
+    }
+    return;
+  }
+  originalConsoleError(...args);
+};
+
 const PORT = parseInt(process.env.PORT || '8080');
 const DB_PATH = process.env.DB_PATH || './data/xpp-metadata.db';
 const METADATA_PATH = process.env.METADATA_PATH || './metadata';

@@ -41,9 +41,7 @@ export class CustomHttpTransport implements Transport {
    * CRITICAL: Must be called for proper protocol lifecycle and completion signaling
    */
   async connectServer(): Promise<void> {
-    process.stdout.write('🔌 Connecting MCP Server to CustomHttpTransport...\n');
     await this.server.connect(this);
-    process.stdout.write('✅ MCP Server connected to CustomHttpTransport\n');
   }
 
   // Transport interface methods
@@ -57,30 +55,20 @@ export class CustomHttpTransport implements Transport {
   }
 
   async send(message: JSONRPCMessage): Promise<void> {
-    // Called by MCP server when it has a response
-    process.stdout.write(`🔵 Transport.send() called: ${JSON.stringify(message).substring(0, 200)}\n`);
-    
     // If this is a response to a request (has id), resolve the pending promise
     if ('id' in message && message.id !== undefined && message.id !== null) {
-      process.stdout.write(`✅ Resolving request ID: ${message.id}\n`);
       const resolver = this.pendingRequests.get(message.id);
       if (resolver) {
         resolver(message);
         this.pendingRequests.delete(message.id);
         return;
       }
-      process.stdout.write(`⚠️ No resolver found for ID: ${message.id}\n`);
-    } else {
-      process.stdout.write(`📢 Notification/message without ID: ${(message as any).method || 'unknown'}\n`);
     }
     
     // Fallback: send via currentResponse if available
     if (this.currentResponse && !this.currentResponse.headersSent) {
-      process.stdout.write(`📤 Sending via currentResponse (fallback)\n`);
       this.currentResponse.json(message);
       this.currentResponse = null;
-    } else {
-      process.stdout.write(`⚠️ No currentResponse available or headers already sent\n`);
     }
   }
 
@@ -95,7 +83,6 @@ export class CustomHttpTransport implements Transport {
         res.setHeader('Connection', 'close');
         
         const request = req.body as JSONRPCRequest;
-        process.stdout.write(`\n📥 Incoming request: ${JSON.stringify(request).substring(0, 200)}\n`);
         
         if (!request.jsonrpc || !request.method) {
           res.status(400).json({
@@ -106,7 +93,6 @@ export class CustomHttpTransport implements Transport {
             },
             id: null,
           });
-          process.stdout.write(`❌ Invalid request, closing connection\n`);
           return;
         }
 
@@ -115,13 +101,10 @@ export class CustomHttpTransport implements Transport {
 
         // Handle notifications (no response expected)
         if (!('id' in request)) {
-          process.stdout.write(`📢 Notification received (no ID): ${(request as any).method}\n`);
-          
           // Handle special notifications
           if ((request as any).method === 'notifications/cancelled' || 
               (request as any).method === 'cancelled' ||
               (request as any).method === 'shutdown') {
-            process.stdout.write(`🛑 Session termination notification received\n`);
             // Send 202 and signal completion
             res.status(202).json({ status: 'accepted', completed: true });
             this.currentResponse = null;
@@ -129,7 +112,6 @@ export class CustomHttpTransport implements Transport {
             // Trigger cleanup after response is sent
             setImmediate(() => {
               if (this.onclose) {
-                process.stdout.write(`🔚 Calling onclose handler\n`);
                 this.onclose();
               }
             });
@@ -140,7 +122,6 @@ export class CustomHttpTransport implements Transport {
             this.onmessage(request);
           }
           res.status(202).json({ status: 'accepted' });
-          process.stdout.write(`✅ Notification acknowledged with 202\n`);
           this.currentResponse = null;
           return;
         }
@@ -148,32 +129,45 @@ export class CustomHttpTransport implements Transport {
         // Handle requests - send to MCP server via onmessage
         // Wait for response via Promise
         if (this.onmessage) {
-          process.stdout.write(`⏳ Creating promise for request ID: ${request.id}\n`);
+          // Log incoming request
+          const toolName = (request as any).params?.name || request.method;
+          const args = (request as any).params?.arguments;
+          const argsSummary = args ? ` (${Object.keys(args).join(', ')})` : '';
+          process.stdout.write(`\n→ ${toolName}${argsSummary}\n`);
+
           const responsePromise = new Promise<JSONRPCMessage>((resolve, reject) => {
             this.pendingRequests.set(request.id, resolve);
-            process.stdout.write(`📋 Registered resolver for ID: ${request.id}, pending count: ${this.pendingRequests.size}\n`);
             
             // Timeout after 30 seconds
             setTimeout(() => {
               if (this.pendingRequests.has(request.id)) {
                 this.pendingRequests.delete(request.id);
-                process.stdout.write(`⏰ TIMEOUT for request ID: ${request.id}\n`);
                 reject(new Error('Request timeout'));
               }
             }, 30000);
           });
 
           // Send request to MCP server
-          process.stdout.write(`📤 Calling onmessage() for request ID: ${request.id}\n`);
           this.onmessage(request);
-          process.stdout.write(`⏳ Awaiting response for ID: ${request.id}...\n`);
           
           // Wait for response from send()
           const response = await responsePromise;
-          process.stdout.write(`✅ Response received for ID: ${request.id}, sending to client\n`);
-          process.stdout.write(`📨 Response: ${JSON.stringify(response).substring(0, 300)}...\n`);
+          
+          // Log response
+          if ('result' in response) {
+            const content = (response as any).result?.content?.[0]?.text;
+            if (content) {
+              const firstLine = content.split('\n')[0].substring(0, 80);
+              process.stdout.write(`← ${firstLine}\n`);
+            } else {
+              process.stdout.write(`← Success\n`);
+            }
+          } else if ('error' in response) {
+            const errorMsg = (response as any).error?.message || 'Unknown error';
+            process.stdout.write(`← Error: ${errorMsg.substring(0, 80)}\n`);
+          }
+          
           res.json(response);
-          process.stdout.write(`✅ HTTP response sent for ID: ${request.id}, connection will close\n`);
           this.currentResponse = null;
         } else {
           res.status(500).json({
@@ -186,17 +180,13 @@ export class CustomHttpTransport implements Transport {
           });
         }
       } catch (error) {
-        const requestId = 'id' in (req.body as any) ? (req.body as any).id : 'unknown';
-        process.stderr.write(`❌ MCP transport error for request ID ${requestId}: ${error}\n`);
-        if (error instanceof Error) {
-          process.stderr.write(`   Stack: ${error.stack}\n`);
-        }
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`← Transport error: ${errorMsg}\n`);
         this.currentResponse = null;
         
         // Clean up pending request if it exists
         if ('id' in (req.body as any)) {
           this.pendingRequests.delete((req.body as any).id);
-          process.stdout.write(`🧹 Cleaned up pending request ID: ${requestId}\n`);
         }
         
         if (!res.headersSent) {

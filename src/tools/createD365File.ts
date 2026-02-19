@@ -797,6 +797,28 @@ export async function handleCreateD365File(
       );
     }
     
+    // Verify drive/root exists before attempting recursive mkdir
+    // (Node.js gives a cryptic '\\?' error when the drive letter doesn't exist)
+    const driveOrRoot = path.parse(directory).root; // e.g. "K:\" or "C:\"
+    if (driveOrRoot) {
+      try {
+        await fs.access(driveOrRoot);
+      } catch {
+        throw new Error(
+          `❌ Drive or root path does not exist: ${driveOrRoot}\n\n` +
+          `Attempting to create: ${directory}\n\n` +
+          `The packagePath in your .mcp.json points to a drive that is not accessible.\n` +
+          `Update "packagePath" in .mcp.json to match your actual D365FO installation:\n\n` +
+          `Common paths:\n` +
+          `  C:\\AosService\\PackagesLocalDirectory\n` +
+          `  K:\\AosService\\PackagesLocalDirectory\n` +
+          `  J:\\AosService\\PackagesLocalDirectory\n\n` +
+          `Current packagePath: ${basePath}\n` +
+          `Current drive checked: ${driveOrRoot}`
+        );
+      }
+    }
+
     try {
       await fs.mkdir(directory, { recursive: true });
       console.error(`[create_d365fo_file] Directory ready: ${directory}`);
@@ -805,8 +827,14 @@ export async function handleCreateD365File(
         `[create_d365fo_file] Failed to create directory:`,
         mkdirError
       );
+      const hint =
+        (mkdirError instanceof Error && mkdirError.message.includes('\\?'))
+          ? `\n\nHint: The path "${directory}" could not be created. ` +
+            `Verify the drive letter exists and the path is correct. ` +
+            `Update "packagePath" in .mcp.json to fix this.`
+          : '';
       throw new Error(
-        `Failed to create directory ${directory}: ${mkdirError instanceof Error ? mkdirError.message : 'Unknown error'}`
+        `Failed to create directory ${directory}: ${mkdirError instanceof Error ? mkdirError.message : 'Unknown error'}${hint}`
       );
     }
 

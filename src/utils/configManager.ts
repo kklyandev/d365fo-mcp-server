@@ -83,9 +83,14 @@ class ConfigManager {
   }
 
   /**
-   * Find .mcp.json file in current or parent directories
+   * Find .mcp.json file in current or parent directories, then user home directory
+   * Priority:
+   * 1. Current directory and up to 5 parent directories (project-specific config)
+   * 2. User home directory (global config)
+   * 3. Current directory (fallback)
    */
   private findConfigFile(): string {
+    // Step 1: Search in current directory and parent directories
     let currentDir = process.cwd();
     const maxDepth = 5;
     let depth = 0;
@@ -109,7 +114,21 @@ class ConfigManager {
       depth++;
     }
 
-    // Fallback to current directory
+    // Step 2: Search in user home directory (global config)
+    const homeDir = process.env.USERPROFILE || process.env.HOME;
+    if (homeDir) {
+      const homeConfigPath = path.join(homeDir, '.mcp.json');
+      try {
+        if (require('fs').existsSync(homeConfigPath)) {
+          console.error(`[ConfigManager] Using global config from home directory: ${homeConfigPath}`);
+          return homeConfigPath;
+        }
+      } catch {
+        // Continue to fallback
+      }
+    }
+
+    // Step 3: Fallback to current directory
     return path.join(process.cwd(), '.mcp.json');
   }
 
