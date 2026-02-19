@@ -27,10 +27,20 @@ parameters:
 pool:
   vmImage: 'ubuntu-latest'
 
+resources:
+  repositories:
+    - repository: mcpServer
+      type: github
+      endpoint: github.com_dynamics365ninja
+      name: dynamics365ninja/d365fo-mcp-server
+      ref: refs/heads/main
+
 variables:
   - group: xpp-mcp-server-config
   - name: nodeVersion
     value: '24.x'
+  - name: MCP_SERVER_PATH
+    value: '$(Pipeline.Workspace)/mcp-server'
 
 stages:
   - stage: Build
@@ -39,8 +49,9 @@ stages:
       - job: BuildJob
         displayName: 'Compile and package'
         steps:
-          - checkout: self
-            displayName: 'Checkout'
+          - checkout: mcpServer
+            displayName: 'Checkout MCP Server from GitHub'
+            path: mcp-server
             clean: true
 
           - task: NodeTool@0
@@ -53,9 +64,11 @@ stages:
           # resulting binary works at runtime without any rebuild step.
           - script: npm ci
             displayName: 'npm ci (compiles native addons for Node 24 / Linux)'
+            workingDirectory: '$(MCP_SERVER_PATH)'
 
           - script: npm run build
             displayName: 'TypeScript compile → dist/'
+            workingDirectory: '$(MCP_SERVER_PATH)'
 
           # Archive everything the server needs to run.
           # node_modules ARE included (pre-built for Node 24 / Linux).
@@ -63,7 +76,7 @@ stages:
           - task: ArchiveFiles@2
             displayName: 'Create deployment zip'
             inputs:
-              rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+              rootFolderOrFile: '$(MCP_SERVER_PATH)'
               includeRootFolder: false
               archiveType: zip
               archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
