@@ -43,7 +43,7 @@ resources:
 variables:
   - group: xpp-mcp-server-config
   - name: nodeVersion
-    value: '22.x'
+    value: '24.x'
   - name: METADATA_PATH
     value: './metadata'
   - name: DB_PATH

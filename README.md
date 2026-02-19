@@ -5,7 +5,7 @@
 **AI-Powered Code Intelligence for Microsoft Dynamics 365 Finance & Operations**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 
 [Getting Started](#getting-started) &bull; [What It Does](#what-it-does) &bull; [Setup](#visual-studio-2022-setup) &bull; [Docs](#documentation)
