@@ -21,10 +21,12 @@ export async function tableInfoTool(request: CallToolRequest, context: XppServer
     
     if (cachedTable) {
       const fields = cachedTable.fields
-        .map(
-          (f: any) =>
-            `  ${f.name}: ${f.type}${f.isMandatory ? ' (mandatory)' : ''}${f.label ? ` - ${f.label}` : ''}`
-        )
+        .map((f: any) => {
+          const typeInfo = f.extendedDataType
+            ? `EDT: ${f.extendedDataType}${f.type ? ` (base: ${f.type})` : ''}`
+            : f.type;
+          return `  ${f.name}: ${typeInfo}${f.isMandatory ? ' (mandatory)' : ''}${f.label ? ` - ${f.label}` : ''}`;
+        })
         .join('\n');
 
       const extendsInfo = cachedTable.extendsTable ? `\nExtends: ${cachedTable.extendsTable}` : '';
@@ -56,7 +58,7 @@ export async function tableInfoTool(request: CallToolRequest, context: XppServer
     }
 
     // Try to parse XML file if available, otherwise use database info
-    const tableInfo = await parser.parseTableFile(tableSymbol.filePath);
+    const tableInfo = await parser.parseTableFile(tableSymbol.filePath, tableSymbol.model);
 
     if (!tableInfo.success || !tableInfo.data) {
       // Fallback to database information
@@ -101,10 +103,14 @@ export async function tableInfoTool(request: CallToolRequest, context: XppServer
     output += `**Model:** ${table.model}\n\n`;
 
     output += `## Fields (${table.fields.length})\n\n`;
+    output += `_Field type is shown as explicit EDT when available._\n\n`;
     for (const field of table.fields) {
       const required = field.mandatory ? ' **(required)**' : '';
       const label = field.label ? ` - ${field.label}` : '';
-      output += `- **${field.name}**: ${field.extendedDataType || field.type}${required}${label}\n`;
+      const typeInfo = field.extendedDataType
+        ? `EDT: ${field.extendedDataType} (base: ${field.type})`
+        : `Type: ${field.type}`;
+      output += `- **${field.name}**: ${typeInfo}${required}${label}\n`;
     }
 
     output += `\n## Indexes (${table.indexes.length})\n\n`;
@@ -154,7 +160,8 @@ export async function tableInfoTool(request: CallToolRequest, context: XppServer
       extendsTable: null, // XppTableInfo does not carry inheritance info
       fields: table.fields.map((f: any) => ({
         name: f.name,
-        type: f.extendedDataType || f.type,
+        type: f.type,
+        extendedDataType: f.extendedDataType,
         isMandatory: f.mandatory,
         label: f.label,
       })),

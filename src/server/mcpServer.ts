@@ -212,7 +212,7 @@ Examples:
 
 Returns:
 - All table METHODS with signatures and source code (calcAmount, validateWrite, etc.)
-- All fields with Extended Data Types (EDT) or base types (int, str, real, etc.)
+- All fields with explicit EDT marker when present (format: EDT: <Name> (base: <Type>)), otherwise base type (format: Type: <Type>)
 - Indexes: primary key, unique indexes, clustered indexes
 - Relations: foreign keys to other tables with cardinality
 - Table properties: caching strategy, TableGroup, SaveDataPerCompany, etc.
