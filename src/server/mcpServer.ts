@@ -881,7 +881,7 @@ Examples:
         },
         {
           name: 'get_edt_info',
-          description: `📊 Get complete Extended Data Type (EDT) definition including base type, labels, reference table, and EDT properties.
+          description: `📊 Get complete Extended Data Type (EDT) definition including base type, labels, reference table, and EDT properties. EDT names are UNIQUE ACROSS ALL MODELS.
 
 Returns:
 - Core EDT properties (Extends, EnumType, ReferenceTable, StringSize, DisplayLength, etc.)
@@ -891,7 +891,17 @@ Returns:
 Use WHEN:
 - You need to inspect an EDT before using it on table fields
 - You need reference table / relation metadata from AxEdt
-- You need to validate EDT inheritance (Extends) and display constraints`,
+- You need to validate EDT inheritance (Extends) and display constraints
+
+FALLBACK Strategy (if EDT not found with modelName):
+- EDT names are globally unique, so omit modelName and retry
+- Call get_edt_info(edtName="MyEdt") without modelName → will search ALL models
+- If first call fails with a specific modelName, ALWAYS retry without modelName
+
+Examples:
+- get_edt_info("WhsInboundShipmentOrderMessageRecId") → finds EDT regardless of model
+- If model-specific lookup fails, retry: get_edt_info("WhsInboundShipmentOrderMessageRecId") (no modelName)
+- get_edt_info("CustAccount") → Customer account number EDT`,
           inputSchema: {
             type: 'object',
             properties: {
@@ -901,7 +911,7 @@ Use WHEN:
               },
               modelName: {
                 type: 'string',
-                description: 'Model name (optional, auto-detected if not provided)'
+                description: 'Model name (optional). CAUTION: If EDT not found with specific modelName, omit this and retry - EDT names are globally unique'
               },
             },
             required: ['edtName'],
