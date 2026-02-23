@@ -109,39 +109,6 @@ stages:
               AZURE_STORAGE_CONNECTION_STRING: $(AZURE_STORAGE_CONNECTION_STRING)
               BLOB_CONTAINER_NAME: $(BLOB_CONTAINER_NAME)
               METADATA_PATH: $(METADATA_PATH)
-
-          # ========== Step 5.5: Debug PackagesLocalDirectory structure ==========
-          
-          - script: |
-              echo "=== Debugging PackagesLocalDirectory structure ==="
-              echo "PACKAGES_PATH: $(Pipeline.Workspace)/$(PACKAGES_DIR_NAME)"
-              echo ""
-              echo "Root structure:"
-              ls -la $(Pipeline.Workspace)/$(PACKAGES_DIR_NAME) | head -20
-              echo ""
-              echo "Sample model (first alphabetically):"
-              FIRST_MODEL=$(ls $(Pipeline.Workspace)/$(PACKAGES_DIR_NAME) | head -1)
-              echo "Model: $FIRST_MODEL"
-              ls -la $(Pipeline.Workspace)/$(PACKAGES_DIR_NAME)/$FIRST_MODEL
-              echo ""
-              echo "Checking for nested structure:"
-              if [ -d "$(Pipeline.Workspace)/$(PACKAGES_DIR_NAME)/$FIRST_MODEL/$FIRST_MODEL" ]; then
-                echo "✓ Nested structure found: $FIRST_MODEL/$FIRST_MODEL"
-                ls -la $(Pipeline.Workspace)/$(PACKAGES_DIR_NAME)/$FIRST_MODEL/$FIRST_MODEL | head -10
-              else
-                echo "✗ No nested structure, flat structure detected"
-              fi
-              echo ""
-              echo "Checking for AxLabelFile (case-sensitive):"
-              if [ -d "$(Pipeline.Workspace)/$(PACKAGES_DIR_NAME)/$FIRST_MODEL/$FIRST_MODEL/AxLabelFile" ]; then
-                echo "✓ Found AxLabelFile (correct case)"
-                ls -la $(Pipeline.Workspace)/$(PACKAGES_DIR_NAME)/$FIRST_MODEL/$FIRST_MODEL/AxLabelFile
-              elif [ -d "$(Pipeline.Workspace)/$(PACKAGES_DIR_NAME)/$FIRST_MODEL/$FIRST_MODEL/axlabelfile" ]; then
-                echo "⚠️  Found axlabelfile (lowercase) - CASE SENSITIVITY ISSUE!"
-              else
-                echo "✗ No AxLabelFile directory found"
-              fi
-            displayName: 'Debug: Check PackagesLocalDirectory structure'
           
           # ========== Step 6: Build Database ==========
           

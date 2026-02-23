@@ -18,31 +18,31 @@ This document provides visual diagrams and detailed explanations of the D365 F&O
 ```mermaid
 graph TB
     subgraph "Client Layer"
-        VS[Visual Studio 2022 17.14+<br/>GitHub Copilot Agent Mode]
-        VSCODE[VS Code<br/>GitHub Copilot Extension]
+        VS[Visual Studio 2022 17.14+ GitHub Copilot Agent Mode]
+        VSCODE[VS Code GitHub Copilot Extension]
     end
 
     subgraph "Azure Cloud"
         subgraph "App Service"
-            MCP[MCP Server<br/>Node.js 22 LTS<br/>Express 5.x HTTP]
+            MCP[MCP Server - Node.js 22 LTS, Express 5.x HTTP]
         end
         
         subgraph "Storage"
-            BLOB[Azure Blob Storage<br/>Symbols: xpp-metadata.db (~1-1.5GB)<br/>Labels: xpp-metadata-labels.db (~500MB for 4 languages)]
+            BLOB[Azure Blob Storage - Symbols and Labels DBs]
         end
     end
 
     subgraph "MCP Server Components"
-        HTTP[HTTP Transport Layer<br/>Express + Rate Limiting]
-        PROTO[MCP Protocol Handler<br/>JSON-RPC 2.0]
-        TOOLS[Tool Handlers<br/>23 MCP Tools]
-        DB[(Symbols Database<br/>FTS5 Full-Text Search<br/>584,799 symbols)]
-        LDB[(Labels Database<br/>FTS5 Full-Text Search<br/>19M+ labels, 70 languages)]
-        CACHE[Redis Cache<br/>Optional]
+        HTTP[HTTP Transport Layer - Express + Rate Limiting]
+        PROTO[MCP Protocol Handler - JSON-RPC 2.0]
+        TOOLS[Tool Handlers - 24 MCP Tools]
+        DB[(Symbols Database - FTS5, 584K+ symbols)]
+        LDB[(Labels Database - FTS5, 19M+ labels, 70 languages)]
+        CACHE[Redis Cache - Optional]
     end
 
-    VS -->|"Streamable HTTP<br/>OAuth 2.0"| MCP
-    VSCODE -->|"Streamable HTTP<br/>OAuth 2.0"| MCP
+    VS -->|"Streamable HTTP, OAuth 2.0"| MCP
+    VSCODE -->|"Streamable HTTP, OAuth 2.0"| MCP
     MCP -->|"Download on startup"| BLOB
     MCP --> HTTP
     HTTP --> PROTO
@@ -66,7 +66,7 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant IDE as Visual Studio 2022 /<br/>VS Code
+    participant IDE as Visual Studio 2022 / VS Code
     participant HTTP as HTTP Transport
     participant MCP as MCP Protocol
     participant Handler as Tool Handler
@@ -74,7 +74,7 @@ sequenceDiagram
     participant Cache as Redis Cache
     participant DB as SQLite DB
 
-    IDE->>HTTP: POST /mcp<br/>JSON-RPC Request
+    IDE->>HTTP: POST /mcp JSON-RPC Request
     HTTP->>HTTP: Rate Limit Check
     HTTP->>MCP: Parse JSON-RPC
     MCP->>MCP: Route Method
@@ -107,48 +107,48 @@ sequenceDiagram
 ```mermaid
 graph LR
     subgraph "Entry Point"
-        INDEX[index.ts<br/>Main Entry]
+        INDEX[index.ts - Main Entry]
     end
 
     subgraph "Server Layer"
-        SERVER[mcpServer.ts<br/>MCP Server Config]
-        TRANSPORT[transport.ts<br/>HTTP Transport]
-        HANDLER[toolHandler.ts<br/>Tool Router]
+        SERVER[mcpServer.ts - MCP Server Config]
+        TRANSPORT[transport.ts - HTTP Transport]
+        HANDLER[toolHandler.ts - Tool Router]
     end
 
     subgraph "Tool Layer"
-        SEARCH[search.ts<br/>search Tool]
-        BATCH[batchSearch.ts<br/>batch_search Tool]
-        CLASS[classInfo.ts<br/>get_class_info Tool]
-        TABLE[tableInfo.ts<br/>get_table_info Tool]
-        FORM[formInfo.ts<br/>get_form_info Tool]
-        QUERY[queryInfo.ts<br/>get_query_info Tool]
-        VIEW[viewInfo.ts<br/>get_view_info Tool]
-        ENUM[enumInfo.ts<br/>get_enum_info Tool]
-        EDT[edtInfo.ts<br/>get_edt_info Tool]
-        COMP[completion.ts<br/>code_completion Tool]
-        SIGNATURE[methodSignature.ts<br/>get_method_signature Tool]
-        REFS[findReferences.ts<br/>find_references Tool]
-        GEN[codeGen.ts<br/>generate_code Tool]
-        GENXML[generateD365Xml.ts<br/>generate_d365fo_xml Tool]
-        CREATE[createD365File.ts<br/>create_d365fo_file Tool]
-        MODIFY[modifyD365File.ts<br/>modify_d365fo_file Tool]
-        EXT[extensionSearch.ts<br/>search_extensions Tool]
-        PATTERN[analyzePatterns.ts<br/>analyze_code_patterns Tool]
-        SUGGEST[suggestImplementation.ts<br/>suggest_method_implementation Tool]
-        COMPLETE[analyzeCompleteness.ts<br/>analyze_class_completeness Tool]
-        API[apiUsagePatterns.ts<br/>get_api_usage_patterns Tool]
+        SEARCH[search.ts - search]
+        BATCH[batchSearch.ts - batch_search]
+        CLASS[classInfo.ts - get_class_info]
+        TABLE[tableInfo.ts - get_table_info]
+        FORM[formInfo.ts - get_form_info]
+        QUERY[queryInfo.ts - get_query_info]
+        VIEW[viewInfo.ts - get_view_info]
+        ENUM[enumInfo.ts - get_enum_info]
+        EDT[edtInfo.ts - get_edt_info]
+        COMP[completion.ts - code_completion]
+        SIGNATURE[methodSignature.ts - get_method_signature]
+        REFS[findReferences.ts - find_references]
+        GEN[codeGen.ts - generate_code]
+        GENXML[generateD365Xml.ts - generate_d365fo_xml]
+        CREATE[createD365File.ts - create_d365fo_file]
+        MODIFY[modifyD365File.ts - modify_d365fo_file]
+        EXT[extensionSearch.ts - search_extensions]
+        PATTERN[analyzePatterns.ts - analyze_code_patterns]
+        SUGGEST[suggestImplementation.ts - suggest_method_implementation]
+        COMPLETE[analyzeCompleteness.ts - analyze_class_completeness]
+        API[apiUsagePatterns.ts - get_api_usage_patterns]
     end
 
     subgraph "Metadata Layer"
-        SYMBOL[symbolIndex.ts<br/>SQLite + FTS5]
-        PARSER[xmlParser.ts<br/>XML Metadata]
+        SYMBOL[symbolIndex.ts - SQLite + FTS5]
+        PARSER[xmlParser.ts - XML Metadata]
     end
 
     subgraph "Infrastructure"
-        CACHE_SVC[redisCache.ts<br/>Cache Service]
-        RATE[rateLimiter.ts<br/>Rate Limiting]
-        DOWNLOAD[download.ts<br/>Azure Blob DL]
+        CACHE_SVC[redisCache.ts - Cache Service]
+        RATE[rateLimiter.ts - Rate Limiting]
+        DOWNLOAD[download.ts - Azure Blob DL]
     end
 
     INDEX --> SERVER
@@ -232,11 +232,11 @@ graph LR
 ```mermaid
 graph TD
     START([Server Startup]) --> ENV[Load .env Config]
-    ENV --> CACHE_INIT[Initialize Redis Cache<br/>Optional]
-    CACHE_INIT --> DB_CHECK{Database<br/>Exists?}
+    ENV --> CACHE_INIT[Initialize Redis Cache - Optional]
+    CACHE_INIT --> DB_CHECK{Database Exists?}
     
     DB_CHECK -->|Yes| DB_LOAD[Load SQLite Database]
-    DB_CHECK -->|No| AZURE_CHECK{Azure Blob<br/>Configured?}
+    DB_CHECK -->|No| AZURE_CHECK{Azure Blob Configured?}
     
     AZURE_CHECK -->|Yes| DOWNLOAD[Download from Azure Blob]
     AZURE_CHECK -->|No| INDEX_META[Index Local Metadata]
@@ -245,9 +245,9 @@ graph TD
     INDEX_META --> DB_LOAD
     
     DB_LOAD --> FTS_INIT[Initialize FTS5 Index]
-    FTS_INIT --> COUNT[Count Symbols<br/>~584,799]
+    FTS_INIT --> COUNT[Count Symbols - 584K+]
     COUNT --> MCP_INIT[Initialize MCP Server]
-    MCP_INIT --> HTTP_START[Start HTTP Server<br/>Port 8080]
+    MCP_INIT --> HTTP_START[Start HTTP Server - Port 8080]
     HTTP_START --> READY([Server Ready])
     
     style START fill:#4CAF50,color:#fff
@@ -260,15 +260,15 @@ graph TD
 
 ```mermaid
 graph TD
-    QUERY([User Search Query]) --> CACHE_KEY[Generate Cache Key<br/>search:query:limit]
+    QUERY([User Search Query]) --> CACHE_KEY[Generate Cache Key - search:query:limit]
     CACHE_KEY --> CACHE_CHECK{Cache Hit?}
     
     CACHE_CHECK -->|Yes| CACHE_RETURN[Return Cached Results]
     CACHE_CHECK -->|No| FTS_QUERY[FTS5 Full-Text Search]
     
     FTS_QUERY --> RESULTS[Raw Symbol Results]
-    RESULTS --> FORMAT[Format Results<br/>TYPE: Name - Signature]
-    FORMAT --> CACHE_STORE[Store in Cache<br/>TTL: 1 hour]
+    RESULTS --> FORMAT[Format Results - TYPE: Name - Signature]
+    FORMAT --> CACHE_STORE[Store in Cache - TTL: 1 hour]
     CACHE_STORE --> RETURN([Return Results])
     CACHE_RETURN --> RETURN
     
@@ -291,10 +291,10 @@ graph TD
     CACHE_CHECK -->|Yes| CACHE_RETURN[Return Cached Class Info]
     CACHE_CHECK -->|No| XML_PARSE[Parse XML Metadata File]
     
-    XML_PARSE --> XML_SUCCESS{Parsing<br/>Successful?}
+    XML_PARSE --> XML_SUCCESS{Parsing Successful?}
     
-    XML_SUCCESS -->|Yes| EXTRACT[Extract Class Details<br/>Methods, Inheritance, etc.]
-    XML_SUCCESS -->|No| FALLBACK[Fallback to Database<br/>Basic Symbol Info]
+    XML_SUCCESS -->|Yes| EXTRACT[Extract Class Details - Methods, Inheritance, etc.]
+    XML_SUCCESS -->|No| FALLBACK[Fallback to Database - Basic Symbol Info]
     
     EXTRACT --> CACHE_STORE[Store in Cache]
     FALLBACK --> RESPONSE
@@ -315,24 +315,24 @@ graph TD
 ```mermaid
 graph TB
     subgraph "GitHub"
-        REPO[GitHub Repository<br/>main branch]
+        REPO[GitHub Repository - main branch]
     end
 
     subgraph "GitHub Actions CI/CD"
-        BUILD[Build Job<br/>npm ci, test, build]
-        DEPLOY[Deploy Job<br/>Azure App Service]
+        BUILD[Build Job - npm ci, test, build]
+        DEPLOY[Deploy Job - Azure App Service]
     end
 
     subgraph "Azure Resources"
         subgraph "Resource Group: rg-xpp-mcp"
-            APP[App Service<br/>app-xpp-mcp-*<br/>Linux P0v3<br/>Node.js 22-lts]
-            STORAGE[Storage Account<br/>st-xpp-mcp-*<br/>StorageV2, Hot, LRS]
+            APP[App Service - app-xpp-mcp - Linux P0v3, Node.js 22-lts]
+            STORAGE[Storage Account - st-xpp-mcp - StorageV2, Hot, LRS]
         end
     end
 
     subgraph "Monitoring"
-        LOGS[Application Insights<br/>Logs & Metrics]
-        HEALTH[Health Endpoint<br/>/health Status Checks]
+        LOGS[Application Insights - Logs & Metrics]
+        HEALTH[Health Endpoint - /health Status Checks]
     end
 
     REPO -->|Push/PR| BUILD
@@ -496,19 +496,19 @@ CREATE VIRTUAL TABLE symbols_fts USING fts5(
 ```mermaid
 graph LR
     subgraph "MCP Protocol Methods"
-        INIT[initialize<br/>Server Capabilities]
-        NOTIFY[notifications/initialized<br/>Handshake Complete]
-        TOOLS_LIST[tools/list<br/>24 Available Tools]
-        TOOLS_CALL[tools/call<br/>Execute Tool]
-        RES_LIST[resources/list<br/>Empty]
-        RES_TMPL[resources/templates/list<br/>Empty]
-        PROMPT_LIST[prompts/list<br/>Code Review Prompt]
-        PING[ping<br/>Health Check]
+        INIT[initialize - Server Capabilities]
+        NOTIFY[notifications/initialized - Handshake Complete]
+        TOOLS_LIST[tools/list - 24 Available Tools]
+        TOOLS_CALL[tools/call - Execute Tool]
+        RES_LIST[resources/list - Empty]
+        RES_TMPL[resources/templates/list - Empty]
+        PROMPT_LIST[prompts/list - Code Review Prompt]
+        PING[ping - Health Check]
     end
 
-    INIT -.-> CAPS[Capabilities:<br/>tools, resources, prompts]
-    TOOLS_LIST -.-> TOOL_DEFS[Tool Definitions:<br/>search, batch_search,<br/>get_class_info, get_table_info,<br/>get_form_info, get_query_info,<br/>get_view_info, get_enum_info, get_edt_info,<br/>code_completion, get_method_signature,<br/>find_references, generate_code,<br/>generate_d365fo_xml, create_d365fo_file,<br/>modify_d365fo_file, search_extensions,<br/>analyze_code_patterns,<br/>suggest_method_implementation,<br/>analyze_class_completeness,<br/>get_api_usage_patterns,<br/>search_labels, get_label_info, create_label]
-    TOOLS_CALL -.-> EXEC[Tool Execution:<br/>search DB, parse XML,<br/>return results]
+    INIT -.-> CAPS[Capabilities: tools, resources, prompts]
+    TOOLS_LIST -.-> TOOL_DEFS[Tool Definitions: search, batch_search, get_class_info, get_table_info, get_form_info, get_query_info, get_view_info, get_enum_info, get_edt_info, code_completion, get_method_signature, find_references, generate_code, generate_d365fo_xml, create_d365fo_file, modify_d365fo_file, search_extensions, analyze_code_patterns, suggest_method_implementation, analyze_class_completeness, get_api_usage_patterns, search_labels, get_label_info, create_label]
+    TOOLS_CALL -.-> EXEC[Tool Execution: search DB, parse XML, return results]
     
     style INIT fill:#4CAF50,color:#fff
     style TOOLS_CALL fill:#2196F3,color:#fff
@@ -774,7 +774,7 @@ graph TD
         L2 -->|Miss| L4[Query Database]
         L4 --> L5[FTS5 Index Scan]
         L5 --> L6[Format Results]
-        L6 --> L7[Store in Cache<br/>TTL: 1h]
+        L6 --> L7[Store in Cache - TTL: 1h]
         L7 --> L3
     end
 
@@ -785,8 +785,8 @@ graph TD
     end
 
     subgraph "Connection Pooling"
-        C1[SQLite] --> C2[Single Connection<br/>Read-Only Mode]
-        C3[Redis] --> C4[Connection Pool<br/>Max 10]
+        C1[SQLite] --> C2[Single Connection - Read-Only Mode]
+        C3[Redis] --> C4[Connection Pool - Max 10]
     end
     
     style L3 fill:#4CAF50,color:#fff
@@ -850,9 +850,9 @@ graph TD
 graph TD
     ERR([Error Occurs]) --> TYPE{Error Type?}
     
-    TYPE -->|Network| NET[Network Error<br/>Retry 3x]
-    TYPE -->|Database| DB[Database Error<br/>Log & Fallback]
-    TYPE -->|Validation| VAL[Validation Error<br/>400 Bad Request]
+    TYPE -->|Network| NET[Network Error - Retry 3x]
+    TYPE -->|Database| DB[Database Error - Log & Fallback]
+    TYPE -->|Validation| VAL[Validation Error - 400 Bad Request]
     TYPE -->|Not Found| NF[404 Not Found]
     TYPE -->|Unknown| UNK[500 Internal Error]
     
@@ -903,11 +903,11 @@ graph LR
     end
 
     subgraph "Caching"
-        C1[Redis Cache] --> C2[Shared Cache Layer<br/>Across Instances]
+        C1[Redis Cache] --> C2[Shared Cache Layer - Across Instances]
     end
 
     subgraph "Database"
-        D1[SQLite Read-Only] --> D2[No Locking Issues<br/>Concurrent Reads]
+        D1[SQLite Read-Only] --> D2[No Locking Issues - Concurrent Reads]
     end
     
     style H2 fill:#4CAF50,color:#fff
@@ -932,20 +932,20 @@ graph LR
 ```mermaid
 graph TB
     subgraph "Test Pyramid"
-        UNIT[Unit Tests<br/>86 tests<br/>All 22 MCP tools]
-        INT[Integration Tests<br/>MCP Protocol, HTTP Transport]
-        E2E[End-to-End Tests<br/>symbolIndex, Database]
+        UNIT[Unit Tests - 86 tests - All 22 MCP tools]
+        INT[Integration Tests - MCP Protocol, HTTP Transport]
+        E2E[End-to-End Tests - symbolIndex, Database]
     end
 
     subgraph "Test Infrastructure"
         VITEST[Vitest Test Runner]
-        MOCKS[Mock Services<br/>Cache, Parser, SymbolIndex]
-        SUPER[Supertest<br/>HTTP Integration Testing]
+        MOCKS[Mock Services - Cache, Parser, SymbolIndex]
+        SUPER[Supertest - HTTP Integration Testing]
     end
 
     subgraph "CI/CD Testing"
-        CI[GitHub Actions<br/>Run on PR/Push]
-        COV[Coverage Reports<br/>v8 Provider]
+        CI[GitHub Actions - Run on PR/Push]
+        COV[Coverage Reports - v8 Provider]
     end
 
     UNIT --> VITEST
@@ -980,7 +980,7 @@ graph TB
     end
 
     subgraph "MCP Protocol"
-        SDK[MCP SDK 1.0<br/>modelcontextprotocol/sdk]
+        SDK[MCP SDK 1.0 - modelcontextprotocol/sdk]
         JSONRPC[JSON-RPC 2.0]
     end
 
@@ -1000,8 +1000,8 @@ graph TB
     end
 
     subgraph "Azure"
-        BLOB[Azure Storage Blob<br/>azure/storage-blob]
-        IDENTITY[Azure Identity<br/>azure/identity]
+        BLOB[Azure Storage Blob - azure/storage-blob]
+        IDENTITY[Azure Identity - azure/identity]
     end
 
     subgraph "Testing"
@@ -1022,22 +1022,22 @@ graph TB
 ```mermaid
 graph LR
     subgraph "Planned Features"
-        F1[Multi-Tenant Support<br/>Per-organization databases]
-        F2[GraphQL API<br/>Alternative to JSON-RPC]
-        F3[Webhook Notifications<br/>Metadata updates]
-        F4[Advanced Analytics<br/>Usage metrics]
+        F1[Multi-Tenant Support - Per-organization databases]
+        F2[GraphQL API - Alternative to JSON-RPC]
+        F3[Webhook Notifications - Metadata updates]
+        F4[Advanced Analytics - Usage metrics]
     end
 
     subgraph "Performance"
-        P1[PostgreSQL<br/>Replace SQLite for scale]
-        P2[CDN Caching<br/>Edge distribution]
-        P3[GraphQL DataLoader<br/>Batch queries]
+        P1[PostgreSQL - Replace SQLite for scale]
+        P2[CDN Caching - Edge distribution]
+        P3[GraphQL DataLoader - Batch queries]
     end
 
     subgraph "Developer Experience"
-        D1[VS Code Extension<br/>Direct integration]
-        D2[CLI Tool<br/>Local development]
-        D3[REST API<br/>Non-MCP clients]
+        D1[VS Code Extension - Direct integration]
+        D2[CLI Tool - Local development]
+        D3[REST API - Non-MCP clients]
     end
     
     style F1 fill:#2196F3,color:#fff

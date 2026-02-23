@@ -270,20 +270,59 @@ export async function indexAllLabels(
       continue;
     }
 
-    // Try two possible structures:
-    // 1. Standard structure: {packagesPath}/{Model}/{Model}/AxLabelFile (PackagesLocalDirectory from AOT)
-    // 2. Git source structure: {packagesPath}/{Model}/AxLabelFile (Git repository)
-    let modelDir = path.join(packagesPath, model, model);
+    // Try multiple possible structures:
+    // 1. AOT nested structure: {packagesPath}/{lowercase-package}/{ProperCase-Model}/AxLabelFile
+    //    Example: PackagesLocalDirectory/accountspayablemobile/AccountsPayableMobile/AxLabelFile
+    // 2. Legacy nested structure: {packagesPath}/{Model}/{Model}/AxLabelFile
+    // 3. Git source structure: {packagesPath}/{Model}/AxLabelFile
+    
+    let modelDir: string | null = null;
     let usedNestedStructure = false;
-    if (!fsSync.existsSync(modelDir)) {
-      // Try flat structure (Git source)
-      modelDir = path.join(packagesPath, model);
-      if (!fsSync.existsSync(modelDir)) {
-        skippedMissingDir++;
-        continue;
+    
+    // First try: Look for ProperCase model folder inside lowercase package folder
+    const packageDir = path.join(packagesPath, model);
+    try {
+      const subDirs = fsSync.readdirSync(packageDir, { withFileTypes: true })
+        .filter(e => e.isDirectory() || e.isSymbolicLink())
+        .map(e => e.name);
+      
+      // Find subdirectory that matches model name (case-insensitive)
+      const properCaseModel = subDirs.find(d => d.toLowerCase() === model.toLowerCase());
+      if (properCaseModel) {
+        const candidateDir = path.join(packageDir, properCaseModel);
+        // Verify AxLabelFile exists (case-insensitive)
+        const axLabelDirOriginal = path.join(candidateDir, 'AxLabelFile');
+        const axLabelDirLower = path.join(candidateDir, 'axlabelfile');
+        if (fsSync.existsSync(axLabelDirOriginal) || fsSync.existsSync(axLabelDirLower)) {
+          modelDir = candidateDir;
+          usedNestedStructure = true;
+        }
       }
-    } else {
-      usedNestedStructure = true;
+    } catch {
+      // Directory not readable, try other structures
+    }
+    
+    // Second try: Legacy structure {Model}/{Model}
+    if (!modelDir) {
+      const legacyDir = path.join(packagesPath, model, model);
+      if (fsSync.existsSync(legacyDir)) {
+        modelDir = legacyDir;
+        usedNestedStructure = true;
+      }
+    }
+    
+    // Third try: Flat structure (Git source)
+    if (!modelDir) {
+      const flatDir = path.join(packagesPath, model);
+      if (fsSync.existsSync(flatDir)) {
+        modelDir = flatDir;
+        usedNestedStructure = false;
+      }
+    }
+    
+    if (!modelDir) {
+      skippedMissingDir++;
+      continue;
     }
 
     processedModels++;
