@@ -9,7 +9,7 @@ import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { Parser, Builder } from 'xml2js';
 import { getConfigManager } from '../utils/configManager.js';
-import { registerCustomModel } from '../utils/modelClassifier.js';
+import { registerCustomModel, resolveObjectPrefix, applyObjectPrefix } from '../utils/modelClassifier.js';
 import { PackageResolver } from '../utils/packageResolver.js';
 
 const CreateD365FileArgsSchema = z.object({
@@ -762,6 +762,13 @@ export async function handleCreateD365File(
       `[create_d365fo_file] Final ModelName to use: ${actualModelName}${wasAutoExtracted ? ' (auto-extracted ✓)' : ' (as-is, NOT auto-extracted ⚠️)'}`
     );
 
+    // Apply extension prefix to object name
+    const objectPrefix = resolveObjectPrefix(actualModelName);
+    const finalObjectName = applyObjectPrefix(args.objectName, objectPrefix);
+    if (finalObjectName !== args.objectName) {
+      console.error(`[create_d365fo_file] Applied prefix "${objectPrefix}": ${args.objectName} → ${finalObjectName}`);
+    }
+
     // Determine object folder based on type
     const objectFolderMap: Record<string, string> = {
       class: 'AxClass',
@@ -832,7 +839,7 @@ export async function handleCreateD365File(
       actualModelName,
       objectFolder,
     );
-    const fileName = `${args.objectName}.xml`;
+    const fileName = `${finalObjectName}.xml`;
     const fullPath = path.join(modelPath, fileName);
     
     // Normalize path to Windows format (backslashes) for consistency
@@ -920,7 +927,7 @@ export async function handleCreateD365File(
     // Generate XML content
     const xmlContent = XmlTemplateGenerator.generate(
       args.objectType,
-      args.objectName,
+      finalObjectName,
       args.sourceCode,
       args.properties
     );
@@ -1028,7 +1035,7 @@ export async function handleCreateD365File(
           const wasAdded = await projectManager.addToProject(
             projectPath,
             args.objectType,
-            args.objectName,
+            finalObjectName,
             absoluteXmlPath
           );
 
@@ -1078,7 +1085,7 @@ export async function handleCreateD365File(
           type: 'text',
           text: `✅ Successfully created D365FO ${args.objectType} file:\n\n` +
             `📁 Path: ${normalizedFullPath}\n` +
-            `📄 Object: ${args.objectName}\n` +
+            `📄 Object: ${finalObjectName}${finalObjectName !== args.objectName ? ` (prefixed from "${args.objectName}")` : ''}\n` +
             `📦 Model: ${actualModelName}\n` +
             `🔧 Type: ${objectFolder}\n` +
             projectMessage +

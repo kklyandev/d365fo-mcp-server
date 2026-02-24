@@ -51,6 +51,78 @@ export function getExtensionPrefix(): string {
 }
 
 /**
+ * Resolve the clean prefix to use when naming newly created D365FO objects.
+ *
+ * Microsoft naming guidelines (https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/extensibility/naming-guidelines-extensions):
+ *  - New model elements  → prefix concatenated directly: {Prefix}{ObjectName}  (e.g. WHSMyTable)
+ *  - Extension elements  → {BaseElement}.{Prefix}Extension                     (e.g. HCMWorker.WHSExtension)
+ *  - Extension classes   → {BaseElement}{Prefix}_Extension                     (e.g. ContactPersonWHS_Extension)
+ *  - Fields in extensions→ {Prefix}{FieldName}                                 (e.g. WHSApprovingWorker)
+ *
+ * Priority:
+ * 1. EXTENSION_PREFIX env var (trailing '_' stripped — the underscore is NOT part of the prefix)
+ * 2. modelName as fallback
+ *
+ * Returns empty string when both are empty.
+ */
+export function resolveObjectPrefix(modelName: string): string {
+  const envPrefix = process.env.EXTENSION_PREFIX?.trim();
+  const raw = (envPrefix || modelName).replace(/_+$/, ''); // strip trailing underscores
+  return raw;
+}
+
+/**
+ * Apply prefix to a NEW model element name.
+ * Per MS guidelines, the prefix is concatenated directly (no separator):
+ *   WHSMyTable, ASLMyClass, ContosoMyForm
+ *
+ * Case-insensitive check prevents double-prefixing.
+ */
+export function applyObjectPrefix(objectName: string, prefix: string): string {
+  if (!prefix) return objectName;
+  if (objectName.toLowerCase().startsWith(prefix.toLowerCase())) return objectName;
+  return `${prefix}${objectName}`;
+}
+
+/**
+ * Build the name of an EXTENSION ELEMENT (table extension, form extension, etc.)
+ * Format: {BaseElementName}.{Prefix}Extension
+ * Example: HCMWorker.WHSExtension, ContactPerson.ContosoCustomizations
+ *
+ * Never use just {BaseElement}.Extension — the prefix/infix is required to avoid conflicts.
+ */
+export function buildExtensionElementName(baseElement: string, prefix: string): string {
+  if (!prefix) {
+    throw new Error(
+      `Extension element name requires a prefix. ` +
+      `Set EXTENSION_PREFIX in .env or pass modelName. ` +
+      `Bad pattern: "${baseElement}.Extension" (too generic, risk of conflicts).`
+    );
+  }
+  return `${baseElement}.${prefix}Extension`;
+}
+
+/**
+ * Build the name of an EXTENSION CLASS (Chain of Command / augmentation class).
+ * Format: {BaseElement}{Prefix}_Extension
+ * Example: ContactPersonWHS_Extension, CustTableForm{Prefix}_Extension
+ *
+ * Never use just {BaseClass}_Extension — the infix is required.
+ */
+export function buildExtensionClassName(baseClass: string, prefix: string): string {
+  if (!prefix) {
+    throw new Error(
+      `Extension class name requires a prefix/infix. ` +
+      `Set EXTENSION_PREFIX in .env or pass modelName. ` +
+      `Bad pattern: "${baseClass}_Extension" (too generic, risk of conflicts).`
+    );
+  }
+  // Avoid double infix if baseClass already contains the prefix
+  const infix = baseClass.toLowerCase().includes(prefix.toLowerCase()) ? '' : prefix;
+  return `${baseClass}${infix}_Extension`;
+}
+
+/**
  * Check if a pattern matches a model name (supports wildcards)
  * @param pattern - Pattern to match (e.g., "Custom*", "*Test", "*Extension*")
  * @param modelName - Model name to check
