@@ -1,14 +1,12 @@
-# D365 F&O MCP Server
+﻿# D365 F&O MCP Server
 
 <div align="center">
 
-**AI-Powered Code Intelligence for Microsoft Dynamics 365 Finance & Operations**
+**GitHub Copilot with full knowledge of your D365 F&O codebase**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
-
-[Getting Started](#getting-started) &bull; [What It Does](#what-it-does) &bull; [Setup](#visual-studio-2022-setup) &bull; [Docs](#documentation)
 
 </div>
 
@@ -16,121 +14,58 @@
 
 ## What Is This?
 
-**D365 F&O MCP Server** connects GitHub Copilot to your Dynamics 365 Finance & Operations
-environment. With this server running, Copilot actually *knows* your codebase: it understands
-which classes, tables, and methods exist, and generates X++ code that compiles on the first try.
+An MCP server that gives GitHub Copilot access to your D365 F&O codebase — 584,799+ symbols indexed in SQLite FTS5. Copilot then knows exact method signatures, field types, class hierarchies, and generates X++ code that compiles on the first try.
 
-### The Problem It Solves
-
-Without this server, GitHub Copilot has no knowledge of D365FO. It guesses class and method
-names, and those guesses are often wrong. You end up chasing compilation errors instead of
-writing code.
-
-| Without the server | With this server |
-|--------------------|-----------------|
-| Copilot guesses method names → compilation errors | Copilot knows exact signatures → code works |
-| AOT browsing: 5–30 minutes of clicking | Answer in under 50 ms |
-| 500 000+ symbols with no quick way to search | Everything indexed and instantly searchable |
-| "What was that method on CustTable called again?" | Just ask Copilot |
-
----
-
-## What It Does
-
-You get **29 tools** for D365FO code intelligence. You ask Copilot in plain English; it picks
-the right tool automatically.
-
-### Finding and Exploring Code
-- Search classes, tables, methods, fields, enums, EDTs across 584 799+ symbols
-- View a complete class structure: all methods, inheritance chain, source code
-- View a table schema: fields with types, indexes, foreign key relations
-- View enum values with labels or Extended Data Type (EDT) properties
-- Browse forms, queries, views, and data entities
-- Find everywhere a class, method, or field is used (where-used analysis)
-
-### Generating Code
-- Learns patterns from your *actual* codebase, not generic templates
-- Builds correct Chain of Command (CoC) extensions with exact method signatures
-- Suggests missing methods by comparing your class against similar ones
-- Shows how a specific API is typically initialized and used in your environment
-
-### Working with Files
-- Generates correct D365FO XML for classes, tables, forms, enums
-- On a local Windows VM: writes the file directly to the right AOT location
-- Automatically adds the new file to your Visual Studio project (.rnrproj)
-- Safely edits existing files with an automatic backup before every change
-
-### Working with Labels
-- Full-text search across all indexed AxLabelFile labels — finds labels by ID, text, or comment
-- Shows all language translations for any label (en-US, cs, de, sk, …)
-- Lists all AxLabelFile IDs available in a model
-- Creates new labels in all language `.label.txt` files at once, inserted alphabetically
-- Generates ready-to-use `@LabelFileId:LabelId` references for X++ code and metadata XML
-
----
-
-## Getting Started
-
-### Prerequisites
-
-| Component | Version |
-|-----------|---------|
-| Node.js | 24 LTS or newer |
-| Visual Studio 2022 | 17.14 or newer |
-| GitHub Copilot | Active subscription |
-| D365FO dev environment | Local VM or Azure |
-
-### Installation
-
-```powershell
-# 1. Clone the repository
-git clone https://github.com/dynamics365ninja/d365fo-mcp-server.git
-cd d365fo-mcp-server
-
-# 2. Install dependencies
-npm install
-
-# 3. Configure environment variables
-copy .env.example .env
-# Edit .env with your paths and settings
-# UDE users: run  npm run select-config  to pick your XPP config
-
-# 4. Extract D365FO metadata
-npm run extract-metadata
-
-# 5. Build the symbol database
-npm run build-database
-
-# 6. Start the server
-npm run dev
+```
+┌─────────────────────┐    MCP/HTTP     ┌──────────────────────────────────┐
+│  GitHub Copilot     │ ◄────────────► │  D365 F&O MCP Server             │
+│  (Agent Mode)       │                 │                                  │
+│                     │                 │  ┌─────────┐   ┌──────────────┐ │
+│  "Show methods of   │                 │  │ Symbols │   │ Labels       │ │
+│   SalesTable"       │                 │  │  ~1 GB  │   │  ~500 MB     │ │
+│                     │                 │  │ 584K+   │   │ 19M+ labels  │ │
+│  ← answer in 50ms   │                 │  │ symbols │   │ 70 languages │ │
+└─────────────────────┘                 │  └─────────┘   └──────────────┘ │
+                                        └──────────────────────────────────┘
 ```
 
-The server runs at `http://localhost:8080`.
-
-For full details including Azure deployment, see [docs/SETUP.md](docs/SETUP.md).
+| Without this server | With this server |
+|---------------------|-----------------|
+| Copilot guesses method names → compile errors | Exact signatures → code works |
+| Searching in AOT: 5–30 minutes | Answer in < 50 ms |
+| 584,799 symbols with no fast search | Everything indexed and instantly available |
 
 ---
 
-## Visual Studio 2022 Setup
+## Quick Start
 
-### Step 1 — Enable Agent Mode in your GitHub account
+```powershell
+git clone https://github.com/dynamics365ninja/d365fo-mcp-server.git
+cd d365fo-mcp-server
+npm install
+copy .env.example .env          # Fill in PACKAGES_PATH and CUSTOM_MODELS
+npm run extract-metadata         # Extract XML from D365FO packages
+npm run build-database           # Build SQLite index (~5–20 min)
+npm run dev                      # Server running at http://localhost:3000
+```
 
-Go to **https://github.com/settings/copilot/features** and enable *Editor Preview Features*.
+> **UDE (Power Platform Tools)?** Run `npm run select-config` instead of setting `PACKAGES_PATH`.
 
-> Without this setting, Copilot will not load MCP tools at all.
+---
 
-### Step 2 — Enable MCP in Visual Studio
+## GitHub Copilot Setup
 
-**Tools → Options → GitHub → Copilot** → check **"Enable MCP server integration in agent mode"**.
+**1.** Enable *Editor Preview Features* at **github.com/settings/copilot/features**
 
-### Step 3 — Create `.mcp.json` in your solution root
+**2.** In Visual Studio: **Tools → Options → GitHub → Copilot** → check *Enable MCP server integration in agent mode*
+
+**3.** Add `.mcp.json` to the root of your Visual Studio solution (next to the `.sln` file):
 
 ```json
 {
   "servers": {
     "d365fo-code-intelligence": {
-      "url": "https://your-server.azurewebsites.net/mcp/",
-      "description": "D365 F&O Code Intelligence"
+      "url": "http://localhost:3000/mcp/"
     },
     "context": {
       "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourModel"
@@ -139,117 +74,76 @@ Go to **https://github.com/settings/copilot/features** and enable *Editor Previe
 }
 ```
 
-For a local server use `http://localhost:8080/mcp/` instead of the Azure URL.
+The server automatically locates your `.rnrproj`, extracts the correct model name, and writes new files to the right place in AOT. `workspacePath` is the only setting most users ever need.
 
-### Step 4 — Copy Copilot instructions to your workspace
+> **Full options** (UDE paths, explicit projectPath, solutionPath): see [docs/MCP_CONFIG.md](docs/MCP_CONFIG.md)
+
+**4.** Copy Copilot instructions to your solution root:
 
 ```powershell
-# Copy the .github folder to your D365FO solution root
 Copy-Item -Path ".github" -Destination "C:\Path\To\YourSolution\" -Recurse
 ```
 
-The file `.github/copilot-instructions.md` tells Copilot to always use the MCP tools
-instead of its built-in file search (which hangs for 5–30 minutes on large D365FO workspaces).
-
-### Step 5 — Restart Visual Studio and verify
-
-Open Copilot Chat in **Agent Mode** and ask:
-
-```
-Show me all methods on CustTable
-```
-
-Copilot should respond within 1 second with an exact list of methods.
-
 ---
 
-## Example Prompts
+## What It Can Do — 29 Tools
 
-Just ask in plain English — no need to know which tool to use.
+### 🔍 Code Search & Navigation
+| Prompt | What happens |
+|--------|-------------|
+| `What methods does SalesTable have?` | Returns all methods with their signatures |
+| `Find classes related to invoicing` | Full-text search across 584K+ symbols |
+| `Where is CustTable.validateWrite() used?` | Where-used analysis across the entire codebase |
+| `Show me the structure of CustTable` | Fields with EDTs, indexes, foreign key relations |
 
-```
-What methods does SalesTable have?
+### ⚡ Code Generation
+| Prompt | What happens |
+|--------|-------------|
+| `Create a CoC extension for SalesTable.validateWrite()` | Exact signature + boilerplate |
+| `How is LedgerJournalEngine initialized?` | Patterns from your own codebase |
+| `Is my class MyHelper missing any standard methods?` | Class completeness analysis |
+| `Create a batch job for order processing` | Complete batch job template |
 
-Show me the structure of CustTable: fields, indexes, and relations
+### 🏷️ Label Management
+| Prompt | What happens |
+|--------|-------------|
+| `Find a label for "customer"` | Searches all AxLabelFile objects |
+| `Translations of label ACFeature in model AslCore` | All languages at once |
+| `Create a new label MyNewField in AslCore` | Writes to all .label.txt files |
 
-Create a helper class for customer validation
-
-Where is CustTable.validateWrite() called?
-
-How do I correctly initialize DimensionAttributeValueSet?
-
-Create a CoC extension for SalesTable.validateWrite()
-
-Check whether my class MyHelper is missing any standard methods
-
-Find all my custom extensions for classes starting with ISV_
-
-Find a label for the text "customer account" in AslCore
-
-Show me all translations of the label ACFeature in AslCore
-
-Create a new label MyNewField in the AslCore model with Czech and English translations
-```
-
-More examples in [docs/USAGE_EXAMPLES.md](docs/USAGE_EXAMPLES.md).
+### 📝 File Operations *(local VM only)*
+- Generates correct D365FO XML for classes, tables, forms, enums
+- Writes the file directly to the right location in AOT
+- Automatically adds the file to `.rnrproj`
+- Creates a backup before every change
 
 ---
 
 ## Azure Deployment
 
-You can host the server on Azure App Service so the whole team shares one instance.
-
-Approximate monthly cost:
+Host the server on Azure App Service — the entire team shares a single instance.
 
 | Resource | Configuration | Monthly cost |
-|----------|--------------|-------------|
+|----------|---------------|-------------|
 | App Service P0v3 | 1 vCPU, 4 GB RAM | ~$62 |
-| Blob Storage | 2 GB (1-1.5 GB symbols + 500 MB labels) | ~$3 |
+| Blob Storage | 2 GB (symbols + labels) | ~$3 |
 | Redis Cache (optional) | Basic C0 | ~$16 |
 | **Total without Redis** | | **~$65 / month** |
 
-Full setup instructions in [docs/SETUP.md](docs/SETUP.md).
+The database is automatically downloaded from Azure Blob Storage on server startup.
+
+Setup guide: [docs/SETUP.md](docs/SETUP.md) · CI/CD pipeline: [docs/PIPELINES.md](docs/PIPELINES.md)
 
 ---
 
 ## Documentation
 
-| File | What you will find |
-|------|-------------------|
-| [docs/SETUP.md](docs/SETUP.md) | Installation, environment config, Azure deployment |
-| [docs/MCP_CONFIG.md](docs/MCP_CONFIG.md) | The `.mcp.json` file — workspace paths and project settings |
-| [docs/WORKSPACE_DETECTION.md](docs/WORKSPACE_DETECTION.md) | How the server auto-detects your model from `.rnrproj` |
-| [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) | All 29 tools explained with example prompts |
-| [docs/USAGE_EXAMPLES.md](docs/USAGE_EXAMPLES.md) | Practical examples: searching, code generation, CoC extensions |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Technical architecture, dual-database design, performance optimization |
-| [docs/CUSTOM_EXTENSIONS.md](docs/CUSTOM_EXTENSIONS.md) | ISV partner and custom model configuration |
-| [docs/PIPELINES.md](docs/PIPELINES.md) | Automating metadata extraction with Azure DevOps |
-| [docs/TESTING.md](docs/TESTING.md) | Running the test suite |
-
----
-
-## Contributing
-
-Pull requests are welcome. Please target the `develop` branch.
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-change`
-3. Commit: `git commit -m "Description of change"`
-4. Push: `git push origin feature/my-change`
-5. Open a Pull Request
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-<div align="center">
-
-**Built for the D365 F&O developer community**
-
-[Report a bug](https://github.com/dynamics365ninja/d365fo-mcp-server/issues) &bull;
-[Request a feature](https://github.com/dynamics365ninja/d365fo-mcp-server/issues) &bull;
-[Documentation](docs/)
-
-</div>
+| File | Contents |
+|------|---------|
+| [docs/SETUP.md](docs/SETUP.md) | Installation, configuration, Azure deployment |
+| [docs/MCP_CONFIG.md](docs/MCP_CONFIG.md) | `.mcp.json` reference — workspace paths, UDE, project settings |
+| [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) | All 29 tools with example prompts |
+| [docs/USAGE_EXAMPLES.md](docs/USAGE_EXAMPLES.md) | Practical examples: search, generation, CoC |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Technical architecture, dual-database design |
+| [docs/CUSTOM_EXTENSIONS.md](docs/CUSTOM_EXTENSIONS.md) | ISV / custom model configuration |
+| [docs/PIPELINES.md](docs/PIPELINES.md) | Automated metadata extraction via Azure DevOps |

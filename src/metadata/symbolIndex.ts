@@ -879,10 +879,26 @@ export class XppSymbolIndex {
       const modelDuration = ((Date.now() - modelStartTime) / 1000).toFixed(1);
       const progressPercent = ((modelIndex / models.length) * 100).toFixed(0);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-      console.log(`   📦 [${progressPercent}%] ${model} - ${modelDuration}s (${elapsed}s total)`);
+      
+      // Detect CI environment (Azure DevOps, GitHub Actions, GitLab CI, etc.)
+      const isCI = process.env.CI === 'true' || process.env.TF_BUILD === 'True' || process.env.GITHUB_ACTIONS === 'true';
+      
+      if (isCI) {
+        // CI environment: use normal console.log (one line per model)
+        console.log(`   📦 [${progressPercent}%] ${model} - ${modelDuration}s (${elapsed}s total)`);
+      } else {
+        // Interactive terminal: overwrite same line for compact output
+        process.stdout.write(`\r   📦 [${progressPercent}%] ${model.padEnd(40)} ${modelDuration}s (${elapsed}s total)`);
+      }
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    
+    // Add newline only if we were overwriting (interactive mode)
+    const isCI = process.env.CI === 'true' || process.env.TF_BUILD === 'True' || process.env.GITHUB_ACTIONS === 'true';
+    if (!isCI) {
+      console.log(''); // New line after progress
+    }
 
     if (skipFts) {
       // Phase 1 of two-phase CI build: symbols only, FTS deferred to build-fts step
