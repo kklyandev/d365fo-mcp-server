@@ -1,19 +1,89 @@
 /**
- * Example .mcp.json configuration for Visual Studio 2022
+ * Example .mcp.json configuration for Visual Studio 2022 / VS Code
  * Place this file in your solution root directory or in %USERPROFILE%\.mcp.json
+ *
+ * Three deployment variants are shown below — uncomment the one that fits your setup:
+ *   1. Single server (local only, full mode)
+ *   2. Single server (Azure, read-only mode)
+ *   3. Hybrid setup (Azure read-only + local write-only companion)
  */
+
+// ─── Option 1: Single local server (full mode) ───────────────────────────────
+// Use when the MCP server runs on the same Windows VM as your D365FO installation.
 {
   "servers": {
-    "d365fo-mcp-server": {
-      "url": "https://your-app-name.azurewebsites.net/mcp/",
-      "description": "D365FO MCP Server for X++ Code Completion"
+    "d365fo-code-intelligence": {
+      "url": "http://localhost:8080/mcp/"
     },
     "context": {
       "workspacePath": "K:\\AOSService\\PackagesLocalDirectory\\YourModelName",
       "packagePath": "K:\\AOSService\\PackagesLocalDirectory",
+      "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj"
+    }
+  }
+}
+
+// ─── Option 2: Single Azure server (read-only mode) ──────────────────────────
+// Use when the MCP server is deployed to Azure App Service (MCP_SERVER_MODE=read-only).
+// File-creation tools are not available — use generate_d365fo_xml() + manual save instead.
+{
+  "servers": {
+    "d365fo-code-intelligence": {
+      "url": "https://your-app-name.azurewebsites.net/mcp/"
+    },
+    "context": {
+      "workspacePath": "K:\\AOSService\\PackagesLocalDirectory\\YourModelName",
+      "packagePath": "K:\\AOSService\\PackagesLocalDirectory",
+      "devEnvironmentType": "auto"
+    }
+  }
+}
+
+// ─── Option 3: Hybrid setup (Azure read-only + local write-only) ─────────────
+// Recommended for teams sharing an Azure-hosted metadata server.
+// GitHub Copilot connects to both servers simultaneously and routes each tool
+// call to the correct instance automatically.
+//
+// Azure server  → search, get_class_info, get_table_info, … (25 tools)
+// Local server  → create_d365fo_file, modify_d365fo_file, create_label (3 tools)
+//
+// Requires the local server to be running:
+//   set MCP_SERVER_MODE=write-only && node K:\d365fo-mcp-server\dist\index.js --stdio
+{
+  "servers": {
+    "d365fo-azure": {
+      "url": "https://your-app-name.azurewebsites.net/mcp/"
+    },
+    "d365fo-local": {
+      "command": "node",
+      "args": ["K:\\d365fo-mcp-server\\dist\\index.js", "--stdio"],
+      "env": {
+        "MCP_SERVER_MODE": "write-only",
+        "DB_PATH": "K:\\d365fo-mcp-server\\data\\xpp-metadata.db"
+      }
+    },
+    "context": {
+      "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj",
+      "packagePath": "K:\\AOSService\\PackagesLocalDirectory",
+      "devEnvironmentType": "auto"
+    }
+  }
+}
+
+// ─── UDE (Unified Developer Experience / Power Platform Tools) ───────────────
+// Add these context properties instead of workspacePath + packagePath when using
+// the UDE environment in Visual Studio 2022 with Power Platform Tools.
+// The server reads XPP config files from %LOCALAPPDATA%\Microsoft\Dynamics365\XPPConfig\
+// automatically — you usually do not need to set the paths manually.
+{
+  "servers": {
+    "d365fo-code-intelligence": {
+      "url": "https://your-app-name.azurewebsites.net/mcp/"
+    },
+    "context": {
       "customPackagesPath": "C:\\CustomXppCode",
       "microsoftPackagesPath": "C:\\Users\\...\\Dynamics365\\10.0.2428.63\\PackagesLocalDirectory",
-      "devEnvironmentType": "auto"
+      "devEnvironmentType": "ude"
     }
   }
 }
