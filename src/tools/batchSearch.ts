@@ -24,7 +24,7 @@ const SingleSearchSchema = z.object({
     .optional()
     .default('all')
     .describe('Filter by object type'),
-  limit: z.number().optional().default(10).describe('Maximum results per query'),
+  limit: z.number().max(100).optional().default(10).describe('Maximum results per query'),
   workspacePath: z.string().optional().describe('Optional workspace path'),
   includeWorkspace: z.boolean().optional().default(false).describe('Include workspace files'),
 });

@@ -136,41 +136,41 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         return getLabelInfoTool(request, context);
       case 'create_label':
         return createLabelTool(request, context);
-      case 'get_table_patterns':
-        return {
-          content: (await handleGetTablePatterns(
-            request.params.arguments as any,
-            context.symbolIndex
-          )).content,
-        };
-      case 'get_form_patterns':
-        return {
-          content: (await handleGetFormPatterns(
-            request.params.arguments as any,
-            context.symbolIndex
-          )).content,
-        };
-      case 'generate_smart_table':
-        return {
-          content: (await handleGenerateSmartTable(
-            request.params.arguments as any,
-            context.symbolIndex
-          )).content,
-        };
-      case 'generate_smart_form':
-        return {
-          content: (await handleGenerateSmartForm(
-            request.params.arguments as any,
-            context.symbolIndex
-          )).content,
-        };
-      case 'suggest_edt':
-        return {
-          content: (await handleSuggestEdt(
-            request.params.arguments as any,
-            context.symbolIndex
-          )).content,
-        };
+      case 'get_table_patterns': {
+        const r = await handleGetTablePatterns(
+          request.params.arguments as any,
+          context.symbolIndex
+        );
+        return { content: r?.content ?? [{ type: 'text', text: 'No results returned' }] };
+      }
+      case 'get_form_patterns': {
+        const r = await handleGetFormPatterns(
+          request.params.arguments as any,
+          context.symbolIndex
+        );
+        return { content: r?.content ?? [{ type: 'text', text: 'No results returned' }] };
+      }
+      case 'generate_smart_table': {
+        const r = await handleGenerateSmartTable(
+          request.params.arguments as any,
+          context.symbolIndex
+        );
+        return { content: r?.content ?? [{ type: 'text', text: 'No results returned' }] };
+      }
+      case 'generate_smart_form': {
+        const r = await handleGenerateSmartForm(
+          request.params.arguments as any,
+          context.symbolIndex
+        );
+        return { content: r?.content ?? [{ type: 'text', text: 'No results returned' }] };
+      }
+      case 'suggest_edt': {
+        const r = await handleSuggestEdt(
+          request.params.arguments as any,
+          context.symbolIndex
+        );
+        return { content: r?.content ?? [{ type: 'text', text: 'No results returned' }] };
+      }
       default:
         return {
           content: [

@@ -6,6 +6,7 @@
 import type { XppSymbolIndex } from '../metadata/symbolIndex.js';
 import type { WorkspaceScanner, WorkspaceFile } from './workspaceScanner.js';
 import type { XppSymbol } from '../metadata/types.js';
+import { levenshteinDistance } from '../utils/fuzzyMatching.js';
 
 export interface HybridSearchResult {
   source: 'external' | 'workspace';
@@ -135,41 +136,11 @@ export class HybridSearch {
     // Contains = 50
     if (n.includes(q)) return 50;
 
-    // Fuzzy match = 30
-    const distance = this.levenshteinDistance(q, n);
-    if (distance <= 3) return 30;
+    // Fuzzy match: scale continuously by similarity instead of a flat 30
+    const distance = levenshteinDistance(q, n);
+    const similarity = 1 - distance / Math.max(q.length, n.length);
+    if (similarity >= 0.65) return Math.round(20 + similarity * 30); // 40–50 range
 
     return 10;
-  }
-
-  /**
-   * Levenshtein distance for fuzzy matching
-   */
-  private levenshteinDistance(a: string, b: string): number {
-    const matrix: number[][] = [];
-
-    for (let i = 0; i <= b.length; i++) {
-      matrix[i] = [i];
-    }
-
-    for (let j = 0; j <= a.length; j++) {
-      matrix[0][j] = j;
-    }
-
-    for (let i = 1; i <= b.length; i++) {
-      for (let j = 1; j <= a.length; j++) {
-        if (b.charAt(i - 1) === a.charAt(j - 1)) {
-          matrix[i][j] = matrix[i - 1][j - 1];
-        } else {
-          matrix[i][j] = Math.min(
-            matrix[i - 1][j - 1] + 1,
-            matrix[i][j - 1] + 1,
-            matrix[i - 1][j] + 1
-          );
-        }
-      }
-    }
-
-    return matrix[b.length][a.length];
   }
 }

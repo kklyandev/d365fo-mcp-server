@@ -10,7 +10,7 @@ import type { XppServerContext } from '../types/context.js';
 const AnalyzeCodePatternsArgsSchema = z.object({
   scenario: z.string().describe('Scenario or domain to analyze (e.g., "dimension", "validation", "customer")'),
   classPattern: z.string().optional().describe('Class name pattern filter (e.g., "Helper", "Service")'),
-  limit: z.number().optional().default(20).describe('Maximum number of classes to analyze'),
+  limit: z.number().max(100).optional().default(20).describe('Maximum number of classes to analyze'),
 });
 
 export async function analyzeCodePatternsTool(request: CallToolRequest, context: XppServerContext) {

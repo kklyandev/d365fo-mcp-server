@@ -116,6 +116,20 @@ export async function classInfoTool(request: CallToolRequest, context: XppServer
         output += `No methods found in symbol index.\n`;
       }
 
+      // Cache the fallback result so repeated requests skip the parse attempt
+      await cache.setClassInfo(cacheKey, {
+        name: args.className,
+        extendsClass: null,
+        isFinal: false,
+        isAbstract: false,
+        methods: methods.map((m: any) => ({
+          name: m.name,
+          isStatic: false,
+          returnType: m.signature ?? 'void',
+          parameters: [],
+        })),
+      });
+
       return {
         content: [
           {

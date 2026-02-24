@@ -142,12 +142,15 @@ export class RedisCacheService {
       // Normalize the query for comparison
       const normalizedQuery = normalizeQuery(parsed.query);
 
-      // Get all keys with same prefix and type
+      // Get all keys with same prefix and type using SCAN (non-blocking, O(1) per call)
       const pattern = `${parsed.prefix}:${parsed.type}:*`;
-      const allKeys = await this.client.keys(pattern);
-
-      // Limit keys to check
-      const keysToCheck = allKeys.slice(0, this.MAX_FUZZY_KEYS);
+      const keysToCheck: string[] = [];
+      let cursor = '0';
+      do {
+        const [nextCursor, keys] = await this.client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = nextCursor;
+        keysToCheck.push(...keys);
+      } while (cursor !== '0' && keysToCheck.length < this.MAX_FUZZY_KEYS);
 
       let bestMatch: { key: string; score: number } | null = null;
 
