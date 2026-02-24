@@ -58,14 +58,26 @@ export class RedisCacheService {
               lazyConnect: true,
               enableReadyCheck: true,
               slotsRefreshTimeout: 5000,
+              // When ioredis discovers cluster shards via CLUSTER SLOTS it gets
+              // internal IP:port pairs. The TLS cert is issued for the public
+              // hostname, not the internal IP. Setting tls.servername in
+              // redisOptions propagates to EVERY shard connection ioredis opens,
+              // so SNI is correct regardless of the target IP address.
               redisOptions: {
                 password,
                 connectTimeout: 10000,
                 maxRetriesPerRequest: 3,
                 enableReadyCheck: true,
-                ...(useTls ? { tls: { rejectUnauthorized: true } } : {}),
+                ...(useTls
+                  ? {
+                      tls: {
+                        servername: host,        // SNI: public hostname for cert validation
+                        rejectUnauthorized: true,
+                      },
+                    }
+                  : {}),
               },
-              retryDelayOnMoved: 100,     // retry after MOVED with 100ms delay
+              retryDelayOnMoved: 100,       // retry after MOVED with 100 ms delay
               retryDelayOnClusterDown: 300,
             }
           );
@@ -97,7 +109,7 @@ export class RedisCacheService {
         });
 
         // Store connection promise
-        this.connectionPromise = (this.client as Redis).connect().catch((err: Error) => {
+        this.connectionPromise = this.client.connect().catch((err: Error) => {
           console.warn('Failed to connect to Redis, caching disabled:', err.message);
           this.enabled = false;
         });
