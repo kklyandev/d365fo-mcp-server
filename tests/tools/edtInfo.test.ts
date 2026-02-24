@@ -66,14 +66,36 @@ describe('get_edt_info tool', () => {
 
       CREATE INDEX idx_symbols_name ON symbols(name);
       CREATE INDEX idx_symbols_type ON symbols(type);
+
+      CREATE TABLE IF NOT EXISTS edt_metadata (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        edt_name TEXT NOT NULL,
+        extends TEXT,
+        enum_type TEXT,
+        reference_table TEXT,
+        relation_type TEXT,
+        string_size TEXT,
+        display_length TEXT,
+        label TEXT,
+        model TEXT NOT NULL
+      );
     `);
 
-    const insert = db.prepare(`
+    const insertSym = db.prepare(`
       INSERT INTO symbols (name, type, parent_name, file_path, model)
       VALUES (?, ?, ?, ?, ?)
     `);
+    insertSym.run('TestEdt', 'edt', null, tempEdtFile, 'TestModel');
 
-    insert.run('TestEdt', 'edt', null, tempEdtFile, 'TestModel');
+    // DbOnlyEdt — no XML file, only edt_metadata row (simulates build-agent path)
+    insertSym.run('AccountNum', 'edt', null, '/home/vsts/work/1/PackagesLocalDirectory/ApplicationPlatform/AxEdt/AccountNum.xml', 'ApplicationPlatform');
+
+    const insertEdt = db.prepare(`
+      INSERT INTO edt_metadata (edt_name, model, extends, enum_type, reference_table, relation_type, string_size, display_length, label)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertEdt.run('TestEdt', 'TestModel', 'WHSEWShipmentOrderUpdateIdentifier', null, 'WHSEWInboundShipmentOrderUpdate', null, '60', null, '@WarehouseOrdersIntegration:EWInboundShipmentOrderUpdate');
+    insertEdt.run('AccountNum', 'ApplicationPlatform', 'AccountNumBase', null, 'CustTable', 'ZeroOrMore', '30', '30', '@SYS1234');
 
     const symbolIndex = new XppSymbolIndex(tempDbPath);
 
@@ -132,5 +154,36 @@ describe('get_edt_info tool', () => {
     expect(result.content[0].type).toBe('text');
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('not found');
+  });
+
+  it('should fall back to edt_metadata DB data when XML file is inaccessible (build-agent path)', async () => {
+    // AccountNum has a /home/vsts/... path that is NOT accessible — but edt_metadata has data
+    const request = {
+      method: 'tools/call',
+      params: {
+        name: 'get_edt_info',
+        arguments: {
+          edtName: 'AccountNum',
+        },
+      },
+    };
+
+    const result = await getEdtInfoTool(request as any, context);
+
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0].text as string;
+
+    // Core identity
+    expect(text).toContain('Extended Data Type: `AccountNum`');
+    expect(text).toContain('ApplicationPlatform');
+
+    // Properties from edt_metadata DB row
+    expect(text).toContain('AccountNumBase');      // extends
+    expect(text).toContain('CustTable');            // reference_table
+    expect(text).toContain('ZeroOrMore');           // relation_type
+    expect(text).toContain('30');                   // string_size / display_length
+
+    // Should include warning that data is from DB
+    expect(text).toContain('⚠️');
   });
 });
