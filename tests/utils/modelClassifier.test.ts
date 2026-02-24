@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { isCustomModel, isStandardModel, getCustomModels, filterModelsByType } from '../../src/utils/modelClassifier';
+import {
+  isCustomModel,
+  isStandardModel,
+  getCustomModels,
+  filterModelsByType,
+  resolveObjectPrefix,
+  applyObjectPrefix,
+  buildExtensionElementName,
+  buildExtensionClassName,
+} from '../../src/utils/modelClassifier';
 
 describe('modelClassifier', () => {
   const originalEnv = process.env;
@@ -225,6 +234,99 @@ describe('modelClassifier', () => {
       expect(isCustomModel('SpecificModel')).toBe(true);
       expect(isCustomModel('MyExtension')).toBe(true);
       expect(isStandardModel('OtherModel')).toBe(true);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // NEW NAMING HELPERS (MS D365FO naming guidelines)
+  // https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/extensibility/naming-guidelines-extensions
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe('resolveObjectPrefix', () => {
+    it('should return EXTENSION_PREFIX when set', () => {
+      process.env.EXTENSION_PREFIX = 'WHS';
+      expect(resolveObjectPrefix('AnyModel')).toBe('WHS');
+    });
+
+    it('should strip trailing underscores from EXTENSION_PREFIX', () => {
+      process.env.EXTENSION_PREFIX = 'WHS_';
+      expect(resolveObjectPrefix('AnyModel')).toBe('WHS');
+    });
+
+    it('should strip multiple trailing underscores', () => {
+      process.env.EXTENSION_PREFIX = 'ASL___';
+      expect(resolveObjectPrefix('AnyModel')).toBe('ASL');
+    });
+
+    it('should fall back to modelName when EXTENSION_PREFIX not set', () => {
+      delete process.env.EXTENSION_PREFIX;
+      expect(resolveObjectPrefix('AslCore')).toBe('AslCore');
+    });
+
+    it('should return empty string when both EXTENSION_PREFIX and modelName are empty', () => {
+      delete process.env.EXTENSION_PREFIX;
+      expect(resolveObjectPrefix('')).toBe('');
+    });
+
+    it('should prefer EXTENSION_PREFIX over modelName', () => {
+      process.env.EXTENSION_PREFIX = 'CONTOSO';
+      expect(resolveObjectPrefix('AslCore')).toBe('CONTOSO');
+    });
+  });
+
+  describe('applyObjectPrefix', () => {
+    it('should prepend prefix to object name without separator', () => {
+      expect(applyObjectPrefix('MyTable', 'WHS')).toBe('WHSMyTable');
+    });
+
+    it('should return unchanged name when prefix is empty', () => {
+      expect(applyObjectPrefix('MyTable', '')).toBe('MyTable');
+    });
+
+    it('should not double-prefix (case-insensitive guard)', () => {
+      expect(applyObjectPrefix('WHSMyTable', 'WHS')).toBe('WHSMyTable');
+      expect(applyObjectPrefix('whsMyTable', 'WHS')).toBe('whsMyTable');
+    });
+
+    it('should handle different casing between prefix and objectName', () => {
+      expect(applyObjectPrefix('NoPrefixYet', 'ASL')).toBe('ASLNoPrefixYet');
+    });
+  });
+
+  describe('buildExtensionElementName', () => {
+    it('should return {base}.{prefix}Extension', () => {
+      expect(buildExtensionElementName('HCMWorker', 'WHS')).toBe('HCMWorker.WHSExtension');
+    });
+
+    it('should handle different prefix values', () => {
+      expect(buildExtensionElementName('ContactPerson', 'Contoso')).toBe('ContactPerson.ContosoExtension');
+    });
+
+    it('should throw an error when prefix is empty (bare .Extension forbidden by MS guidelines)', () => {
+      expect(() => buildExtensionElementName('HCMWorker', '')).toThrow('requires a prefix');
+    });
+  });
+
+  describe('buildExtensionClassName', () => {
+    it('should return {base}{prefix}_Extension for table CoC', () => {
+      expect(buildExtensionClassName('CustTable', 'WHS')).toBe('CustTableWHS_Extension');
+    });
+
+    it('should return {base}{prefix}_Extension for form CoC', () => {
+      expect(buildExtensionClassName('SalesTable', 'Contoso')).toBe('SalesTableContoso_Extension');
+    });
+
+    it('should throw an error when prefix is empty (bare _Extension forbidden by MS guidelines)', () => {
+      expect(() => buildExtensionClassName('CustTable', '')).toThrow('requires a prefix');
+    });
+
+    it('should avoid double infix when base already contains prefix', () => {
+      // e.g. base was already derived with the prefix in it
+      expect(buildExtensionClassName('CustTableWHS', 'WHS')).toBe('CustTableWHS_Extension');
+    });
+
+    it('should be case-insensitive for double-infix guard', () => {
+      expect(buildExtensionClassName('custtablewhs', 'WHS')).toBe('custtablewhs_Extension');
     });
   });
 });

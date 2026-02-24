@@ -10,6 +10,7 @@ import { handleGetFormPatterns } from './getFormPatterns.js';
 import path from 'path';
 import fs from 'fs';
 import { getConfigManager } from '../utils/configManager.js';
+import { resolveObjectPrefix, applyObjectPrefix } from '../utils/modelClassifier.js';
 
 interface GenerateSmartFormArgs {
   name: string;
@@ -210,10 +211,62 @@ export async function handleGenerateSmartForm(
     console.warn(`[generateSmartForm] No datasource configured, form will be empty`);
   }
 
+  // Determine package path
+  const configManager = getConfigManager();
+  const packagePath = configManager.getPackagePath() || 'K:\\AosService\\PackagesLocalDirectory';
+
+  // Resolve project/solution path — fall back to configManager (from .mcp.json / auto-detection)
+  let resolvedProjectPath = projectPath;
+  let resolvedSolutionPath = solutionPath;
+  if (!resolvedProjectPath && !resolvedSolutionPath) {
+    resolvedProjectPath = (await configManager.getProjectPath()) || undefined;
+    resolvedSolutionPath = (await configManager.getSolutionPath()) || undefined;
+    if (resolvedProjectPath) {
+      console.log(`[generateSmartForm] Using projectPath from config/auto-detect: ${resolvedProjectPath}`);
+    } else if (resolvedSolutionPath) {
+      console.log(`[generateSmartForm] Using solutionPath from config/auto-detect: ${resolvedSolutionPath}`);
+    }
+  }
+
+  // Resolve actual model name — always prefer extracting from .rnrproj over using modelName arg
+  let resolvedModel = modelName;
+  if (resolvedProjectPath) {
+    const extracted = extractModelFromProject(resolvedProjectPath);
+    if (extracted) {
+      resolvedModel = extracted;
+      console.log(`[generateSmartForm] Extracted model from .rnrproj: ${resolvedModel}`);
+    }
+  } else if (resolvedSolutionPath) {
+    const project = findProjectInSolution(resolvedSolutionPath);
+    if (project) {
+      const extracted = extractModelFromProject(project);
+      if (extracted) {
+        resolvedModel = extracted;
+        console.log(`[generateSmartForm] Extracted model from solution .rnrproj: ${resolvedModel}`);
+      }
+    }
+  }
+
+  if (!resolvedModel) {
+    throw new Error(
+      'Could not resolve model name. Provide modelName, projectPath, or solutionPath, ' +
+      'or configure projectPath/solutionPath in .mcp.json.'
+    );
+  }
+
+  console.log(`[generateSmartForm] Using model: ${resolvedModel}`);
+
+  // Apply extension prefix to form name
+  const objectPrefix = resolveObjectPrefix(resolvedModel);
+  const finalName = applyObjectPrefix(name, objectPrefix);
+  if (finalName !== name) {
+    console.log(`[generateSmartForm] Applied prefix "${objectPrefix}": ${name} → ${finalName}`);
+  }
+
   // Generate XML
   const xml = builder.buildFormXml({
-    name,
-    label: label || name,
+    name: finalName,
+    label: label || finalName,
     caption,
     dataSources,
     controls,
@@ -221,38 +274,42 @@ export async function handleGenerateSmartForm(
 
   console.log(`[generateSmartForm] Generated XML (${xml.length} bytes)`);
 
-  // Determine package path
-  const packagePath = getConfigManager().getPackagePath() || 'K:\\AosService\\PackagesLocalDirectory';
-
   // Write to file
-  let targetPath: string;
+  const targetPath = path.join(packagePath, resolvedModel, resolvedModel, 'AxForm', `${finalName}.xml`);
 
-  if (modelName) {
-    targetPath = path.join(packagePath, modelName, modelName, 'AxForm', `${name}.xml`);
-  } else if (projectPath) {
-    const model = extractModelFromProject(projectPath);
-    targetPath = path.join(packagePath, model, model, 'AxForm', `${name}.xml`);
-  } else if (solutionPath) {
-    const project = findProjectInSolution(solutionPath);
-    if (project) {
-      const model = extractModelFromProject(project);
-      targetPath = path.join(packagePath, model, model, 'AxForm', `${name}.xml`);
-    } else {
-      throw new Error('No .rnrproj file found in solution');
-    }
-  } else {
-    throw new Error('Must provide modelName, projectPath, or solutionPath');
+  // Normalize path to Windows format (backslashes) for consistency
+  const normalizedPath = targetPath.replace(/\//g, '\\');
+
+  // Reject Windows paths when running on non-Windows (e.g. Linux Azure proxy)
+  if (process.platform !== 'win32' && /^[A-Z]:\\/.test(normalizedPath)) {
+    throw new Error(
+      `❌ Cannot create D365FO file on non-Windows system!\n\n` +
+      `Attempting to create: ${normalizedPath}\n` +
+      `Running on: ${process.platform}\n\n` +
+      `The generate_smart_form tool requires direct access to the D365FO Windows VM.\n` +
+      `Run the MCP server locally on the D365FO Windows VM.`
+    );
+  }
+
+  // Verify drive/root exists before attempting recursive mkdir
+  const driveOrRoot = path.parse(normalizedPath).root;
+  if (driveOrRoot && !fs.existsSync(driveOrRoot)) {
+    throw new Error(
+      `❌ Drive or root path does not exist: ${driveOrRoot}\n\n` +
+      `Attempting to create: ${normalizedPath}\n\n` +
+      `Update "packagePath" in .mcp.json to match your actual D365FO installation.`
+    );
   }
 
   // Create directory if needed
-  const dir = path.dirname(targetPath);
+  const dir = path.dirname(normalizedPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
   // Write file
-  fs.writeFileSync(targetPath, xml, 'utf-8');
-  console.log(`[generateSmartForm] Created file: ${targetPath}`);
+  fs.writeFileSync(normalizedPath, xml, 'utf-8');
+  console.log(`[generateSmartForm] Created file: ${normalizedPath}`);
 
   return {
     content: [
@@ -260,8 +317,8 @@ export async function handleGenerateSmartForm(
         type: 'text',
         text: JSON.stringify({
           success: true,
-          formName: name,
-          filePath: targetPath,
+          formName: finalName,
+          filePath: normalizedPath,
           dataSourcesGenerated: dataSources.length,
           controlsGenerated: controls.length,
           strategy: copyFrom ? 'copy' : dataSource ? 'datasource' : formPattern ? 'pattern' : 'default',
