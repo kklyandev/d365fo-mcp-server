@@ -35,7 +35,7 @@ graph TB
     subgraph "MCP Server Components"
         HTTP[HTTP Transport Layer - Express + Rate Limiting]
         PROTO[MCP Protocol Handler - JSON-RPC 2.0]
-        TOOLS[Tool Handlers - 24 MCP Tools]
+        TOOLS[Tool Handlers - 29 MCP Tools]
         DB[(Symbols Database - FTS5, 584K+ symbols)]
         LDB[(Labels Database - FTS5, 19M+ labels, 70 languages)]
         CACHE[Redis Cache - Optional]
@@ -82,7 +82,7 @@ sequenceDiagram
     alt Initialize
         MCP-->>IDE: Server Capabilities
     else Tools List
-        MCP-->>IDE: 20 Tool Definitions
+        MCP-->>IDE: 29 Tool Definitions
     else Tool Call
         MCP->>Handler: Route to Handler
         Handler->>Tool: Execute Tool
@@ -138,6 +138,14 @@ graph LR
         SUGGEST[suggestImplementation.ts - suggest_method_implementation]
         COMPLETE[analyzeCompleteness.ts - analyze_class_completeness]
         API[apiUsagePatterns.ts - get_api_usage_patterns]
+        SLABELS[searchLabels.ts - search_labels]
+        GLABEL[getLabelInfo.ts - get_label_info]
+        CLABEL[createLabel.ts - create_label]
+        TPAT[getTablePatterns.ts - get_table_patterns]
+        FPAT[getFormPatterns.ts - get_form_patterns]
+        SMTABLE[generateSmartTable.ts - generate_smart_table]
+        SMFORM[generateSmartForm.ts - generate_smart_form]
+        SEDT[suggestEdt.ts - suggest_edt]
     end
 
     subgraph "Metadata Layer"
@@ -179,6 +187,14 @@ graph LR
     HANDLER --> SUGGEST
     HANDLER --> COMPLETE
     HANDLER --> API
+    HANDLER --> SLABELS
+    HANDLER --> GLABEL
+    HANDLER --> CLABEL
+    HANDLER --> TPAT
+    HANDLER --> FPAT
+    HANDLER --> SMTABLE
+    HANDLER --> SMFORM
+    HANDLER --> SEDT
 
     SEARCH --> SYMBOL
     BATCH --> SYMBOL
@@ -203,6 +219,13 @@ graph LR
     SUGGEST --> SYMBOL
     COMPLETE --> SYMBOL
     API --> SYMBOL
+    SLABELS --> SYMBOL
+    GLABEL --> SYMBOL
+    TPAT --> SYMBOL
+    FPAT --> SYMBOL
+    SMTABLE --> SYMBOL
+    SMFORM --> SYMBOL
+    SEDT --> SYMBOL
 
     SEARCH -.-> CACHE_SVC
     BATCH -.-> CACHE_SVC
@@ -498,7 +521,7 @@ graph LR
     subgraph "MCP Protocol Methods"
         INIT[initialize - Server Capabilities]
         NOTIFY[notifications/initialized - Handshake Complete]
-        TOOLS_LIST[tools/list - 24 Available Tools]
+        TOOLS_LIST[tools/list - 29 Available Tools]
         TOOLS_CALL[tools/call - Execute Tool]
         RES_LIST[resources/list - Empty]
         RES_TMPL[resources/templates/list - Empty]
@@ -507,9 +530,8 @@ graph LR
     end
 
     INIT -.-> CAPS[Capabilities: tools, resources, prompts]
-    TOOLS_LIST -.-> TOOL_DEFS[Tool Definitions: search, batch_search, get_class_info, get_table_info, get_form_info, get_query_info, get_view_info, get_enum_info, get_edt_info, code_completion, get_method_signature, find_references, generate_code, generate_d365fo_xml, create_d365fo_file, modify_d365fo_file, search_extensions, analyze_code_patterns, suggest_method_implementation, analyze_class_completeness, get_api_usage_patterns, search_labels, get_label_info, create_label]
+    TOOLS_LIST -.-> TOOL_DEFS["29 tools: search, batch_search, search_extensions, get_class_info, get_table_info, code_completion, get_method_signature, find_references, get_form_info, get_query_info, get_view_info, get_enum_info, get_edt_info, generate_code, analyze_code_patterns, suggest_method_implementation, analyze_class_completeness, get_api_usage_patterns, generate_d365fo_xml, create_d365fo_file, modify_d365fo_file, search_labels, get_label_info, create_label, get_table_patterns, get_form_patterns, generate_smart_table, generate_smart_form, suggest_edt"]
     TOOLS_CALL -.-> EXEC[Tool Execution: search DB, parse XML, return results]
-    
     style INIT fill:#4CAF50,color:#fff
     style TOOLS_CALL fill:#2196F3,color:#fff
 ```
@@ -932,9 +954,9 @@ graph LR
 ```mermaid
 graph TB
     subgraph "Test Pyramid"
-        UNIT[Unit Tests - 86 tests - All 22 MCP tools]
+        UNIT[Unit Tests - Tools, Utils, Metadata Parser]
         INT[Integration Tests - MCP Protocol, HTTP Transport]
-        E2E[End-to-End Tests - symbolIndex, Database]
+        E2E[End-to-End Tests - Full MCP Protocol, User Scenarios]
     end
 
     subgraph "Test Infrastructure"
