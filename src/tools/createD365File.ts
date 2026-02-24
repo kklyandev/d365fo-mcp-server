@@ -41,16 +41,16 @@ const CreateD365FileArgsSchema = z.object({
   addToProject: z
     .boolean()
     .optional()
-    .default(false)
-    .describe('Whether to automatically add file to Visual Studio project'),
+    .default(true)
+    .describe('Whether to automatically add file to Visual Studio project (default: true — always pass true unless explicitly told not to)'),
   projectPath: z
     .string()
     .optional()
-    .describe('Path to .rnrproj file (if not specified, will try to find in solutionPath)'),
+    .describe('Path to .rnrproj file. Required for addToProject to work. If not specified, auto-detected from .mcp.json or workspace context.'),
   solutionPath: z
     .string()
     .optional()
-    .describe('Path to active VS solution directory (e.g., from GitHub Copilot context)'),
+    .describe('Path to active VS solution directory. Used to find .rnrproj when projectPath is not given.'),
 });
 
 /**
@@ -60,59 +60,61 @@ const CreateD365FileArgsSchema = z.object({
 class ProjectFileFinder {
   /**
    * Find .rnrproj file in solution directory
-   * Recursively searches for .rnrproj files matching the model name
+   * Recursively searches for .rnrproj files matching the model name (up to 3 levels deep)
    */
   static async findProjectInSolution(
     solutionPath: string,
     modelName: string
   ): Promise<string | null> {
+    return ProjectFileFinder.findRecursive(solutionPath, modelName, 0, 3);
+  }
+
+  private static async findRecursive(
+    dir: string,
+    modelName: string,
+    currentDepth: number,
+    maxDepth: number
+  ): Promise<string | null> {
+    if (currentDepth > maxDepth) return null;
+
     try {
-      // Check if solution directory exists
-      try {
-        await fs.access(solutionPath);
-      } catch {
-        return null;
-      }
-
-      // Read all files in solution directory (non-recursive first)
-      const files = await fs.readdir(solutionPath);
-      
-      // Find .rnrproj files that might match the model
-      const projectFiles = files.filter(file => 
-        file.endsWith('.rnrproj') && 
-        (file.includes(modelName) || file === `${modelName}.rnrproj`)
-      );
-      
-      if (projectFiles.length > 0) {
-        return path.join(solutionPath, projectFiles[0]);
-      }
-
-      // If not found, try subdirectories (one level deep)
-      for (const file of files) {
-        const fullPath = path.join(solutionPath, file);
-        try {
-          const stat = await fs.stat(fullPath);
-          if (stat.isDirectory()) {
-            const subFiles = await fs.readdir(fullPath);
-            const subProjectFiles = subFiles.filter(subFile => 
-              subFile.endsWith('.rnrproj') && 
-              (subFile.includes(modelName) || subFile === `${modelName}.rnrproj`)
-            );
-            
-            if (subProjectFiles.length > 0) {
-              return path.join(fullPath, subProjectFiles[0]);
-            }
-          }
-        } catch {
-          // Skip inaccessible directories
-          continue;
-        }
-      }
-
-      return null;
+      await fs.access(dir);
     } catch {
       return null;
     }
+
+    let files: string[];
+    try {
+      files = await fs.readdir(dir);
+    } catch {
+      return null;
+    }
+
+    // Check .rnrproj files at this level first
+    const projectFiles = files.filter(file =>
+      file.endsWith('.rnrproj') &&
+      (file.includes(modelName) || file === `${modelName}.rnrproj`)
+    );
+
+    if (projectFiles.length > 0) {
+      return path.join(dir, projectFiles[0]);
+    }
+
+    // Recurse into subdirectories
+    for (const file of files) {
+      const fullPath = path.join(dir, file);
+      try {
+        const stat = await fs.stat(fullPath);
+        if (stat.isDirectory()) {
+          const found = await ProjectFileFinder.findRecursive(fullPath, modelName, currentDepth + 1, maxDepth);
+          if (found) return found;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
   }
 }
 
@@ -999,9 +1001,38 @@ export async function handleCreateD365File(
           projectPath = detectedPath;
         }
       } else if (!projectPath) {
-        projectMessage = `\n⚠️ Cannot add to project: either projectPath or solutionPath must be specified.\n` +
-          `Add projectPath or solutionPath to .mcp.json config, or pass as tool arguments.\n` +
-          `Tip: GitHub Copilot can provide solutionPath from active VS solution context.\n`;
+        // Last resort: scan well-known VS project directories on Windows
+        const knownDevPaths = [
+          'K:\\VSProjects',
+          'C:\\VSProjects',
+          'D:\\VSProjects',
+          process.env.USERPROFILE ? `${process.env.USERPROFILE}\\VSProjects` : null,
+          process.env.USERPROFILE ? `${process.env.USERPROFILE}\\source\\VSProjects` : null,
+        ].filter(Boolean) as string[];
+
+        console.error(
+          `[create_d365fo_file] No projectPath or solutionPath available — scanning well-known VS project directories`
+        );
+
+        for (const devPath of knownDevPaths) {
+          try {
+            await fs.access(devPath);
+            const found = await ProjectFileFinder.findProjectInSolution(devPath, actualModelName);
+            if (found) {
+              console.error(`[create_d365fo_file] Found .rnrproj in well-known path: ${found}`);
+              projectPath = found;
+              break;
+            }
+          } catch {
+            // Path doesn't exist — skip
+          }
+        }
+
+        if (!projectPath) {
+          projectMessage = `\n⚠️ Cannot add to project: projectPath could not be resolved.\n` +
+            `Add projectPath to .mcp.json config, or pass it as a tool argument.\n` +
+            `Example .mcp.json: { "servers": { "context": { "projectPath": "K:\\\\VSProjects\\\\MySolution\\\\MyModel\\\\MyModel.rnrproj" } } }\n`;
+        }
       }
 
       if (projectPath) {

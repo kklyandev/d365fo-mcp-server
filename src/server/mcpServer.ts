@@ -517,12 +517,16 @@ EXAMPLES:
               },
               addToProject: {
                 type: 'boolean',
-                description: 'Whether to automatically add file to Visual Studio project (default: false)',
-                default: false
+                description: '⚠️ ALWAYS set to true — adds file to Visual Studio project (.rnrproj). Default: true. Only set false when explicitly asked.',
+                default: true
               },
               projectPath: {
                 type: 'string',
-                description: 'Path to .rnrproj file (required if addToProject is true)'
+                description: 'Path to .rnrproj file. Strongly recommended — required for addToProject to work. Auto-detected from .mcp.json context or workspace if omitted.'
+              },
+              solutionPath: {
+                type: 'string',
+                description: 'Path to VS solution directory. Used to find .rnrproj when projectPath is not specified.'
               },
             },
             required: ['objectType', 'objectName', 'modelName'],
