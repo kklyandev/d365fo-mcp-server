@@ -55,7 +55,14 @@ class ConfigManager {
     }
 
     this.autoDetectionAttempted = true;
-    
+
+    // .rnrproj files only exist on Windows D365FO VMs — skip scan on Azure/Linux
+    if (process.platform !== 'win32') {
+      console.error('[ConfigManager] Non-Windows platform — skipping .rnrproj auto-detection');
+      this.autoDetectionCache.set(workspacePath || 'default', null);
+      return;
+    }
+
     // Check cache first (PERFORMANCE FIX)
     const cacheKey = workspacePath || 'default';
     if (this.autoDetectionCache.has(cacheKey)) {
