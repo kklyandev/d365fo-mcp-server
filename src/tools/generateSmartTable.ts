@@ -21,6 +21,12 @@ interface GenerateSmartTableArgs {
   modelName?: string;
   projectPath?: string;
   solutionPath?: string;
+  /**
+   * Standard method names to generate and embed in the XML.
+   * Supported: "find", "exist"
+   * Example: ["find", "exist"]
+   */
+  methods?: string[];
 }
 
 export const generateSmartTableTool: Tool = {
@@ -65,6 +71,15 @@ export const generateSmartTableTool: Tool = {
         type: 'string',
         description: 'Path to solution directory (alternative to projectPath)',
       },
+      methods: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Standard method names to generate and embed directly in the table XML. ' +
+          'Supported values: "find", "exist". ' +
+          'ALWAYS use this instead of calling modify_d365fo_file after table generation — ' +
+          'on Azure/Linux modify_d365fo_file cannot write files.',
+      },
     },
     required: ['name'],
   },
@@ -84,6 +99,7 @@ export async function handleGenerateSmartTable(
     modelName,
     projectPath,
     solutionPath,
+    methods: requestedMethods,
   } = args;
 
   console.log(`[generateSmartTable] Generating table: ${name}, tableGroup=${tableGroup}, copyFrom=${copyFrom}`);
@@ -284,11 +300,15 @@ export async function handleGenerateSmartTable(
       // Azure/Linux: model resolution requires .rnrproj which is only on the Windows VM.
       // Use modelName arg as-is for prefix resolution (caller may pass e.g. "AslCore").
       // If not provided either, generate XML without prefix and return it as text.
-      resolvedModel = modelName || undefined;
+      // Fallback priority: modelName arg → D365FO_MODEL_NAME env var → no prefix
+      resolvedModel = modelName || process.env.D365FO_MODEL_NAME || undefined;
+      if (resolvedModel) {
+        console.log(`[generateSmartTable] Using model from ${modelName ? 'modelName arg' : 'D365FO_MODEL_NAME env var'}: ${resolvedModel}`);
+      }
     } else {
       throw new Error(
         'Could not resolve model name. Provide modelName, projectPath, or solutionPath, ' +
-        'or configure projectPath/solutionPath in .mcp.json.'
+        'or configure projectPath/solutionPath in .mcp.json or set D365FO_MODEL_NAME env var.'
       );
     }
   }
@@ -302,6 +322,66 @@ export async function handleGenerateSmartTable(
     console.log(`[generateSmartTable] Applied prefix "${objectPrefix}": ${name} → ${finalName}`);
   }
 
+  // Generate standard methods (find, exist) based on primary key fields
+  const generatedMethods: Array<{ name: string; source: string }> = [];
+  if (requestedMethods && requestedMethods.length > 0) {
+    // Determine primary key fields from unique non-RecId index, or first non-RecId fields
+    const uniqueIdx = indexes.find(idx => idx.unique && !idx.fields.every(f => f === 'RecId'));
+    const pkFields = uniqueIdx
+      ? uniqueIdx.fields.filter(f => f !== 'RecId')
+      : fields.filter(f => f.name !== 'RecId').slice(0, 1).map(f => f.name);
+
+    const buildParams = (withType: boolean) =>
+      pkFields.map(f => {
+        const edt = fields.find(fld => fld.name === f)?.edt || 'str';
+        return withType ? `${edt} _${f.charAt(0).toLowerCase() + f.slice(1)}` : `_${f.charAt(0).toLowerCase() + f.slice(1)}`;
+      }).join(', ');
+
+    const whereClause = pkFields
+      .map(f => `${finalName}.${f} == _${f.charAt(0).toLowerCase() + f.slice(1)}`)
+      .join('\n            && ');
+
+    for (const methodName of requestedMethods) {
+      if (methodName === 'find') {
+        const params = buildParams(true);
+        generatedMethods.push({
+          name: 'find',
+          source: [
+            `public static ${finalName} find(${params}, boolean _forupdate = false)`,
+            `{`,
+            `    ${finalName}  local;`,
+            ``,
+            `    select firstOnly local`,
+            `        where ${whereClause};`,
+            ``,
+            `    if (_forupdate)`,
+            `    {`,
+            `        local.selectForUpdate(_forupdate);`,
+            `    }`,
+            ``,
+            `    return local;`,
+            `}`,
+          ].join('\n'),
+        });
+      } else if (methodName === 'exist') {
+        const params = buildParams(true);
+        generatedMethods.push({
+          name: 'exist',
+          source: [
+            `public static boolean exist(${params})`,
+            `{`,
+            `    return (select firstOnly RecId from ${finalName}`,
+            `                where ${whereClause}).RecId != 0;`,
+            `}`,
+          ].join('\n'),
+        });
+      }
+    }
+    if (generatedMethods.length > 0) {
+      console.log(`[generateSmartTable] Generated methods: ${generatedMethods.map(m => m.name).join(', ')}`);
+    }
+  }
+
   // Generate XML
   const xml = builder.buildTableXml({
     name: finalName,
@@ -310,6 +390,7 @@ export async function handleGenerateSmartTable(
     fields,
     indexes,
     relations,
+    methods: generatedMethods.length > 0 ? generatedMethods : undefined,
   });
 
   console.log(`[generateSmartTable] Generated XML (${xml.length} bytes)`);

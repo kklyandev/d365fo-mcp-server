@@ -110,7 +110,7 @@ The following built-in tools **MUST NOT** be used on D365FO metadata files (.xml
 | `get_table_patterns(tableGroup?, similarTo?)` | Analyze common patterns in tables: field types, indexes, relations. Query by table group (e.g., "Transaction") or find tables similar to an existing one | `get_table_patterns(tableGroup="Transaction")` or `get_table_patterns(similarTo="CustTable")` |
 | `get_form_patterns(formPattern?, tableName?)` | Analyze common patterns in forms: datasource configurations, control hierarchies, form patterns. Find forms using specific table or matching pattern | `get_form_patterns(tableName="SalesTable")` or `get_form_patterns(formPattern="SimpleList")` |
 | `suggest_edt(fieldName, context?)` | Suggest Extended Data Types (EDT) for a field name using fuzzy matching and pattern analysis. Returns confidence-ranked suggestions with EDT properties | `suggest_edt(fieldName="CustomerAccount", context="sales order")` |
-| `generate_smart_table(name, tableGroup?, copyFrom?, fieldsHint?, generateCommonFields?)` | **AI-driven table generation.** Creates AxTable XML with intelligent field/index/relation suggestions. Can copy structure, analyze patterns, or use field hints | `generate_smart_table(name="MyOrderTable", tableGroup="Transaction", generateCommonFields=true)` |
+| `generate_smart_table(name, tableGroup?, copyFrom?, fieldsHint?, generateCommonFields?, methods?)` | **AI-driven table generation.** Creates AxTable XML with intelligent field/index/relation suggestions. `methods` param embeds `find`/`exist` directly in XML — **always use this instead of calling `modify_d365fo_file` afterwards.** | `generate_smart_table(name="MyOrderTable", tableGroup="Transaction", methods=["find","exist"])` |
 | `generate_smart_form(name, dataSource?, formPattern?, copyFrom?, generateControls?)` | **AI-driven form generation.** Creates AxForm XML with intelligent datasource/control suggestions. Can copy structure, analyze patterns, or auto-generate grids | `generate_smart_form(name="MyOrderForm", dataSource="MyOrderTable", generateControls=true)` |
 
 ### 📝 File & Metadata Operations (3 tools)
@@ -427,6 +427,7 @@ K:\AosService\PackagesLocalDirectory\{Model}\{Model}\AxView\{Name}.xml
 - **Call `suggest_edt()` when creating new table fields** — reuse existing EDTs instead of creating primitives
 - **Use `get_table_patterns()` or `get_form_patterns()` before generating objects** — learn from existing patterns
 - **Use `generate_smart_table()` / `generate_smart_form()` for new objects** — AI-driven generation with pattern analysis
+- **Always pass `methods=["find","exist"]` to `generate_smart_table()`** when the user requests these methods — embed them in the XML directly, never call `modify_d365fo_file` afterwards
 
 ### ❌ DON'T:
 - Never use built-in file tools (`get_file`, `edit_file`, etc.) on .xml or .xpp files
@@ -442,6 +443,8 @@ K:\AosService\PackagesLocalDirectory\{Model}\{Model}\AxView\{Name}.xml
 - Never create a label without first calling `search_labels()` — duplicate labels waste translation effort
 - **Never manually specify EDT types like "String", "Int"** — call `suggest_edt()` to find correct Extended Data Type
 - **Never create tables/forms without analyzing patterns first** — use `get_table_patterns()`/`get_form_patterns()` to learn from existing code
+- **🚨 CRITICAL: NEVER include the model prefix in the `name` parameter of `generate_smart_table` or `generate_smart_form`** — always pass the base name without prefix (e.g., `name="AccountTable"`, NOT `name="AslAccountTable"`). The tool applies the prefix automatically from `modelName` parameter, `D365FO_MODEL_NAME` env var, or `.rnrproj` detection. Pre-applied prefix causes double-prefixing (e.g., `AslAslAccountTable`).
+- **Never call `modify_d365fo_file` after `generate_smart_table` to add methods** — use the `methods` parameter instead; `modify_d365fo_file` fails on Azure/Linux (read-only mode)
 
 ## Why MCP Tools Are Required
 

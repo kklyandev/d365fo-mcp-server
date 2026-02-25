@@ -251,11 +251,15 @@ export async function handleGenerateSmartForm(
 
   if (!resolvedModel) {
     if (isNonWindows) {
-      resolvedModel = modelName || undefined;
+      // Fallback priority: modelName arg → D365FO_MODEL_NAME env var → no prefix
+      resolvedModel = modelName || process.env.D365FO_MODEL_NAME || undefined;
+      if (resolvedModel) {
+        console.log(`[generateSmartForm] Using model from ${modelName ? 'modelName arg' : 'D365FO_MODEL_NAME env var'}: ${resolvedModel}`);
+      }
     } else {
       throw new Error(
         'Could not resolve model name. Provide modelName, projectPath, or solutionPath, ' +
-        'or configure projectPath/solutionPath in .mcp.json.'
+        'or configure projectPath/solutionPath in .mcp.json or set D365FO_MODEL_NAME env var.'
       );
     }
   }

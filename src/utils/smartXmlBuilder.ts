@@ -51,8 +51,9 @@ export class SmartXmlBuilder {
     fields: TableFieldSpec[];
     indexes?: TableIndexSpec[];
     relations?: TableRelationSpec[];
+    methods?: Array<{ name: string; source: string }>;
   }): string {
-    const { name, label, tableGroup, fields, indexes, relations } = spec;
+    const { name, label, tableGroup, fields, indexes, relations, methods } = spec;
 
     let xml = `<?xml version="1.0" encoding="utf-8"?>\n`;
     xml += `<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">\n`;
@@ -97,6 +98,18 @@ export class SmartXmlBuilder {
       xml += `\t</Relations>\n`;
     } else {
       xml += `\t<Relations />\n`;
+    }
+
+    // Methods (X++ source code embedded in XML)
+    if (methods && methods.length > 0) {
+      xml += `\t<Methods>\n`;
+      for (const method of methods) {
+        xml += `\t\t<Method>\n`;
+        xml += `\t\t\t<Name>${method.name}</Name>\n`;
+        xml += `\t\t\t<Source><!\[CDATA[\n${method.source}\n\t\t\t]]></Source>\n`;
+        xml += `\t\t</Method>\n`;
+      }
+      xml += `\t</Methods>\n`;
     }
 
     xml += `</AxTable>\n`;
