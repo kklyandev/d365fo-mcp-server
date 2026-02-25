@@ -257,33 +257,30 @@ export async function handleGenerateSmartForm(
   const isNonWindows = process.platform !== 'win32';
 
   if (!resolvedModel) {
-    if (isNonWindows) {
-      // Both Windows and Azure/Linux: .rnrproj extraction failed (or wasn't attempted).
-      // Fall back in this order:
-      //   1. .mcp.json context (modelName field or last segment of workspacePath)
-      //   2. Auto-detected model name (async) — e.g. from PackagesLocalDirectory regex / well-known paths
-      //   3. D365FO_MODEL_NAME env var
-      //   4. modelName arg — LAST because the AI often passes a placeholder like "any" or "whatever"
-      const configModel = configManager.getModelName();
-      const autoModel = configModel ? null : (await configManager.getAutoDetectedModelName());
-      resolvedModel = configModel || autoModel || process.env.D365FO_MODEL_NAME || modelName || undefined;
-      if (resolvedModel) {
-        const ctx = configManager.getContext();
-        const source = configModel === resolvedModel
-          ? (ctx?.modelName ? 'modelName (mcp.json)' : 'workspacePath (mcp.json)')
-          : autoModel === resolvedModel ? 'auto-detected (well-known paths)'
-          : process.env.D365FO_MODEL_NAME === resolvedModel ? 'D365FO_MODEL_NAME env var'
-          : 'modelName arg (fallback)';
-        console.log(`[generateSmartForm] Using model from ${source}: ${resolvedModel}`);
-      } else if (!isNonWindows) {
-        // Windows VM: all sources exhausted — tell the user exactly what to configure.
-        throw new Error(
-          'Could not resolve model name. Provide modelName, projectPath, or solutionPath, ' +
-          'or configure projectPath/solutionPath in .mcp.json or set D365FO_MODEL_NAME env var.'
-        );
-      }
-      // Non-Windows: if still null we continue without a prefix.
+    // .rnrproj extraction failed (or wasn't attempted) — fall back in this order on ALL platforms:
+    //   1. .mcp.json context (modelName field or last segment of workspacePath)
+    //   2. Auto-detected model name (async) — e.g. from PackagesLocalDirectory regex / well-known paths
+    //   3. D365FO_MODEL_NAME env var
+    //   4. modelName arg — LAST because the AI often passes a placeholder like "any" or "whatever"
+    const configModel = configManager.getModelName();
+    const autoModel = configModel ? null : (await configManager.getAutoDetectedModelName());
+    resolvedModel = configModel || autoModel || process.env.D365FO_MODEL_NAME || modelName || undefined;
+    if (resolvedModel) {
+      const ctx = configManager.getContext();
+      const source = configModel === resolvedModel
+        ? (ctx?.modelName ? 'modelName (mcp.json)' : 'workspacePath (mcp.json)')
+        : autoModel === resolvedModel ? 'auto-detected (well-known paths)'
+        : process.env.D365FO_MODEL_NAME === resolvedModel ? 'D365FO_MODEL_NAME env var'
+        : 'modelName arg (fallback)';
+      console.log(`[generateSmartForm] Using model from ${source}: ${resolvedModel}`);
+    } else if (!isNonWindows) {
+      // Windows VM: all sources exhausted — tell the user exactly what to configure.
+      throw new Error(
+        'Could not resolve model name. Provide modelName, projectPath, or solutionPath, ' +
+        'or configure projectPath/solutionPath in .mcp.json or set D365FO_MODEL_NAME env var.'
+      );
     }
+    // Non-Windows: if still null, continue without a prefix.
   }
 
   console.log(`[generateSmartForm] Using model: ${resolvedModel ?? '(none — no prefix)'}`);
