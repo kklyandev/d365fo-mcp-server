@@ -17,6 +17,7 @@ interface GenerateSmartTableArgs {
   tableGroup?: string;
   copyFrom?: string;
   fieldsHint?: string;
+  primaryKeyFields?: string[];
   generateCommonFields?: boolean;
   modelName?: string;
   projectPath?: string;
@@ -67,6 +68,16 @@ export const generateSmartTableTool: Tool = {
           '"customer" or "customer account" → "CustAccount". ' +
           'Example call: fieldsHint="AccountNum, Name, Description, ValidFrom, ValidTo"',
       },
+      primaryKeyFields: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'REQUIRED when user specifies a composite primary key (multiple fields). ' +
+          'List ALL fields that form the primary key index. ' +
+          'Without this, only the first mandatory field is used as PK — composite PKs will be WRONG. ' +
+          'Example: user says "primary key is Account number and Name" → primaryKeyFields=["AccountNum", "Name"]. ' +
+          'Single-field PK can be omitted — the tool auto-detects it from fieldsHint mandatory fields.',
+      },
       generateCommonFields: {
         type: 'boolean',
         description: 'If true, analyze table group patterns and generate common fields automatically',
@@ -102,12 +113,13 @@ export async function handleGenerateSmartTable(
   args: GenerateSmartTableArgs,
   symbolIndex: XppSymbolIndex
 ): Promise<any> {
-  const { 
-    name, 
-    label, 
-    tableGroup = 'Main', 
-    copyFrom, 
-    fieldsHint, 
+  const {
+    name,
+    label,
+    tableGroup = 'Main',
+    copyFrom,
+    fieldsHint,
+    primaryKeyFields,
     generateCommonFields,
     modelName,
     projectPath,
@@ -285,15 +297,29 @@ export async function handleGenerateSmartTable(
     }
   }
 
+  // If primaryKeyFields is specified, mark those fields as mandatory (overrides auto-detection)
+  if (primaryKeyFields && primaryKeyFields.length > 0) {
+    for (const pkFieldName of primaryKeyFields) {
+      const f = fields.find(f => f.name === pkFieldName);
+      if (f) { f.mandatory = true; }
+    }
+  }
+
   // Ensure primary key index exists
   const hasAnyUniqueIndex = indexes.some(idx => idx.unique || idx.clustered);
   if (!hasAnyUniqueIndex && fields.length > 0) {
-    // Prefer first mandatory non-RecId field, fall back to RecId
-    const pkField = fields.find(f => f.mandatory && f.name !== 'RecId')?.name
-      ?? fields.find(f => f.name === 'RecId')?.name
-      ?? fields[0].name;
-    indexes.unshift(builder.buildPrimaryKeyIndex(name, [pkField]));
-    console.log(`[generateSmartTable] Added primary key index on ${pkField}`);
+    if (primaryKeyFields && primaryKeyFields.length > 0) {
+      // Use explicitly provided composite/single PK fields
+      indexes.unshift(builder.buildPrimaryKeyIndex(name, primaryKeyFields));
+      console.log(`[generateSmartTable] Added primary key index on [${primaryKeyFields.join(', ')}] (from primaryKeyFields)`);
+    } else {
+      // Auto-detect: prefer first mandatory non-RecId field, fall back to RecId
+      const pkField = fields.find(f => f.mandatory && f.name !== 'RecId')?.name
+        ?? fields.find(f => f.name === 'RecId')?.name
+        ?? fields[0].name;
+      indexes.unshift(builder.buildPrimaryKeyIndex(name, [pkField]));
+      console.log(`[generateSmartTable] Added primary key index on ${pkField}`);
+    }
   }
 
   // Determine package path
@@ -396,13 +422,13 @@ export async function handleGenerateSmartTable(
             `{`,
             `    ${finalName}  local;`,
             ``,
-            `    select firstOnly local`,
-            `        where ${whereClause};`,
-            ``,
             `    if (_forupdate)`,
             `    {`,
             `        local.selectForUpdate(_forupdate);`,
             `    }`,
+            ``,
+            `    select firstOnly local`,
+            `        where ${whereClause};`,
             ``,
             `    return local;`,
             `}`,
@@ -439,6 +465,7 @@ export async function handleGenerateSmartTable(
         `generate_smart_table(`,
         `  name="${name}",              ← base name WITHOUT model prefix`,
         `  fieldsHint="Field1, Field2, Field3",  ← extract ALL fields from the user's description`,
+        `  primaryKeyFields=["Field1", "Field2"],  ← ALL fields in the PK (omit for single-field PK)`,
         `  methods=["find", "exist"],   ← include if user requested these`,
         `)`,
         `\`\`\``,

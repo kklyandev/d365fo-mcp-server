@@ -83,11 +83,21 @@ The following built-in tools **MUST NOT** be used on D365FO metadata files (.xml
      generate_smart_table(
        name="MyTable",
        fieldsHint="AccountNum, Name, Description, ValidFrom, ValidTo",
+       primaryKeyFields=["AccountNum", "Name"],
        methods=["find", "exist"]
      )
      ```
    - **NEVER call `modify_d365fo_file` to add missing fields** — it CANNOT write files on Azure/Linux
    - If the response says **⚠️ INCOMPLETE TABLE**, call `generate_smart_table` AGAIN with proper `fieldsHint` — do NOT proceed to `create_d365fo_file` with incomplete XML
+
+12. **ALWAYS pass `primaryKeyFields` when user specifies a composite primary key**
+   - A composite PK = the user says "primary key is X and Y" (two or more fields)
+   - Without `primaryKeyFields` the tool auto-detects PK from the FIRST mandatory field only → composite PK will be WRONG
+   - Single-field PK: omit `primaryKeyFields` — the tool auto-detects it
+   - Composite PK: `primaryKeyFields=["AccountNum", "Name"]` → index contains BOTH fields
+   - Example:
+     - User: "primary key Account number" → `primaryKeyFields` can be omitted (auto-detected)
+     - User: "primary key Account number and Name" → `primaryKeyFields=["AccountNum", "Name"]`
 
 ## Available MCP Tools
 
@@ -139,7 +149,7 @@ The following built-in tools **MUST NOT** be used on D365FO metadata files (.xml
 | `get_table_patterns(tableGroup?, similarTo?)` | Analyze common patterns in tables: field types, indexes, relations. Query by table group (e.g., "Transaction") or find tables similar to an existing one | `get_table_patterns(tableGroup="Transaction")` or `get_table_patterns(similarTo="CustTable")` |
 | `get_form_patterns(formPattern?, tableName?)` | Analyze common patterns in forms: datasource configurations, control hierarchies, form patterns. Find forms using specific table or matching pattern | `get_form_patterns(tableName="SalesTable")` or `get_form_patterns(formPattern="SimpleList")` |
 | `suggest_edt(fieldName, context?)` | Suggest Extended Data Types (EDT) for a field name using fuzzy matching and pattern analysis. Returns confidence-ranked suggestions with EDT properties | `suggest_edt(fieldName="CustomerAccount", context="sales order")` |
-| `generate_smart_table(name, tableGroup?, copyFrom?, fieldsHint?, generateCommonFields?, methods?)` | **AI-driven table generation.** Creates AxTable XML with intelligent field/index/relation suggestions. `methods` param embeds `find`/`exist` directly in XML — **always use this instead of calling `modify_d365fo_file` afterwards.** | `generate_smart_table(name="MyOrderTable", tableGroup="Transaction", methods=["find","exist"])` |
+| `generate_smart_table(name, tableGroup?, copyFrom?, fieldsHint?, primaryKeyFields?, generateCommonFields?, methods?)` | **AI-driven table generation.** Creates AxTable XML with intelligent field/index/relation suggestions. `primaryKeyFields` sets composite PK. `methods` param embeds `find`/`exist` directly in XML — **always use this instead of calling `modify_d365fo_file` afterwards.** | `generate_smart_table(name="MyOrderTable", tableGroup="Transaction", primaryKeyFields=["OrderId"], methods=["find","exist"])` |
 | `generate_smart_form(name, dataSource?, formPattern?, copyFrom?, generateControls?)` | **AI-driven form generation.** Creates AxForm XML with intelligent datasource/control suggestions. Can copy structure, analyze patterns, or auto-generate grids | `generate_smart_form(name="MyOrderForm", dataSource="MyOrderTable", generateControls=true)` |
 
 ### 📝 File & Metadata Operations (3 tools)
@@ -342,6 +352,7 @@ Step 1: generate_smart_table(
           name="MyOrderTable",
           tableGroup="Transaction",
           fieldsHint="OrderId, CustomerAccount, OrderAmount, OrderDate",
+          primaryKeyFields=["OrderId"],
           generateCommonFields=true,
           methods=["find","exist"]    ← embed methods in XML — do NOT call modify_d365fo_file afterwards
         )
@@ -479,6 +490,7 @@ K:\AosService\PackagesLocalDirectory\{Model}\{Model}\AxView\{Name}.xml
 - **Never edit .label.txt files with `edit_file` or `replace_string_in_file`** — use `create_label()` which maintains sort order and updates the index
 - **Never call `create_d365fo_file` with incomplete XML** — if `generate_smart_table` response shows ⚠️ INCOMPLETE TABLE, REGENERATE with `fieldsHint` first
 - **Never omit `fieldsHint`** when user describes fields — extract them from natural language and pass explicitly; without them the table is empty
+- **Never omit `primaryKeyFields`** when user specifies a composite PK (two or more fields) — without it only the first mandatory field is used and the PK will be wrong
 - **Never omit `methods=["find","exist"]`** when user asks for those methods — pass in `generate_smart_table`, not via `modify_d365fo_file`
 - Never create a label without first calling `search_labels()` — duplicate labels waste translation effort
 - **Never manually specify EDT types like "String", "Int"** — call `suggest_edt()` to find correct Extended Data Type
