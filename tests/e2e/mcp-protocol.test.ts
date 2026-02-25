@@ -229,8 +229,14 @@ describe('MCP Protocol E2E Tests', () => {
       it('should call get_edt_info and return core EDT properties', async (ctx) => {
         if (!hasData) ctx.skip();
 
+        // Query edt_metadata directly — get_edt_info uses this table, not symbols
+        const tables = symbolIndex.db
+          .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='edt_metadata'`)
+          .get() as { name: string } | undefined;
+        if (!tables) { ctx.skip(); return; }
+
         const edtRow = symbolIndex.db
-          .prepare(`SELECT name, model FROM symbols WHERE type = 'edt' ORDER BY model, name LIMIT 1`)
+          .prepare(`SELECT edt_name as name, model FROM edt_metadata ORDER BY model, edt_name LIMIT 1`)
           .get() as { name: string; model: string } | undefined;
 
         if (!edtRow) {
