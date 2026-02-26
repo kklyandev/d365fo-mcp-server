@@ -2,7 +2,9 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
 
-const MODEL_PREFIX = process.env.MODEL_PREFIX || 'Asl';
+// Set MODEL_PREFIX env var to filter by prefix, e.g. MODEL_PREFIX=MyModel
+// When empty, all models are listed.
+const MODEL_PREFIX = process.env.MODEL_PREFIX ?? '';
 const db = new Database('./data/xpp-metadata.db', { readonly: true });
 try {
   // Check if models matching MODEL_PREFIX are in the DB
