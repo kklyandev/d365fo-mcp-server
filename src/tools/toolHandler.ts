@@ -69,6 +69,7 @@ import { getEdtInfoTool } from './edtInfo.js';
 import { searchLabelsTool } from './searchLabels.js';
 import { getLabelInfoTool } from './getLabelInfo.js';
 import { createLabelTool } from './createLabel.js';
+import { renameLabelTool } from './renameLabel.js';
 import { handleGetTablePatterns } from './getTablePatterns.js';
 import { handleGetFormPatterns } from './getFormPatterns.js';
 import { handleGenerateSmartTable } from './generateSmartTable.js';
@@ -175,6 +176,8 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         return getLabelInfoTool(request, context);
       case 'create_label':
         return createLabelTool(request, context);
+      case 'rename_label':
+        return renameLabelTool(request, context);
       case 'get_table_patterns': {
         const r = await handleGetTablePatterns(
           request.params.arguments as any,

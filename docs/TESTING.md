@@ -176,6 +176,11 @@ The test suite covers:
   - Alternative `<ModelName>` tag format
   - Multiple PropertyGroup handling
 
+- **renameLabel.test.ts**: Tests for `rename_label` helper functions and label index operations
+  - `renameLabelInTxt`: correct rename in `.label.txt` content, BOM preservation, comment preservation, null when not found, no partial-word substitution
+  - `replaceReferences`: replacing `@LabelFileId:LabelId` references in X++ and XML content, boundary detection, no false positives on similar IDs
+  - `XppSymbolIndex.renameLabelInIndex`: SQLite UPDATE via `renameLabelInIndex()`, FTS rebuild after rename, no-op for non-existent labels
+
 ### Utilities (Unit Tests)
 - **fuzzyMatching.test.ts**: Tests for fuzzy string matching algorithms
   - Levenshtein distance calculation (edit distance)

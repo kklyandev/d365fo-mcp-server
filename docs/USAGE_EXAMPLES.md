@@ -349,6 +349,32 @@ Copilot will:
 4. Update the MCP index so the new label is immediately searchable
 5. Return the ready-to-use reference: `@MyModel:MyNewField`
 
+### Rename an existing label ID
+
+Use this when you want to rename a label ID (e.g. after a refactoring) while keeping all translations
+and automatically updating every reference in X++ source and XML metadata.
+
+```
+Rename label OldFeatureName to NewFeatureName in MyModel
+Rename label @MyModel:InvoiceTotal to @MyModel:InvoiceAmountTotal
+```
+
+Copilot will:
+1. Call `search_labels` to confirm `OldFeatureName` exists in `MyModel`
+2. Confirm `NewFeatureName` is not already taken (to avoid collisions)
+3. Rename the entry in every `.label.txt` file (all languages) in `MyModel`
+4. Replace every `@MyModel:OldFeatureName` reference in `.xpp` and `.xml` files
+5. Update the MCP index so the new ID is immediately searchable
+6. Return a summary: files modified, references replaced
+
+**Dry-run first** — safe to preview before applying:
+
+```
+Preview renaming label OldFeatureName to NewFeatureName in MyModel (dry run)
+```
+
+Copilot will report how many references would be replaced without writing any files.
+
 ### Use a label in X++ code and metadata
 
 After searching for or creating a label:

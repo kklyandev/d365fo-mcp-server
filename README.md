@@ -117,6 +117,7 @@ Copy-Item -Path ".github" -Destination "C:\Path\To\YourSolution\" -Recurse
 | `Find a label for "customer"` | Searches all AxLabelFile objects |
 | `Translations of label MyFeature in model MyModel` | All languages at once |
 | `Create a new label MyNewField in MyModel` | Writes to all .label.txt files |
+| `Rename label OldName to NewName in MyModel` | Renames ID in .label.txt, X++ source and XML metadata |
 
 ### 📝 File Operations *(local VM only)*
 - Generates correct D365FO XML for classes, tables, forms, enums

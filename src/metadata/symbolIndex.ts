@@ -2185,4 +2185,25 @@ export class XppSymbolIndex {
     const row = this.labelsDb.prepare(`SELECT COUNT(*) AS cnt FROM labels`).get() as any;
     return row?.cnt ?? 0;
   }
+
+  /**
+   * Rename a label ID in the index (used by rename_label tool).
+   * Updates all rows for the given labelId + labelFileId + model combination
+   * and rebuilds the FTS index.
+   */
+  renameLabelInIndex(
+    oldLabelId: string,
+    newLabelId: string,
+    labelFileId: string,
+    model: string,
+  ): void {
+    this.labelsDb.prepare(`
+      UPDATE labels
+      SET label_id = ?
+      WHERE label_id = ?
+        AND label_file_id = ?
+        AND model = ?
+    `).run(newLabelId, oldLabelId, labelFileId, model);
+    this.rebuildLabelsFts();
+  }
 }
