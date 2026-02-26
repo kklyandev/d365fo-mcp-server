@@ -99,53 +99,27 @@ export async function classInfoTool(request: CallToolRequest, context: XppServer
       };
     }
 
-    // Try to parse XML file if available, otherwise use database info
-    const classInfo = await parser.parseClassFile(classSymbol.filePath);
+    // compact=true (default): serve entirely from DB — no filesystem access, instant response
+    if (args.compact !== false) {
+      return buildDbOnlyResponse(args.className, classSymbol, symbolIndex, args.methodOffset ?? 0, cache, cacheKey);
+    }
+
+    // compact=false: parse XML for source bodies, with timeout guard to avoid hanging
+    let classInfo: any = { success: false };
+    try {
+      classInfo = await Promise.race([
+        parser.parseClassFile(classSymbol.filePath),
+        new Promise<{ success: false; error: string }>(resolve =>
+          setTimeout(() => resolve({ success: false, error: 'timeout' }), 3000)
+        ),
+      ]);
+    } catch {
+      classInfo = { success: false, error: 'file read error' };
+    }
 
     if (!classInfo.success || !classInfo.data) {
-      // Fallback to database information
-      const methods = symbolIndex.getClassMethods(args.className);
-      
-      let output = `# Class: ${args.className}\n\n`;
-      output += `**Model:** ${classSymbol.model}\n`;
-      output += `**File:** ${classSymbol.filePath}\n\n`;
-      output += `_Note: Detailed XML metadata not available. Showing symbol index data._\n\n`;
-      
-      if (methods.length > 0) {
-        output += `## Methods (${methods.length})\n\n`;
-        for (const method of methods) {
-          output += `- **${method.name}**`;
-          if (method.signature) {
-            output += `: ${method.signature}`;
-          }
-          output += `\n`;
-        }
-      } else {
-        output += `No methods found in symbol index.\n`;
-      }
-
-      // Cache the fallback result so repeated requests skip the parse attempt
-      await cache.setClassInfo(cacheKey, {
-        name: args.className,
-        extendsClass: null,
-        isFinal: false,
-        isAbstract: false,
-        methods: methods.map((m: any) => ({
-          name: m.name,
-          isStatic: false,
-          returnType: m.signature ?? 'void',
-          parameters: [],
-        })),
-      });
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: output,
-          },
-        ],
-      };
+      // Fallback to DB when XML not available (build agent, no D365FO install, timeout)
+      return buildDbOnlyResponse(args.className, classSymbol, symbolIndex, args.methodOffset ?? 0, cache, cacheKey);
     }
 
     const cls = classInfo.data;
@@ -234,6 +208,58 @@ export async function classInfoTool(request: CallToolRequest, context: XppServer
       isError: true,
     };
   }
+}
+
+/**
+ * Build a response from DB data only — no filesystem access, instant.
+ * Used for compact=true (default) and as fallback when XML is unavailable.
+ */
+async function buildDbOnlyResponse(
+  className: string,
+  classSymbol: any,
+  symbolIndex: any,
+  methodOffset: number,
+  cache: any,
+  cacheKey: string
+): Promise<any> {
+  const methods = symbolIndex.getClassMethods(className) as Array<{ name: string; signature?: string; isStatic?: boolean }>;
+
+  // Build a concise header
+  let output = `# Class: ${className}`;
+  if (classSymbol.extendsClass) output += ` extends ${classSymbol.extendsClass}`;
+  output += `\n**Model:** ${classSymbol.model}`;
+  if (classSymbol.implementsInterfaces) output += `  **Implements:** ${classSymbol.implementsInterfaces}`;
+  output += '\n\n';
+
+  const totalMethods = methods.length;
+  const paged = methods.slice(methodOffset, methodOffset + METHOD_PAGE_SIZE);
+  const hasMore = methodOffset + METHOD_PAGE_SIZE < totalMethods;
+
+  output += `## Methods (${totalMethods} total, showing ${methodOffset + 1}–${Math.min(methodOffset + METHOD_PAGE_SIZE, totalMethods)})\n\n`;
+  for (const m of paged) {
+    const sig = m.signature || m.name;
+    output += `- \`${sig}\`\n`;
+  }
+  if (hasMore) {
+    output += `\n> ⚠️ ${totalMethods - methodOffset - METHOD_PAGE_SIZE} more — call with \`methodOffset: ${methodOffset + METHOD_PAGE_SIZE}\`\n`;
+  }
+  output += `\n> 💡 Use \`get_method_signature\` for a full method body.\n`;
+
+  // Cache so next call is instant
+  await cache.setClassInfo(cacheKey, {
+    name: className,
+    extendsClass: classSymbol.extendsClass ?? null,
+    isFinal: false,
+    isAbstract: false,
+    methods: methods.map((m: any) => ({
+      name: m.name,
+      isStatic: m.isStatic ?? false,
+      returnType: m.signature ?? 'void',
+      parameters: [],
+    })),
+  });
+
+  return { content: [{ type: 'text', text: output }] };
 }
 
 /**
