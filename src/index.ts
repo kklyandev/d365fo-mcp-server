@@ -381,6 +381,7 @@ async function main() {
           { name: 'search_labels',                desc: 'Full-text search across all AxLabelFile labels' },
           { name: 'get_label_info',               desc: 'Get all language translations for a label ID' },
           { name: 'create_label',                 desc: 'Add new label to all language files in a model' },
+          { name: 'rename_label',                 desc: 'Rename a label ID in .label.txt, X++ and XML metadata' },
         ]},
         { icon: '📊', category: 'Advanced Object Info', tools: [
           { name: 'get_form_info',                desc: 'Form datasources, control hierarchy, and methods' },

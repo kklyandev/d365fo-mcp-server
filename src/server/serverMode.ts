@@ -18,6 +18,7 @@ export const WRITE_TOOLS = new Set([
   'create_d365fo_file',
   'modify_d365fo_file',
   'create_label',
+  'rename_label',
 ]);
 
 /**

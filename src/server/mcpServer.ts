@@ -1085,6 +1085,65 @@ Examples:
           },
         },
         {
+          name: 'rename_label',
+          description: `🏷️ Rename a D365FO label ID everywhere it is used.
+
+Renames the label in ALL of the following places:
+1. Every .label.txt file in the model (the label entry itself)
+2. Every X++ source file (.xpp) that references @LabelFileId:OldId
+3. Every XML metadata file that references @LabelFileId:OldId (Label, HelpText, Caption, etc.)
+4. Updates the MCP SQLite label index
+
+⚠️ Run with dryRun=true first to preview the impact before committing!
+
+Examples:
+- rename_label(oldLabelId="OldName", newLabelId="NewName", labelFileId="AslCore", model="AslCore", dryRun=true)
+- rename_label(oldLabelId="OldName", newLabelId="NewName", labelFileId="AslCore", model="AslCore")`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              oldLabelId: {
+                type: 'string',
+                description: 'Current label ID to rename (e.g. MyOldField)',
+              },
+              newLabelId: {
+                type: 'string',
+                description: 'New label ID — must be alphanumeric, no spaces (e.g. MyRenamedField)',
+              },
+              labelFileId: {
+                type: 'string',
+                description: 'Label file ID that owns the label (e.g. MyModel, AslCore)',
+              },
+              model: {
+                type: 'string',
+                description: 'Model name that owns the label file (e.g. MyModel)',
+              },
+              packageName: {
+                type: 'string',
+                description: 'Package name for the model. Auto-resolved if omitted.',
+              },
+              packagePath: {
+                type: 'string',
+                description: 'Root PackagesLocalDirectory path. Auto-detected if omitted.',
+              },
+              searchPaths: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Additional absolute directory paths to scan for X++ / XML references.',
+              },
+              dryRun: {
+                type: 'boolean',
+                description: 'Preview changes without writing anything (default: false). Use this first!',
+              },
+              updateIndex: {
+                type: 'boolean',
+                description: 'Update the MCP label index after renaming (default: true)',
+              },
+            },
+            required: ['oldLabelId', 'newLabelId', 'labelFileId', 'model'],
+          },
+        },
+        {
           name: 'get_table_patterns',
           description: `📊 Analyze common field types, index patterns, and relation structures for D365FO tables.
 

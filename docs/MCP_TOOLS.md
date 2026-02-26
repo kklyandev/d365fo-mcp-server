@@ -71,6 +71,7 @@ just ask in plain English.
 | **search_labels** | Full-text search across all AxLabelFile labels | "Find a label for 'customer account'" |
 | **get_label_info** | All translations for a label ID, or list label files | "Show all translations of MyFeature in MyModel" |
 | **create_label** | Add a new label to all language files in a model | "Create label MyNewField in MyModel" |
+| **rename_label** | Rename a label ID in .label.txt, X++ source and XML metadata | "Rename label OldName to NewName in AslCore" |
 
 ---
 
@@ -436,6 +437,39 @@ is immediately searchable.
 ```
 Create label MyNewField in the MyModel model with translations for en-US, cs, de, and sk
 Add a new label CustomerAccountNumber with English text "Customer account number"
+```
+
+---
+
+### rename_label
+
+Renames a label ID everywhere it is used across the model — a single command that handles
+all three locations atomically:
+
+1. **`.label.txt` files** — the label entry is renamed in every language variant
+2. **X++ source files (`.xpp`)** — all `@LabelFileId:OldId` references are replaced
+3. **XML metadata files** — all `<Label>`, `<HelpText>`, `<Caption>`, etc. properties
+   that reference the old label ID are updated
+4. **MCP SQLite index** — updated so the new ID is immediately searchable
+
+> ⚠️ **Always run with `dryRun=true` first** to preview the full impact before writing
+> any files.
+
+**Parameters:**
+- `oldLabelId` — current label ID (required)
+- `newLabelId` — new label ID, alphanumeric (required)
+- `labelFileId` — label file that owns the label, e.g. `AslCore` (required)
+- `model` — model name (required)
+- `packageName` — package name; auto-resolved if omitted
+- `packagePath` — override base path; auto-detected if omitted
+- `searchPaths` — additional directories to scan for X++ / XML references
+- `dryRun` — preview mode, no files written (default: `false`)
+- `updateIndex` — update MCP index after rename (default: `true`)
+
+**Examples:**
+```
+Rename label OldFieldName to NewFieldName in label file AslCore, model AslCore (dry run first)
+Rename label MyOldCaption to MyNewCaption in MyModel
 ```
 
 ---
