@@ -1,4 +1,4 @@
-/**
+﻿/**
  * D365FO File Creator Tool
  * Creates physical XML files in the AOT package structure
  */
@@ -541,30 +541,12 @@ ${dataSourceXml}\t\t<Pattern xmlns="">${pattern}</Pattern>
 \t\t\t\t\t<DataType>System.String</DataType>
 \t\t\t\t\t<Parameter>AX_RdpPreProcessedId</Parameter>
 \t\t\t\t</AxReportDataSetParameter>
-\t\t\t\t<AxReportDataSetParameter>
-\t\t\t\t\t<Name>${datasetName}_DynamicParameter</Name>
-\t\t\t\t\t<Alias>${datasetName}_DynamicParameter</Alias>
-\t\t\t\t\t<DataType>System.String</DataType>
-\t\t\t\t\t<Parameter>${datasetName}_DynamicParameter</Parameter>
-\t\t\t\t</AxReportDataSetParameter>
 \t\t\t</Parameters>`;
 
     // --- DefaultParameterGroup block (root-level — "Parameters" node in VS Designer) ---
-    // Report name truncated to 20 chars for the _DynamicParameter name (AOT convention).
-    const reportNameUpper = reportName.toUpperCase().substring(0, 20);
     const defaultParamGroupXml = `\t<DefaultParameterGroup>
 \t\t<Name xmlns="">Parameters</Name>
 \t\t<ReportParameterBases xmlns="">
-\t\t\t<AxReportParameterBase xmlns=""
-\t\t\t\t\ti:type="AxReportParameter">
-\t\t\t\t<Name>${datasetName}_DynamicParameter</Name>
-\t\t\t\t<AllowBlank>true</AllowBlank>
-\t\t\t\t<DataType>Microsoft.Dynamics.AX.Framework.Services.Client.QueryMetadata</DataType>
-\t\t\t\t<Nullable>true</Nullable>
-\t\t\t\t<UserVisibility>Hidden</UserVisibility>
-\t\t\t\t<DefaultValue />
-\t\t\t\t<Values />
-\t\t\t</AxReportParameterBase>
 \t\t\t<AxReportParameterBase xmlns=""
 \t\t\t\t\ti:type="AxReportParameter">
 \t\t\t\t<Name>AX_PartitionKey</Name>
@@ -612,17 +594,6 @@ ${dataSourceXml}\t\t<Pattern xmlns="">${pattern}</Pattern>
 \t\t\t\t\ti:type="AxReportParameter">
 \t\t\t\t<Name>AX_RdpPreProcessedId</Name>
 \t\t\t\t<AllowBlank>true</AllowBlank>
-\t\t\t\t<Nullable>true</Nullable>
-\t\t\t\t<UserVisibility>Hidden</UserVisibility>
-\t\t\t\t<DefaultValue />
-\t\t\t\t<Values />
-\t\t\t</AxReportParameterBase>
-\t\t\t<AxReportParameterBase xmlns=""
-\t\t\t\t\ti:type="AxReportParameter">
-\t\t\t\t<Name>${reportNameUpper}_DynamicParameter</Name>
-\t\t\t\t<AOTQuery>${reportName}</AOTQuery>
-\t\t\t\t<AllowBlank>true</AllowBlank>
-\t\t\t\t<DataType>Microsoft.Dynamics.AX.Framework.Services.Client.QueryMetadata</DataType>
 \t\t\t\t<Nullable>true</Nullable>
 \t\t\t\t<UserVisibility>Hidden</UserVisibility>
 \t\t\t\t<DefaultValue />
