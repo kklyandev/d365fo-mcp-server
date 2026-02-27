@@ -1137,6 +1137,21 @@ ${defaultParamGroupXml}
       return open + fixedRdl + close;
     });
 
+    // 9. Fix wrong margin element names inside embedded RDL.
+    //    Some AI-generated RDLs use CSS-style names (MarginTop, MarginLeft, …) instead of
+    //    the correct SSRS RDL names (TopMargin, LeftMargin, …).  All SSRS namespace versions
+    //    require the XMargin form — MarginX causes "invalid child element 'MarginTop'" in
+    //    VS Designer even though the value and namespace are otherwise correct.
+    if (xml.includes('<MarginTop>') || xml.includes('<MarginBottom>') ||
+        xml.includes('<MarginLeft>') || xml.includes('<MarginRight>')) {
+      xml = xml
+        .replace(/<MarginTop>/g,    '<TopMargin>')   .replace(/<\/MarginTop>/g,    '</TopMargin>')
+        .replace(/<MarginBottom>/g, '<BottomMargin>').replace(/<\/MarginBottom>/g, '</BottomMargin>')
+        .replace(/<MarginLeft>/g,   '<LeftMargin>')  .replace(/<\/MarginLeft>/g,   '</LeftMargin>')
+        .replace(/<MarginRight>/g,  '<RightMargin>') .replace(/<\/MarginRight>/g,  '</RightMargin>');
+      console.error('[sanitizeReportXml] Fixed wrong margin element names (MarginX → XMargin) in embedded RDL');
+    }
+
     return xml;
   }
 }

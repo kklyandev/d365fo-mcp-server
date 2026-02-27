@@ -465,4 +465,46 @@ describe('XmlTemplateGenerator.sanitizeReportXml()', () => {
       expect(result).toBe(CORRECT_XML);
     });
   });
+
+  // ─────────────────────────────────────────────────────────────
+  // Fix 9 — wrong margin element names (MarginTop → TopMargin, etc.)
+  // ─────────────────────────────────────────────────────────────
+  describe('fix 9: wrong margin element names in embedded RDL', () => {
+    const makeWithMarginTop = (ns: string) =>
+      `<AxReport xmlns="Microsoft.Dynamics.AX.Metadata.V2"><Name>R</Name><DataMethods /><Designs><AxReportDesign xmlns="" i:type="AxReportPrecisionDesign"><Name>Report</Name><Text><![CDATA[<?xml version="1.0"?><Report xmlns="${ns}"><Body /><Page><PageHeight>11in</PageHeight><MarginTop>0.5in</MarginTop><MarginBottom>0.5in</MarginBottom><MarginLeft>0.5in</MarginLeft><MarginRight>0.5in</MarginRight></Page></Report>]]></Text></AxReportDesign></Designs></AxReport>`;
+
+    it('renames MarginTop/Bottom/Left/Right to TopMargin/BottomMargin/LeftMargin/RightMargin (2008 ns)', () => {
+      const xml = makeWithMarginTop('http://schemas.microsoft.com/sqlserver/reporting/2008/01/reportdefinition');
+      const result = XmlTemplateGenerator.sanitizeReportXml(xml);
+      expect(result).toContain('<TopMargin>');
+      expect(result).toContain('<BottomMargin>');
+      expect(result).toContain('<LeftMargin>');
+      expect(result).toContain('<RightMargin>');
+      expect(result).not.toContain('<MarginTop>');
+      expect(result).not.toContain('<MarginBottom>');
+      expect(result).not.toContain('<MarginLeft>');
+      expect(result).not.toContain('<MarginRight>');
+    });
+
+    it('renames MarginX elements regardless of RDL namespace', () => {
+      const xml = makeWithMarginTop('http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition');
+      const result = XmlTemplateGenerator.sanitizeReportXml(xml);
+      expect(result).toContain('<TopMargin>');
+      expect(result).not.toContain('<MarginTop>');
+    });
+
+    it('fix 9 is idempotent', () => {
+      const xml = makeWithMarginTop('http://schemas.microsoft.com/sqlserver/reporting/2008/01/reportdefinition');
+      const once  = XmlTemplateGenerator.sanitizeReportXml(xml);
+      const twice = XmlTemplateGenerator.sanitizeReportXml(once);
+      expect(twice).toBe(once);
+    });
+
+    it('does not modify XML that already uses correct TopMargin names', () => {
+      const rdl = `<?xml version="1.0"?><Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2008/01/reportdefinition"><Body /><Page><TopMargin>0.5in</TopMargin><BottomMargin>0.5in</BottomMargin><LeftMargin>0.5in</LeftMargin><RightMargin>0.5in</RightMargin></Page></Report>`;
+      const xml = `<AxReport xmlns="Microsoft.Dynamics.AX.Metadata.V2"><Name>R</Name><DataMethods /><Designs><AxReportDesign xmlns="" i:type="AxReportPrecisionDesign"><Name>Report</Name><Text><![CDATA[${rdl}]]></Text></AxReportDesign></Designs></AxReport>`;
+      const result = XmlTemplateGenerator.sanitizeReportXml(xml);
+      expect(result).toBe(xml);
+    });
+  });
 });
