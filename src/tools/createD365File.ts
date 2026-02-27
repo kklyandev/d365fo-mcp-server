@@ -1173,6 +1173,48 @@ ${defaultParamGroupXml}
       return open + fixedRdl + close;
     });
 
+    // 11. Fix doubled closing tags inside embedded RDL CDATA.
+    //     AI generators sometimes emit </Foo></Foo> (the closing tag twice).
+    //     These are invalid XML and cause "Deserialization failed" in VS Designer.
+    //     Pattern: </TagName></TagName>  →  </TagName>
+    xml = xml.replace(/(<Text><!\[CDATA\[)([\s\S]*?)(\]\]><\/Text>)/, (_whole, open, rdl, close) => {
+      const fixedRdl = rdl.replace(/<\/(\w+)><\/\1>/g, (_m: string, tag: string) => {
+        console.error(`[sanitizeReportXml] Removed doubled closing tag </${tag}></${tag}> in embedded RDL`);
+        return `</${tag}>`;
+      });
+      if (fixedRdl === rdl) return _whole;
+      return open + fixedRdl + close;
+    });
+
+    // 12. Fix <Value> as direct child of <Textbox> in embedded RDL.
+    //     SSRS 2008+ schema requires: <Textbox> → <Paragraphs><Paragraph><TextRuns><TextRun><Value>
+    //     AI generators sometimes emit <Value> directly inside <Textbox>, which causes:
+    //     "invalid child element 'Value'" error in VS Designer.
+    //     This fix wraps any bare <Value>…</Value> found as a direct child of <Textbox>
+    //     into the correct paragraph/textrun structure.
+    xml = xml.replace(/(<Text><!\[CDATA\[)([\s\S]*?)(\]\]><\/Text>)/, (_whole, open, rdl, close) => {
+      // Look for <Textbox ...> that contains a direct <Value> child (not inside <TextRun>)
+      const fixedRdl = rdl.replace(
+        /(<Textbox\b[^>]*>)([\s\S]*?)(<\/Textbox>)/g,
+        (tbMatch: string, tbOpen: string, tbContent: string, tbClose: string) => {
+          // Only act if there is a <Value> but no <Paragraphs> wrapping yet
+          if (!tbContent.includes('<Value>') && !tbContent.includes('<Value =')) return tbMatch;
+          if (tbContent.includes('<Paragraphs>')) return tbMatch;
+          const fixedContent = tbContent.replace(
+            /<Value>([\s\S]*?)<\/Value>/,
+            (_vMatch: string, val: string) => {
+              console.error('[sanitizeReportXml] Wrapped bare <Value> in <Textbox> into <Paragraphs> structure');
+              return `<Paragraphs>\n            <Paragraph>\n              <TextRuns>\n                <TextRun>\n                  <Value>${val}</Value>\n                  <Style />\n                </TextRun>\n              </TextRuns>\n              <Style />\n            </Paragraph>\n          </Paragraphs>`;
+            }
+          );
+          if (fixedContent === tbContent) return tbMatch;
+          return tbOpen + fixedContent + tbClose;
+        }
+      );
+      if (fixedRdl === rdl) return _whole;
+      return open + fixedRdl + close;
+    });
+
     return xml;
   }
 }

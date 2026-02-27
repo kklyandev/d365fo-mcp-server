@@ -507,4 +507,78 @@ describe('XmlTemplateGenerator.sanitizeReportXml()', () => {
       expect(result).toBe(xml);
     });
   });
+
+  // ─────────────────────────────────────────────────────────────
+  // Fix 11 — doubled closing tags inside embedded RDL
+  // ─────────────────────────────────────────────────────────────
+  describe('fix 11: doubled closing tags in embedded RDL', () => {
+    const NS = 'http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition';
+    const wrap = (rdl: string) =>
+      `<AxReport xmlns="Microsoft.Dynamics.AX.Metadata.V2"><Name>R</Name><DataMethods /><Designs><AxReportDesign xmlns="" i:type="AxReportPrecisionDesign"><Name>Report</Name><Text><![CDATA[${rdl}]]></Text></AxReportDesign></Designs></AxReport>`;
+
+    it('removes doubled closing tag </BorderWidth></BorderWidth>', () => {
+      const rdl = `<?xml version="1.0"?><Report xmlns="${NS}"><ReportSections><ReportSection><Body><ReportItems /><Height>1in</Height></Body><Width>7.5in</Width><Page><Style><Border><Style>None</Style><Width>1pt</Width></BorderWidth></BorderWidth></Border></Style></Page></ReportSection></ReportSections></Report>`;
+      const xml = wrap(rdl);
+      const result = XmlTemplateGenerator.sanitizeReportXml(xml);
+      expect(result).not.toContain('</BorderWidth></BorderWidth>');
+      expect(result).toContain('</BorderWidth>');
+    });
+
+    it('removes multiple doubled closing tags in one pass', () => {
+      const rdl = `<?xml version="1.0"?><Report xmlns="${NS}"><ReportSections><ReportSection><Body><ReportItems /><Height>1in</Height></Body><Width>7.5in</Width><Page><Style><Border><Color>#000000</Color></Color><Width>1pt</Width></BorderWidth></BorderWidth></Border></Style></Page></ReportSection></ReportSections></Report>`;
+      const xml = wrap(rdl);
+      const result = XmlTemplateGenerator.sanitizeReportXml(xml);
+      expect(result).not.toContain('</Color></Color>');
+      expect(result).not.toContain('</BorderWidth></BorderWidth>');
+    });
+
+    it('fix 11 is idempotent', () => {
+      const rdl = `<?xml version="1.0"?><Report xmlns="${NS}"><ReportSections><ReportSection><Body><ReportItems /><Height>1in</Height></Body><Width>7.5in</Width><Page><Style><Border><Width>1pt</Width></BorderWidth></BorderWidth></Border></Style></Page></ReportSection></ReportSections></Report>`;
+      const xml = wrap(rdl);
+      const once  = XmlTemplateGenerator.sanitizeReportXml(xml);
+      const twice = XmlTemplateGenerator.sanitizeReportXml(once);
+      expect(twice).toBe(once);
+    });
+
+    it('does not modify XML without doubled closing tags', () => {
+      const rdl = `<?xml version="1.0"?><Report xmlns="${NS}"><ReportSections><ReportSection><Body><ReportItems /><Height>1in</Height><Style /></Body><Width>7.5in</Width><Page><Style /></Page></ReportSection></ReportSections></Report>`;
+      const xml = wrap(rdl);
+      const result = XmlTemplateGenerator.sanitizeReportXml(xml);
+      expect(result).toBe(xml);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // Fix 12 — bare <Value> as direct child of <Textbox>
+  // ─────────────────────────────────────────────────────────────
+  describe('fix 12: bare <Value> as direct child of <Textbox>', () => {
+    const NS = 'http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition';
+    const wrap = (rdl: string) =>
+      `<AxReport xmlns="Microsoft.Dynamics.AX.Metadata.V2"><Name>R</Name><DataMethods /><Designs><AxReportDesign xmlns="" i:type="AxReportPrecisionDesign"><Name>Report</Name><Text><![CDATA[${rdl}]]></Text></AxReportDesign></Designs></AxReport>`;
+
+    it('wraps bare <Value> in <Paragraphs> structure', () => {
+      const rdl = `<?xml version="1.0"?><Report xmlns="${NS}"><ReportSections><ReportSection><Body><ReportItems><Textbox Name="Txt1"><Value>Hello world</Value><Height>0.25in</Height></Textbox></ReportItems><Height>1in</Height></Body><Width>7.5in</Width><Page><Style /></Page></ReportSection></ReportSections></Report>`;
+      const xml = wrap(rdl);
+      const result = XmlTemplateGenerator.sanitizeReportXml(xml);
+      expect(result).toContain('<Paragraphs>');
+      expect(result).toContain('<TextRun>');
+      expect(result).toContain('<Value>Hello world</Value>');
+      expect(result).not.toMatch(/<Textbox[^>]*>\s*<Value>/);
+    });
+
+    it('does not modify <Textbox> that already has <Paragraphs>', () => {
+      const rdl = `<?xml version="1.0"?><Report xmlns="${NS}"><ReportSections><ReportSection><Body><ReportItems><Textbox Name="Txt1"><Paragraphs><Paragraph><TextRuns><TextRun><Value>Hello</Value><Style /></TextRun></TextRuns><Style /></Paragraph></Paragraphs><Height>0.25in</Height></Textbox></ReportItems><Height>1in</Height></Body><Width>7.5in</Width><Page><Style /></Page></ReportSection></ReportSections></Report>`;
+      const xml = wrap(rdl);
+      const result = XmlTemplateGenerator.sanitizeReportXml(xml);
+      expect(result).toBe(xml);
+    });
+
+    it('fix 12 is idempotent', () => {
+      const rdl = `<?xml version="1.0"?><Report xmlns="${NS}"><ReportSections><ReportSection><Body><ReportItems><Textbox Name="Txt1"><Value>Hello world</Value><Height>0.25in</Height></Textbox></ReportItems><Height>1in</Height></Body><Width>7.5in</Width><Page><Style /></Page></ReportSection></ReportSections></Report>`;
+      const xml = wrap(rdl);
+      const once  = XmlTemplateGenerator.sanitizeReportXml(xml);
+      const twice = XmlTemplateGenerator.sanitizeReportXml(once);
+      expect(twice).toBe(once);
+    });
+  });
 });
