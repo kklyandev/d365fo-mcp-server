@@ -286,12 +286,9 @@ class ConfigManager {
    */
   getPackagePath(): string | null {
     const context = this.getContext();
-    if (!context) {
-      return null;
-    }
 
     // If packagePath is explicitly set, use it
-    if (context.packagePath) {
+    if (context?.packagePath) {
       const resolved = normalizePath(context.packagePath);
       console.error(
         `[ConfigManager] Using explicit packagePath: ${resolved}`
@@ -300,7 +297,7 @@ class ConfigManager {
     }
 
     // If workspacePath contains PackagesLocalDirectory, extract the base path
-    if (context.workspacePath) {
+    if (context?.workspacePath) {
       const normalized = path.normalize(context.workspacePath);
       
       // If workspacePath points to a specific model, extract base path
