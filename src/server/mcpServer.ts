@@ -484,6 +484,30 @@ WORKFLOW:
 1. generate_code(pattern="batch-job", name="MyBatch") → Get X++ code
 2. create_d365fo_file(objectType="class", objectName="MyBatch", sourceCode=<step 1>, addToProject=true)
 
+AXCLASS sourceCode FORMAT — CRITICAL:
+The sourceCode string for a class MUST follow this exact layout:
+  • Class header (attributes + class keyword + extends/implements) WITH member variable
+    declarations INSIDE the outer { } — this block becomes <Declaration>
+  • Method bodies follow AFTER the closing } of the class header — each becomes a <Method>
+
+Example (correct):
+  [DataContractAttribute]
+  public class MyClass extends MyBase
+  {
+      int globalPackageNumber;
+      Qty totalExportedQty;
+  }
+  public int globalPackageNumber(int _v = globalPackageNumber)
+  {
+      globalPackageNumber = _v;
+      return globalPackageNumber;
+  }
+
+Common mistakes:
+  ❌ Putting member variables OUTSIDE the class { } (they will be lost in <Declaration>)
+  ❌ Omitting the class { } block entirely (all content treated as one method)
+  ❌ Putting member variables inside a method body
+
 EXAMPLES:
 - "Create batch job for processing orders" → create_d365fo_file(objectType="class", objectName="ProcessOrdersBatch", addToProject=true)
 - "Create helper class for sales calculations" → create_d365fo_file(objectType="class", objectName="SalesCalculationHelper", addToProject=true)`,
@@ -513,7 +537,7 @@ EXAMPLES:
               },
               sourceCode: {
                 type: 'string',
-                description: 'X++ source code for the object (class declaration, methods, etc.)'
+                description: `X++ source code for the object.\n\nFOR CLASSES — the content is split into <Declaration> and <Methods> automatically:\n  • <Declaration> = class keyword line + ALL member variable declarations inside the outer { }\n  • <Methods>     = each method defined AFTER the closing } of the class header\n\nExample for a class with member variables and a method:\n  public class MyClass\n  {\n      int globalPackageNumber;\n      Qty totalExportedQty;\n  }\n  public void myMethod()\n  {\n      // body\n  }\n\nCRITICAL: member variables MUST be inside the class { } block — NOT after it.`
               },
               properties: {
                 type: 'object',
@@ -544,7 +568,7 @@ EXAMPLES:
                 description:
                   'Allow overwriting an existing file. Use together with xmlContent when you need to ' +
                   'completely rewrite an object (e.g. table with corrupted field names, wrong TableType, \u2026). ' +
-                  'A .bak backup is created automatically. Default: false. ' +
+                  'Default: false. ' +
                   '\u274c NEVER use PowerShell/create_file to overwrite D365FO objects \u2014 always use overwrite=true here.',
                 default: false,
               },
@@ -573,7 +597,7 @@ EXAMPLES:
               },
               sourceCode: {
                 type: 'string',
-                description: 'X++ source code for the object (class declaration, methods, etc.)'
+                description: `X++ source code for the object.\n\nFOR CLASSES — same format as create_d365fo_file:\n  • Member variable declarations MUST be inside the class { } header block → goes to <Declaration>\n  • Methods follow AFTER the closing } of the class header → each becomes a <Method>\n\nExample:\n  public class MyClass\n  {\n      int myVar;\n      Qty myQty;\n  }\n  public void myMethod() { }`
               },
               properties: {
                 type: 'object',
@@ -640,7 +664,7 @@ Examples:
         },
         {
           name: 'modify_d365fo_file',
-          description: '⚠️ WINDOWS ONLY: Safely modifies an existing D365FO XML file (class, table, enum, form, query, view). Supports adding/removing/modifying methods and fields, modifying properties. Creates automatic backup (.bak) before changes and validates XML after modification. IMPORTANT: This tool MUST run locally on Windows D365FO VM - it CANNOT work through Azure HTTP proxy (Linux).',
+          description: '⚠️ WINDOWS ONLY: Safely modifies an existing D365FO XML file (class, table, enum, form, query, view). Supports adding/removing/modifying methods and fields, modifying properties. Validates XML after modification. IMPORTANT: This tool MUST run locally on Windows D365FO VM - it CANNOT work through Azure HTTP proxy (Linux).',
           inputSchema: {
             type: 'object',
             properties: {
@@ -698,7 +722,17 @@ Examples:
               },
               fieldType: {
                 type: 'string',
-                description: 'Extended data type or base type (required for add-field; optional for modify-field to change EDT)'
+                description: 'EDT name for the field (required for add-field, e.g. "InventQty", "WHSZoneId", "TransDate"). For modify-field: new EDT to set.'
+              },
+              fieldBaseType: {
+                type: 'string',
+                enum: ['String', 'Integer', 'Real', 'Date', 'DateTime', 'Int64', 'GUID', 'Enum'],
+                description:
+                  'Base type for add-field — determines the XML element (AxTableFieldReal, AxTableFieldDate, …). ' +
+                  'REQUIRED when fieldType is an EDT name. Without it defaults to AxTableFieldString (WRONG for Real/Date/Int64!). ' +
+                  'Examples: fieldType="InventQty" + fieldBaseType="Real" → AxTableFieldReal; ' +
+                  'fieldType="TransDate" + fieldBaseType="Date" → AxTableFieldDate; ' +
+                  'fieldType="WHSZoneId" + fieldBaseType="String" → AxTableFieldString.'
               },
               fieldMandatory: {
                 type: 'boolean',
@@ -714,14 +748,22 @@ Examples:
                   'Full replacement field list for replace-all-fields operation. ' +
                   'Each item: { name: string, edt?: string, type?: string, mandatory?: boolean, label?: string }. ' +
                   'Use when field names are corrupted (contain spaces, wrong casing, wrong EDT). ' +
-                  'All existing fields are replaced atomically. Backup is created automatically. ' +
+                  'All existing fields are replaced atomically. ' +
                   '❌ NEVER use PowerShell/create_file for this — always use replace-all-fields.',
                 items: {
                   type: 'object',
                   properties: {
-                    name: { type: 'string' },
-                    edt: { type: 'string' },
-                    type: { type: 'string' },
+                    name: { type: 'string', description: 'Field name' },
+                    edt:  { type: 'string', description: 'EDT name, e.g. "InventQty", "WHSZoneId"' },
+                    type: {
+                      type: 'string',
+                      enum: ['String', 'Integer', 'Real', 'Date', 'DateTime', 'Int64', 'GUID', 'Enum'],
+                      description:
+                        'Base type — REQUIRED alongside edt to get the correct XML element. ' +
+                        'Determines AxTableFieldReal/AxTableFieldDate/… ' +
+                        'Without it defaults to AxTableFieldString (wrong for numeric/date EDTs!). ' +
+                        'Example: { name:"TransQty", edt:"InventQty", type:"Real" }'
+                    },
                     mandatory: { type: 'boolean' },
                     label: { type: 'string' },
                   },
@@ -749,8 +791,8 @@ Examples:
               },
               createBackup: {
                 type: 'boolean',
-                description: 'Create backup before modification (default: true)',
-                default: true
+                description: 'Create backup before modification (default: false)',
+                default: false
               },
               modelName: {
                 type: 'string',

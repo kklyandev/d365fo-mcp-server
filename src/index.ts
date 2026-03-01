@@ -405,7 +405,7 @@ async function main() {
         { icon: '📝', category: 'File & Metadata Operations', tools: [
           { name: 'generate_d365fo_xml',          desc: 'Generate D365FO XML content (preview / cloud-ready)' },
           { name: 'create_d365fo_file',           desc: 'Create D365FO file in correct AOT location (Windows)' },
-          { name: 'modify_d365fo_file',           desc: 'Safely edit D365FO XML with backup & rollback (Windows)' },
+          { name: 'modify_d365fo_file',           desc: 'Safely edit D365FO XML (Windows)' },
         ]},
         { icon: '📈', category: 'Pattern Analysis', tools: [
           { name: 'get_table_patterns',           desc: 'Analyze common field/index patterns for table groups' },

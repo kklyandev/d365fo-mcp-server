@@ -66,9 +66,22 @@ class XmlTemplateGenerator {
     }
     if (classEndIdx === -1) return { declaration: fullSource, methods: [] };
 
-    const declaration = fullSource.substring(0, classEndIdx + 1);
+    let declaration = fullSource.substring(0, classEndIdx + 1);
     const rest = fullSource.substring(classEndIdx + 1);
     if (!rest.trim()) return { declaration, methods: [] };
+
+    // ── FIX: Rescue member-variable declarations that appear OUTSIDE the class {}
+    const nextBraceInRest = rest.indexOf('{');
+    if (nextBraceInRest !== -1) {
+      const preMethodText = rest.substring(0, nextBraceInRest);
+      const varLines = preMethodText
+        .split('\n')
+        .filter(l => { const t = l.trim(); return t.endsWith(';') && !t.includes('('); });
+      if (varLines.length > 0) {
+        const injected = varLines.map(l => '    ' + l.trim()).join('\n');
+        declaration = declaration.replace(/}(\s*)$/, `\n${injected}\n}`);
+      }
+    }
 
     // Parse each method block from the remaining source
     const methods: Array<{ name: string; source: string }> = [];
@@ -131,15 +144,19 @@ class XmlTemplateGenerator {
       ? `\t<IsAbstract>Yes</IsAbstract>\n`
       : '';
 
+    // D365FO convention: method source is always indented by 4 spaces inside <Source>.
+    const indentMethodSource = (src: string): string =>
+      src.split('\n').map(line => '    ' + line).join('\n');
+
     const methodsXml =
       methods.length === 0
         ? '\t\t<Methods />\n'
         : `\t\t<Methods>\n${methods
             .map(
               m =>
-                `\t\t\t<Method>\n\t\t\t\t<Name>${m.name}</Name>\n\t\t\t\t<Source><![CDATA[\n${m.source}\n]]></Source>\n\t\t\t</Method>`
+                `\t\t\t<Method>\n\t\t\t\t<Name>${m.name}</Name>\n\t\t\t\t<Source><!\[CDATA\[\n${indentMethodSource(m.source)}\n\]\]></Source>\n\t\t\t</Method>`
             )
-            .join('\n')}\n\t\t</Methods>\n`;
+            .join('\n\n')}\n\t\t</Methods>\n`;
 
     return `<?xml version="1.0" encoding="utf-8"?>
 <AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
@@ -699,7 +716,10 @@ ${rdlParamLayoutXml}
     const styleLine   = properties?.style   ? `\n\t\t\t<Style>${properties.style}</Style>`       : '';
     const rdlContent  = properties?.rdlContent as string | undefined;
     const rdl         = rdlContent || buildRdlSkeleton();
-    const textElement = `\n\t\t\t<Text><![CDATA[${rdl}]]></Text>`;
+    // D365FO Designer requires entity-encoded <Text> (not CDATA) to render the design.
+    const encodeForText = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const textElement = `\n\t\t\t<Text>${encodeForText(rdl)}</Text>`;
 
     return `<?xml version="1.0" encoding="utf-8"?>
 <AxReport xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V2">
@@ -798,12 +818,23 @@ export async function handleGenerateD365Xml(
     }
 
     // Generate XML content
-    const xmlContent = XmlTemplateGenerator.generate(
+    let xmlContent = XmlTemplateGenerator.generate(
       args.objectType,
       args.objectName,
       args.sourceCode,
       args.properties
     );
+
+    // For reports: convert any remaining CDATA <Text> to entity-encoded form.
+    // The generator now emits entity-encoded directly, but guard against xmlContent
+    // passed in pre-generated form with CDATA.
+    if (args.objectType === 'report') {
+      xmlContent = xmlContent.replace(
+        /<Text><!\[CDATA\[([\s\S]*?)\]\]><\/Text>/g,
+        (_m, inner: string) =>
+          `<Text>${inner.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</Text>`
+      );
+    }
 
     console.error(
       `[generate_d365fo_xml] Generated XML content: ${xmlContent.length} bytes`
