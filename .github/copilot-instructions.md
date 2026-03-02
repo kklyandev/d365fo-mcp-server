@@ -40,7 +40,7 @@ This workspace contains D365FO code. **Always use the specialized MCP tools**  p
 >                      (use when field names contain spaces or are otherwise corrupted)
 >
 > Overwrite whole    → create_d365fo_file  xmlContent="<full XML>"  overwrite=true
-> object XML           (creates .bak backup first; use when the entire XML needs replacing)
+> object XML           (use when the entire XML needs replacing)
 > ```
 >
 > **Pattern:**
@@ -99,6 +99,47 @@ For any D365FO request, **start with MCP tools  never** `code_search`, `grep_sea
 10. **NEVER** use `get_enum_info()` for EDTs  use `get_edt_info()` instead
 11. **NEVER** infer the target model from search results or object names — the `model` field in search/get_table_info results is the SOURCE model of that existing object, NOT where you should create new objects. The target model for ALL create/modify operations is ALWAYS from `.mcp.json` (projectPath/modelName). Example of WRONG reasoning: task involves a report → search returns objects from "AslReports" → ❌ DO NOT use "AslReports". Use the configured model.
 12. **NEVER** create AxReport XML with `create_file` or PowerShell — ALWAYS use `create_d365fo_file(objectType="report", xmlContent=<full XML>, addToProject=true)`. SSRS reports require UTF-8 BOM and correct AOT path which only `create_d365fo_file` guarantees.
+13. **ALWAYS** put class member variable declarations **inside** the class `{ }` body in `sourceCode` — they become `<Declaration>` in the AxClass XML. Variables placed **outside** the `{}` are NOT part of the declaration and will be lost.
+
+### AxClass sourceCode Format — Member Variables in Declaration
+
+D365FO AxClass XML separates a class into two blocks:
+- **`<Declaration>`** — class header + ALL member variable declarations (inside the outer `{ }`)
+- **`<Methods>`** — one `<Method>` entry per method defined **after** the class `{ }` closing brace
+
+When passing `sourceCode` to `create_d365fo_file` or `generate_d365fo_xml` for a class, use this exact layout:
+
+```xpp
+// ✅ CORRECT — variables inside class {}
+[DataContractAttribute]
+public class MyClass extends MyBase
+{
+    int globalPackageNumber;
+    Qty totalExportedOrderUnitQty, totalExportedInventUnitQty;
+}
+
+public int globalPackageNumber(int _v = globalPackageNumber)
+{
+    globalPackageNumber = _v;
+    return globalPackageNumber;
+}
+```
+
+Common mistakes that break the resulting AxClass XML:
+```xpp
+// ❌ WRONG — variables after class {}, will be lost from <Declaration>
+public class MyClass
+{
+}
+int globalPackageNumber;          // ← gets dropped!
+public void myMethod() { ... }
+```
+
+```xpp
+// ❌ WRONG — no class {} at all, everything treated as one method
+public class MyClass
+public void myMethod() { ... }
+```
 
 ### generate_smart_table / generate_smart_form  TWO success cases
 
