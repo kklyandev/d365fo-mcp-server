@@ -23,6 +23,7 @@ interface GenerateSmartTableArgs {
   modelName?: string;
   projectPath?: string;
   solutionPath?: string;
+  packagePath?: string;
   /**
    * Standard method names to generate and embed in the XML.
    * Supported: "find", "exist"
@@ -95,6 +96,12 @@ export const generateSmartTableTool: Tool = {
         type: 'string',
         description: 'Path to solution directory (alternative to projectPath)',
       },
+      packagePath: {
+        type: 'string',
+        description:
+          'Base packages directory path (e.g. "C:\\AosService\\PackagesLocalDirectory"). ' +
+          'Auto-detected from .mcp.json; only needed when the default K: fallback is wrong.',
+      },
       methods: {
         type: 'array',
         items: { type: 'string' },
@@ -125,6 +132,7 @@ export async function handleGenerateSmartTable(
     modelName,
     projectPath,
     solutionPath,
+    packagePath: argPackagePath,
     methods: requestedMethods,
   } = args;
 
@@ -298,6 +306,17 @@ export async function handleGenerateSmartTable(
     }
   }
 
+  // Resolve EDT base type from edt_metadata for each field that has an EDT but no explicit type.
+  // Without this, all EDT fields default to AxTableFieldString even for Real/Date/Int64 EDTs.
+  {
+    const db = symbolIndex.db;
+    for (const f of fields) {
+      if (f.edt && !f.type) {
+        f.type = resolveEdtBaseType(f.edt, db);
+      }
+    }
+  }
+
   // If primaryKeyFields is specified, mark those fields as mandatory (overrides auto-detection)
   if (primaryKeyFields && primaryKeyFields.length > 0) {
     for (const pkFieldName of primaryKeyFields) {
@@ -324,8 +343,26 @@ export async function handleGenerateSmartTable(
   }
 
   // Determine package path
+  // Ensure .mcp.json is loaded before reading packagePath — getPackagePath() is synchronous
+  // and may miss packagePath from config if ensureLoaded() was not yet called.
   const configManager = getConfigManager();
-  const packagePath = configManager.getPackagePath() || 'K:\\AosService\\PackagesLocalDirectory';
+  await configManager.ensureLoaded();
+  const resolvedPackagePath = argPackagePath || configManager.getPackagePath();
+  // getPackagePath() already probes C:\ and K:\ well-known locations before returning null,
+  // so reaching here with null means neither location exists on this machine.
+  if (!resolvedPackagePath && process.platform === 'win32') {
+    throw new Error(
+      '\u274c Cannot determine PackagesLocalDirectory path.\n\n' +
+      'Neither C:\\AosService\\PackagesLocalDirectory nor K:\\AosService\\PackagesLocalDirectory were found.\n\n' +
+      'If your D365FO installation is on a different drive, add one of the following to your .mcp.json:\n' +
+      '  \u2022 "packagePath": "<drive>:\\\\AosService\\\\PackagesLocalDirectory"\n' +
+      '  \u2022 "workspacePath": "<drive>:\\\\AosService\\\\PackagesLocalDirectory\\\\YourModel"\n' +
+      '  \u2022 "projectPath": "<drive>:\\\\VSProjects\\\\YourSolution\\\\YourProject\\\\YourProject.rnrproj"\n\n' +
+      'Or pass packagePath directly to this tool call.\n\n' +
+      'UDE environments: packagePath is not used — configure customPackagesPath/microsoftPackagesPath instead.'
+    );
+  }
+  const packagePath = resolvedPackagePath || 'K:\\AosService\\PackagesLocalDirectory';
 
   // Resolve project/solution path — fall back to configManager (from .mcp.json / auto-detection)
   let resolvedProjectPath = projectPath;
@@ -642,6 +679,41 @@ export async function handleGenerateSmartTable(
       },
     ],
   };
+}
+
+/**
+ * Resolve the primitive base type for a D365FO EDT by walking the edt_metadata chain.
+ * The `extends` column in edt_metadata stores either a primitive type name
+ * (String, Real, Int64, Date, UtcDateTime, Enum, Container, Guid, Integer) or
+ * another EDT name. We follow the chain until we reach a primitive type.
+ *
+ * Returns a base type string compatible with fieldTypeToAxType(), e.g.:
+ *   "Qty" → "Real", "TransDate" → "Date", "ItemId" → "String"
+ */
+function resolveEdtBaseType(edtName: string, db: any, depth = 0): string {
+  // D365FO primitive types − these map directly to AxTableField types
+  const PRIMITIVES = new Set([
+    'String', 'Integer', 'Int64', 'Real', 'Date', 'UtcDateTime', 'DateTime',
+    'Enum', 'Container', 'Guid', 'GUID',
+  ]);
+
+  if (depth > 8) return 'String'; // guard against circular chains
+
+  if (PRIMITIVES.has(edtName)) return edtName;
+
+  try {
+    const row = db.prepare(
+      `SELECT extends FROM edt_metadata WHERE edt_name = ? LIMIT 1`
+    ).get(edtName) as { extends: string | null } | undefined;
+
+    if (!row || !row.extends) return 'String';
+    if (PRIMITIVES.has(row.extends)) return row.extends;
+
+    // Follow chain to the parent EDT
+    return resolveEdtBaseType(row.extends, db, depth + 1);
+  } catch {
+    return 'String';
+  }
 }
 
 /**

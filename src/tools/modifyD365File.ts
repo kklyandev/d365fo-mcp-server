@@ -28,19 +28,26 @@ const ModifyD365FileArgsSchema = z.object({
   // For add-field / modify-field (tables)
   fieldName: z.string().optional().describe('Name of field to add/remove/modify/rename'),
   fieldNewName: z.string().optional().describe('New name for the field (required for rename-field operation)'),
-  fieldType: z.string().optional().describe('Extended data type or base type (for add-field: required; for modify-field: new EDT to set)'),
+  fieldType: z.string().optional().describe('EDT name for the field (for add-field: required — pass the EDT name, e.g. "InventQty", "WHSZoneId"). For modify-field: new EDT to set.'),
+  fieldBaseType: z.string().optional().describe(
+    'Base type that determines the XML element for add-field: String | Integer | Real | Date | DateTime | Int64 | GUID | Enum. ' +
+    'REQUIRED when fieldType is an EDT — pass the EDT base type so the correct AxTableFieldReal/AxTableFieldDate/… is used. ' +
+    'Examples: fieldType="InventQty" fieldBaseType="Real"; fieldType="TransDate" fieldBaseType="Date"; fieldType="ItemId" fieldBaseType="String". ' +
+    'Without this, all EDT fields default to AxTableFieldString which is WRONG for numeric/date types.'
+  ),
   fieldMandatory: z.boolean().optional().describe('Is field mandatory'),
   fieldLabel: z.string().optional().describe('Field label'),
   fields: z.array(z.object({
     name: z.string(),
     edt: z.string().optional(),
-    type: z.string().optional(),
+    type: z.string().optional().describe('Base type for the XML element: String|Real|Integer|Date|DateTime|Int64|GUID|Enum. REQUIRED when edt is an EDT name — without it defaults to AxTableFieldString!'),
     mandatory: z.boolean().optional(),
     label: z.string().optional(),
   })).optional().describe(
     'Full list of fields for replace-all-fields operation. Each item: { name, edt?, type?, mandatory?, label? }. ' +
-    'Use this to completely rewrite the Fields block — e.g. when field names are corrupted/have spaces. ' +
-    'All existing fields are replaced atomically. Backup is created automatically.'
+    'IMPORTANT: always pass type= the base type (String/Real/Integer/Date/DateTime/Int64/GUID) alongside edt= so the correct XML element is used. ' +
+    'Example: { name: "TransQty", edt: "InventQty", type: "Real" }. ' +
+    'All existing fields are replaced atomically.'
   ),
   
   // For modify-property
@@ -56,7 +63,7 @@ const ModifyD365FileArgsSchema = z.object({
   propertyValue: z.string().optional().describe('New property value'),
   
   // Options
-  createBackup: z.boolean().optional().default(true).describe('Create backup before modification'),
+  createBackup: z.boolean().optional().default(false).describe('Create backup before modification (default: false)'),
   modelName: z.string().optional().describe('Model name (auto-detected if not provided)'),
   packageName: z.string().optional().describe('Package name. Auto-resolved if omitted.'),
   workspacePath: z.string().optional().describe('Path to workspace for finding file'),
@@ -180,7 +187,7 @@ export async function modifyD365FileTool(request: CallToolRequest, context: XppS
       content: [
         {
           type: 'text',
-          text: `✅ ${message}\n\n**File:** ${actualFilePath}\n**Backup:** ${createBackup ? 'Created' : 'Skipped'}\n\n**Next steps:**\n- Review changes in Visual Studio\n- Build the model to validate\n- Commit changes to source control`,
+          text: `✅ ${message}\n\n**File:** ${actualFilePath}\n\n**Next steps:**\n- Review changes in Visual Studio\n- Build the model to validate\n- Commit changes to source control`,
         },
       ],
     };
@@ -483,7 +490,7 @@ async function removeMethod(xmlObj: any, objectType: string, args: any): Promise
  * Add field to table
  */
 async function addField(xmlObj: any, objectType: string, args: any): Promise<boolean> {
-  const { fieldName, fieldType, fieldMandatory, fieldLabel } = args;
+  const { fieldName, fieldType, fieldBaseType, fieldMandatory, fieldLabel } = args;
 
   if (!fieldName) {
     throw new Error('fieldName is required for add-field operation');
@@ -526,7 +533,7 @@ async function addField(xmlObj: any, objectType: string, args: any): Promise<boo
 
   // D365FO field XML format: <AxTableField xmlns="" i:type="AxTableFieldString">
   // xml2js represents this as { '$': { xmlns: '', 'i:type': 'AxTableFieldString' }, Name: [...] }
-  const iType = getFieldNodeName(fieldType);
+  const iType = getFieldNodeName(fieldBaseType || fieldType);
   const newField: any = {
     '$': { xmlns: '', 'i:type': iType },
     Name: [fieldName],
@@ -701,7 +708,6 @@ async function renameField(xmlObj: any, objectType: string, args: any): Promise<
 /**
  * Atomically replace ALL fields in a table with a new field list.
  * Use when field names are corrupted (contain spaces, wrong EDTs, etc.).
- * Backup is always created before the operation.
  */
 async function replaceAllFields(xmlObj: any, objectType: string, args: any): Promise<boolean> {
   const { fields } = args as { fields?: Array<{ name: string; edt?: string; type?: string; mandatory?: boolean; label?: string }> };
@@ -745,7 +751,9 @@ async function replaceAllFields(xmlObj: any, objectType: string, args: any): Pro
 
   // Build new AxTableField array
   const newAxTableFields = fields.map(f => {
-    const iType = f.edt ? getFieldNodeName(f.edt) : getFieldNodeName(f.type || 'String');
+    // type= is the explicit base type override (Real/String/Date/…); edt= is the EDT name.
+    // Priority: explicit type > edt name lookup > default String
+    const iType = f.type ? getFieldNodeName(f.type) : getFieldNodeName(f.edt || 'String');
     const node: any = {
       '$': { xmlns: '', 'i:type': iType },
       Name: [f.name],
@@ -922,27 +930,44 @@ function getRootKey(objectType: string): string {
 }
 
 /**
- * Get field node name based on field type
+ * Get AxTableField i:type attribute value from a primitive type name or EDT name.
+ * Checks explicit primitive types first; falls back to EDT name heuristics.
  */
 function getFieldNodeName(fieldType: string): string {
-  // Map EDT to field node type
+  // Map primitive type names
   const typeMap: Record<string, string> = {
-    String: 'AxTableFieldString',
-    Integer: 'AxTableFieldInt',
-    Real: 'AxTableFieldReal',
-    Date: 'AxTableFieldDate',
-    DateTime: 'AxTableFieldDateTime',
-    Enum: 'AxTableFieldEnum',
-    Int64: 'AxTableFieldInt64',
-    GUID: 'AxTableFieldGuid',
+    String:      'AxTableFieldString',
+    Integer:     'AxTableFieldInt',
+    Real:        'AxTableFieldReal',
+    Date:        'AxTableFieldDate',
+    DateTime:    'AxTableFieldUtcDateTime',
+    UtcDateTime: 'AxTableFieldUtcDateTime',
+    Enum:        'AxTableFieldEnum',
+    Int64:       'AxTableFieldInt64',
+    GUID:        'AxTableFieldGuid',
+    Guid:        'AxTableFieldGuid',
+    Container:   'AxTableFieldContainer',
   };
 
-  // Default to string if unknown
-  return typeMap[fieldType] || 'AxTableFieldString';
+  const explicit = typeMap[fieldType];
+  if (explicit) return explicit;
+
+  // Fall back to EDT name heuristics (for when caller passes EDT name instead of base type)
+  const e = fieldType.toLowerCase();
+  if (e === 'recid' || e.endsWith('recid') || e.includes('refrecid')) return 'AxTableFieldInt64';
+  if (e.includes('utcdatetime') || (e.includes('datetime') && !e.includes('transdate'))) return 'AxTableFieldUtcDateTime';
+  if (e.includes('date') && !e.includes('time') && !e.includes('update')) return 'AxTableFieldDate';
+  if (e.includes('amount') || e.includes('mst') || e.includes('price') || e.includes('qty')
+      || e.includes('percent') || e === 'real') return 'AxTableFieldReal';
+  if (e === 'noyesid' || e.endsWith('noyesid') || e === 'noyes') return 'AxTableFieldEnum';
+  if ((e.endsWith('int') || e.includes('count') || e.includes('level'))
+      && !e.includes('account') && !e.includes('name')) return 'AxTableFieldInt';
+
+  return 'AxTableFieldString';
 }
 
 export const modifyD365FileToolDefinition = {
   name: 'modify_d365fo_file',
-  description: '✏️ Edit existing D365FO XML files (AxClass, AxTable, AxForm, etc.). Supports atomic operations: add/remove methods, add/remove fields, modify properties. Creates automatic backups. Use this instead of manual file editing to ensure correct XML structure.',
+  description: '✏️ Edit existing D365FO XML files (AxClass, AxTable, AxForm, etc.). Supports atomic operations: add/remove methods, add/remove fields, modify properties. Use this instead of manual file editing to ensure correct XML structure.',
   inputSchema: ModifyD365FileArgsSchema,
 };

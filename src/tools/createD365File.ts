@@ -67,8 +67,7 @@ const CreateD365FileArgsSchema = z.object({
     .default(false)
     .describe(
       'Allow overwriting an existing file. Use together with xmlContent when you need to completely ' +
-      'rewrite an object (e.g. table with corrupted field names). A .bak backup is created automatically ' +
-      'before overwriting. Default: false (returns error if file already exists).'
+      'rewrite an object (e.g. table with corrupted field names). Default: false (returns error if file already exists).'
     ),
 });
 
@@ -139,20 +138,42 @@ class ProjectFileFinder {
 
 /**
  * Map a D365FO base type name to the XML i:type attribute used in <AxTableField>.
+ * If the explicit fieldType is not a known primitive, fall back to name-based heuristics
+ * using edtName (same heuristics as SmartXmlBuilder.getAxTableFieldType).
  */
-function fieldTypeToAxType(fieldType: string): string {
+function fieldTypeToAxType(fieldType: string, edtName?: string): string {
   const typeMap: Record<string, string> = {
-    String:   'AxTableFieldString',
-    Integer:  'AxTableFieldInt',
-    Int64:    'AxTableFieldInt64',
-    Real:     'AxTableFieldReal',
-    Date:     'AxTableFieldDate',
-    DateTime: 'AxTableFieldDateTime',
-    Enum:     'AxTableFieldEnum',
-    GUID:     'AxTableFieldGuid',
-    Container:'AxTableFieldContainer',
+    String:      'AxTableFieldString',
+    Integer:     'AxTableFieldInt',
+    Int64:       'AxTableFieldInt64',
+    Real:        'AxTableFieldReal',
+    Date:        'AxTableFieldDate',
+    DateTime:    'AxTableFieldUtcDateTime',
+    UtcDateTime: 'AxTableFieldUtcDateTime',
+    Enum:        'AxTableFieldEnum',
+    GUID:        'AxTableFieldGuid',
+    Guid:        'AxTableFieldGuid',
+    Container:   'AxTableFieldContainer',
   };
-  return typeMap[fieldType] || 'AxTableFieldString';
+
+  const explicit = typeMap[fieldType];
+  if (explicit) return explicit;
+
+  // Fall back to EDT name heuristics (mirrors SmartXmlBuilder.getAxTableFieldType)
+  const hint = edtName || fieldType;
+  if (hint) {
+    const e = hint.toLowerCase();
+    if (e === 'recid' || e.endsWith('recid') || e.includes('refrecid')) return 'AxTableFieldInt64';
+    if (e.includes('utcdatetime') || (e.includes('datetime') && !e.includes('transdate'))) return 'AxTableFieldUtcDateTime';
+    if (e.includes('date') && !e.includes('time') && !e.includes('update')) return 'AxTableFieldDate';
+    if (e.includes('amount') || e.includes('mst') || e.includes('price') || e.includes('qty')
+        || e.includes('percent') || e === 'real') return 'AxTableFieldReal';
+    if (e === 'noyesid' || e.endsWith('noyesid') || e === 'noyes') return 'AxTableFieldEnum';
+    if ((e.endsWith('int') || e.includes('count') || e.includes('level'))
+        && !e.includes('account') && !e.includes('name')) return 'AxTableFieldInt';
+  }
+
+  return 'AxTableFieldString';
 }
 
 /**
@@ -191,9 +212,34 @@ export class XmlTemplateGenerator {
     }
     if (classEndIdx === -1) return { declaration: fullSource, methods: [] };
 
-    const declaration = fullSource.substring(0, classEndIdx + 1);
+    let declaration = fullSource.substring(0, classEndIdx + 1);
     const rest = fullSource.substring(classEndIdx + 1);
     if (!rest.trim()) return { declaration, methods: [] };
+
+    // ── FIX: Rescue member-variable declarations that appear OUTSIDE the class {}
+    // Some AI generators emit variable declarations after the class closing brace but
+    // before the first method (e.g. "}\nint myVar;\npublic void foo() { }").
+    // D365FO requires them inside the <Declaration> CDATA block. Detect and inject them now.
+    const nextBraceInRest = rest.indexOf('{');
+    if (nextBraceInRest !== -1) {
+      const preMethodText = rest.substring(0, nextBraceInRest);
+      const varLines = preMethodText
+        .split('\n')
+        .filter(l => {
+          const t = l.trim();
+          // A variable declaration ends with ';' and does NOT contain '(' (not a method call/signature)
+          return t.endsWith(';') && !t.includes('(');
+        });
+      if (varLines.length > 0) {
+        // Inject the rescued declarations into the class body, just before the closing '}'
+        const injected = varLines.map(l => '    ' + l.trim()).join('\n');
+        declaration = declaration.replace(/}(\s*)$/, `\n${injected}\n}`);
+        console.error(
+          `[splitXppClassSource] Rescued ${varLines.length} member variable declaration(s) ` +
+          'found outside the class {} block — injected into <Declaration>.'
+        );
+      }
+    }
 
     // Parse each method block from the remaining source
     const methods: Array<{ name: string; source: string }> = [];
@@ -256,15 +302,20 @@ export class XmlTemplateGenerator {
       ? `\t<IsAbstract>Yes</IsAbstract>\n`
       : '';
 
+    // D365FO convention: method source is always indented by 4 spaces inside <Source>.
+    // This matches what VS writes and what the compiler/Designer expect to see.
+    const indentMethodSource = (src: string): string =>
+      src.split('\n').map(line => '    ' + line).join('\n');
+
     const methodsXml =
       methods.length === 0
         ? '\t\t<Methods />\n'
         : `\t\t<Methods>\n${methods
             .map(
               m =>
-                `\t\t\t<Method>\n\t\t\t\t<Name>${m.name}</Name>\n\t\t\t\t<Source><![CDATA[\n${m.source}\n]]></Source>\n\t\t\t</Method>`
+                `\t\t\t<Method>\n\t\t\t\t<Name>${m.name}</Name>\n\t\t\t\t<Source><![CDATA[\n${indentMethodSource(m.source)}\n]]></Source>\n\t\t\t</Method>`
             )
-            .join('\n')}\n\t\t</Methods>\n`;
+            .join('\n\n')}\n\t\t</Methods>\n`;
 
     return `<?xml version="1.0" encoding="utf-8"?>
 <AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
@@ -320,7 +371,9 @@ ${methodsXml}\t</SourceCode>
     } else {
       fieldsXml = '\t<Fields>\n';
       for (const f of fieldSpecs) {
-        const iType = f.edt ? 'AxTableFieldString' : fieldTypeToAxType(f.type || 'String');
+        // Determine i:type: use explicit type if provided, otherwise derive from EDT name heuristics.
+        // NEVER default to AxTableFieldString blindly when an EDT is present — EDT base type matters!
+        const iType = fieldTypeToAxType(f.type || 'String', f.edt);
         fieldsXml += `\t\t<AxTableField xmlns="" i:type="${iType}">\n`;
         fieldsXml += `\t\t\t<Name>${f.name}</Name>\n`;
         if (f.edt)       fieldsXml += `\t\t\t<ExtendedDataType>${f.edt}</ExtendedDataType>\n`;
@@ -1636,6 +1689,31 @@ ${defaultParamGroupXml}
 
     return xml;
   }
+
+  /**
+   * Convert <Text><![CDATA[…RDL…]]></Text> to XML entity-encoded form.
+   *
+   * D365FO stores and expects the embedded RDL as entity-encoded text, not CDATA:
+   *   <Text>&lt;?xml version="1.0"?&gt;&lt;Report ...&gt;...&lt;/Report&gt;</Text>
+   *
+   * CDATA is valid XML and semantically equivalent, but the VS Designer metadata loader
+   * does not render <Designs> correctly when the <Text> value uses CDATA — the design
+   * appears empty even though no parse error is raised. Using entity encoding matches
+   * what VS writes natively and fixes the empty-design issue.
+   *
+   * This is a SEPARATE method from sanitizeReportXml intentionally:
+   *   - sanitizeReportXml operates on CDATA form (efficient regex over raw XML text)
+   *   - encodeReportTextElement runs AFTER sanitize, just before writing to disk
+   */
+  static encodeReportTextElement(xml: string): string {
+    return xml.replace(/<Text><!\[CDATA\[([\s\S]*?)\]\]><\/Text>/g, (_match, rdlInner: string) => {
+      const encoded = rdlInner
+        .replace(/&/g, '&amp;')   // must be first to avoid double-encoding
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      return `<Text>${encoded}</Text>`;
+    });
+  }
 }
 
 /**
@@ -1970,7 +2048,7 @@ export async function handleCreateD365File(
         'Provide it in one of these ways:\n' +
         '  1. Pass modelName explicitly in the tool call arguments\n' +
         '  2. Add modelName to .mcp.json context: { "context": { "modelName": "YourModel" } }\n' +
-        '  3. Add workspacePath ending with the package/model name: { "context": { "workspacePath": "K:\\\\...\\\\YourModel" } }\n' +
+        '  3. Add workspacePath ending with the package/model name: { "context": { "workspacePath": "C:\\\\AosService\\\\PackagesLocalDirectory\\\\YourModel" } }\n' +
         '  4. Add projectPath or solutionPath to .mcp.json so the model is auto-extracted from .rnrproj';
       console.error(`[create_d365fo_file] ${errorMsg}`);
       return { content: [{ type: 'text', text: errorMsg }] };
@@ -2018,9 +2096,9 @@ export async function handleCreateD365File(
           `  {\n` +
           `    "servers": {\n` +
           `      "context": {\n` +
-          `        "projectPath": "K:\\\\VSProjects\\\\YourSolution\\\\YourProject\\\\YourProject.rnrproj",\n` +
-          `        "solutionPath": "K:\\\\VSProjects\\\\YourSolution",\n` +
-          `        "packagePath": "K:\\\\AosService\\\\PackagesLocalDirectory"\n` +
+          `        "projectPath": "C:\\\\VSProjects\\\\YourSolution\\\\YourProject\\\\YourProject.rnrproj",\n` +
+          `        "solutionPath": "C:\\\\VSProjects\\\\YourSolution",\n` +
+          `        "packagePath": "C:\\\\AosService\\\\PackagesLocalDirectory"\n` +
           `      }\n` +
           `    }\n` +
           `  }\n\n` +
@@ -2141,7 +2219,7 @@ export async function handleCreateD365File(
         `Running on: ${process.platform}\n\n` +
         `The create_d365fo_file tool requires:\n` +
         `1. Running on Windows (local D365FO VM)\n` +
-        `2. Direct access to K:\\AosService\\PackagesLocalDirectory\n\n` +
+        `2. Direct access to PackagesLocalDirectory (e.g. C:\\AosService\\PackagesLocalDirectory)\n\n` +
         `This tool CANNOT work through Azure MCP proxy (runs on Linux).\n\n` +
         `Solutions:\n` +
         `- Run MCP server locally on D365FO Windows VM\n` +
@@ -2207,20 +2285,12 @@ export async function handleCreateD365File(
             {
               type: 'text',
               text: `⚠️ File already exists: ${normalizedFullPath}\n\nOptions:\n` +
-                `  1. Pass overwrite=true together with xmlContent to replace the file (backup created automatically).\n` +
+                `  1. Pass overwrite=true together with xmlContent to replace the file.\n` +
                 `  2. Use modify_d365fo_file to make targeted changes (rename-field, replace-all-fields, modify-property, …).\n` +
                 `  3. Choose a different objectName.`,
             },
           ],
         };
-      }
-      // overwrite=true — create backup before replacing
-      const backupPath = normalizedFullPath + '.bak';
-      try {
-        await fs.copyFile(normalizedFullPath, backupPath);
-        console.error(`[create_d365fo_file] Backup created: ${backupPath}`);
-      } catch (backupErr) {
-        console.error(`[create_d365fo_file] Warning: could not create backup: ${backupErr}`);
       }
     }
 
@@ -2260,6 +2330,10 @@ export async function handleCreateD365File(
     // are always present, regardless of whether xmlContent came from the template or a caller.
     if (args.objectType === 'report') {
       xmlContent = XmlTemplateGenerator.sanitizeReportXml(xmlContent);
+      // Convert remaining <Text><![CDATA[…]]></Text> to entity-encoded form.
+      // sanitizeReportXml operates on CDATA internally; this final step converts
+      // the output so that D365FO VS Designer renders the design correctly.
+      xmlContent = XmlTemplateGenerator.encodeReportTextElement(xmlContent);
     }
 
     // Debug: Log XML content length
@@ -2372,17 +2446,24 @@ export async function handleCreateD365File(
 
           if (wasAdded) {
             console.error(`[create_d365fo_file] Successfully added to project`);
-            projectMessage = `\n✅ Successfully added to Visual Studio project:\n📋 Project: ${projectPath}\n`;
+            projectMessage = `\n✅ Successfully added to Visual Studio project:\n📋 Project: ${projectPath}\n` +
+              `ℹ️  If the file does not appear in VS Solution Explorer, right-click the project → Reload Project.`;
           } else {
             console.error(`[create_d365fo_file] File already exists in project`);
             projectMessage = `\n✅ File already exists in Visual Studio project:\n📋 Project: ${projectPath}\n`;
           }
         } catch (projectError) {
+          const errMsg = projectError instanceof Error ? projectError.message : 'Unknown error';
+          const isLocked = errMsg.includes('EBUSY') || errMsg.includes('EPERM') || errMsg.includes('EACCES');
           console.error(
             `[create_d365fo_file] Failed to add to project:`,
             projectError
           );
-          projectMessage = `\n⚠️ File created but failed to add to project:\n${projectError instanceof Error ? projectError.message : 'Unknown error'}\n`;
+          projectMessage = `\n⚠️ File created but failed to add to project:\n${errMsg}\n` +
+            (isLocked
+              ? `This usually means Visual Studio has the .rnrproj file locked.\n` +
+                `Close Visual Studio (or unload the project), re-run the tool, then reopen.\n`
+              : '');
         }
       } else if (!projectMessage) {
         // No projectPath found from any source — surface this in the response so AI and user see it

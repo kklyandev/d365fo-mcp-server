@@ -286,12 +286,9 @@ class ConfigManager {
    */
   getPackagePath(): string | null {
     const context = this.getContext();
-    if (!context) {
-      return null;
-    }
 
     // If packagePath is explicitly set, use it
-    if (context.packagePath) {
+    if (context?.packagePath) {
       const resolved = normalizePath(context.packagePath);
       console.error(
         `[ConfigManager] Using explicit packagePath: ${resolved}`
@@ -300,7 +297,7 @@ class ConfigManager {
     }
 
     // If workspacePath contains PackagesLocalDirectory, extract the base path
-    if (context.workspacePath) {
+    if (context?.workspacePath) {
       const normalized = path.normalize(context.workspacePath);
       
       // If workspacePath points to a specific model, extract base path
@@ -319,6 +316,23 @@ class ConfigManager {
     // Fallback: check if auto-detection already ran and found packagePath
     if (this.autoDetectedProject?.packagePath) {
       return normalizePath(this.autoDetectedProject.packagePath);
+    }
+
+    // Last resort (Windows only): probe well-known PackagesLocalDirectory locations.
+    // Covers the two standard D365FO installation scenarios without requiring .mcp.json config:
+    //   C:\AosService\PackagesLocalDirectory  → VHD / local developer machine
+    //   K:\AosService\PackagesLocalDirectory  → cloud-hosted VM (standard Azure Dev/Test image)
+    if (process.platform === 'win32') {
+      const wellKnownCandidates = [
+        'C:\\AosService\\PackagesLocalDirectory',
+        'K:\\AosService\\PackagesLocalDirectory',
+      ];
+      for (const candidate of wellKnownCandidates) {
+        if (existsSync(candidate)) {
+          console.error(`[ConfigManager] ✅ Auto-probed packagePath: ${candidate}`);
+          return candidate;
+        }
+      }
     }
 
     return null;
