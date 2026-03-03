@@ -1525,11 +1525,18 @@ export class XppSymbolIndex {
         for (const ep of entryPoints) {
           // Skip malformed entry points — missing name causes "Too few parameter values" in better-sqlite3
           if (!ep.name) continue;
+          // Safeguard: accessLevel may be an object in older JSONs extracted before
+          // xmlParser normalisation was added. Serialize to string.
+          const accessLevelStr = ep.accessLevel == null
+            ? null
+            : typeof ep.accessLevel === 'object'
+              ? Object.entries(ep.accessLevel as Record<string, string>).map(([k, v]) => `${k}:${v}`).join(',')
+              : String(ep.accessLevel);
           insertEntry.run(
             name,
             ep.name,
             ep.objectType ?? null,
-            ep.accessLevel ?? null,
+            accessLevelStr,
             model
           );
         }

@@ -28,6 +28,24 @@ const EXTRACT_MODE = process.env.EXTRACT_MODE || 'all';
 // Use shared utility for checking custom models
 const isCustomModel = checkIsCustomModel;
 
+/**
+ * Strip machine-specific prefix so that sourcePath stored in JSON is relative
+ * to PackagesLocalDirectory (portable across CI agents and local machines).
+ * e.g. "/home/vsts/work/1/PackagesLocalDirectory/App/App/AxClass/X.xml"
+ *   => "App/App/AxClass/X.xml"
+ */
+function normalizeSourcePath(p: string): string {
+  const m = /[/\\]PackagesLocalDirectory[/\\](.+)$/.exec(p);
+  return m ? m[1].replace(/\\/g, '/') : p;
+}
+
+/** JSON.stringify replacer that normalises all sourcePath values. */
+function sourcePathReplacer(key: string, value: unknown): unknown {
+  return key === 'sourcePath' && typeof value === 'string'
+    ? normalizeSourcePath(value)
+    : value;
+}
+
 let MODELS_TO_EXTRACT: string[] = [];
 let FILTER_MODE: 'all' | 'custom-only' | 'standard-only' = 'all';
 
@@ -532,7 +550,7 @@ async function extractClasses(
       const outputDir = path.join(OUTPUT_PATH, modelName, 'classes');
       await fs.mkdir(outputDir, { recursive: true });
       const outputFile = path.join(outputDir, `${classInfo.data.name}.json`);
-      await fs.writeFile(outputFile, JSON.stringify(classInfo.data, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify(classInfo.data, sourcePathReplacer, 2));
 
       stats.classes++;
     } catch (error) {
@@ -586,7 +604,7 @@ async function extractTables(
       const outputDir = path.join(OUTPUT_PATH, modelName, 'tables');
       await fs.mkdir(outputDir, { recursive: true });
       const outputFile = path.join(outputDir, `${tableInfo.data.name}.json`);
-      await fs.writeFile(outputFile, JSON.stringify(tableInfo.data, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify(tableInfo.data, sourcePathReplacer, 2));
 
       stats.tables++;
     } catch (error) {
@@ -642,7 +660,7 @@ async function extractForms(
       const outputDir = path.join(OUTPUT_PATH, modelName, 'forms');
       await fs.mkdir(outputDir, { recursive: true });
       const outputFile = path.join(outputDir, `${formInfo.name}.json`);
-      await fs.writeFile(outputFile, JSON.stringify(formInfo, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify(formInfo, sourcePathReplacer, 2));
 
       stats.forms++;
     } catch (error) {
@@ -696,7 +714,7 @@ async function extractQueries(
       const outputDir = path.join(OUTPUT_PATH, modelName, 'queries');
       await fs.mkdir(outputDir, { recursive: true });
       const outputFile = path.join(outputDir, `${queryName}.json`);
-      await fs.writeFile(outputFile, JSON.stringify(queryInfo, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify(queryInfo, sourcePathReplacer, 2));
 
       stats.queries++;
     } catch (error) {
@@ -749,7 +767,7 @@ async function extractViews(
         const outputDir = path.join(OUTPUT_PATH, modelName, 'views');
         await fs.mkdir(outputDir, { recursive: true });
         const outputFile = path.join(outputDir, `${viewInfo.data.name}.json`);
-        await fs.writeFile(outputFile, JSON.stringify(viewInfo.data, null, 2));
+        await fs.writeFile(outputFile, JSON.stringify(viewInfo.data, sourcePathReplacer, 2));
 
         if (viewInfo.data.type === 'data-entity') {
           stats.dataEntities++;
@@ -802,7 +820,7 @@ async function extractEnums(
       const outputDir = path.join(OUTPUT_PATH, modelName, 'enums');
       await fs.mkdir(outputDir, { recursive: true });
       const outputFile = path.join(outputDir, file.replace('.xml', '.json'));
-      await fs.writeFile(outputFile, JSON.stringify({ raw: content }, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify({ raw: content }, sourcePathReplacer, 2));
 
       stats.enums++;
     } catch (error) {
@@ -858,7 +876,7 @@ async function extractEdts(
       const outputDir = path.join(OUTPUT_PATH, modelName, 'edts');
       await fs.mkdir(outputDir, { recursive: true });
       const outputFile = path.join(outputDir, `${edtInfo.name}.json`);
-      await fs.writeFile(outputFile, JSON.stringify(edtInfo, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify(edtInfo, sourcePathReplacer, 2));
 
       stats.edts++;
     } catch (error) {
@@ -919,7 +937,7 @@ async function extractReports(
       };
 
       const outputFile = path.join(outputDir, `${name}.json`);
-      await fs.writeFile(outputFile, JSON.stringify(stub, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify(stub, sourcePathReplacer, 2));
 
       stats.reports++;
     } catch (error) {
@@ -952,7 +970,7 @@ async function extractSecurityPrivileges(
       const result = await parser.parseSecurityPrivilegeFile(filePath);
       if (!result.success || !result.data) { stats.errors++; continue; }
       const outputFile = path.join(outputDir, `${result.data.name}.json`);
-      await fs.writeFile(outputFile, JSON.stringify({ ...result.data, model: modelName, type: 'security-privilege' }, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify({ ...result.data, model: modelName, type: 'security-privilege' }, sourcePathReplacer, 2));
       stats.securityPrivileges++;
     } catch (error) {
       console.error(`   ❌ Error extracting security privilege ${file}:`, error);
@@ -984,7 +1002,7 @@ async function extractSecurityDuties(
       const result = await parser.parseSecurityDutyFile(filePath);
       if (!result.success || !result.data) { stats.errors++; continue; }
       const outputFile = path.join(outputDir, `${result.data.name}.json`);
-      await fs.writeFile(outputFile, JSON.stringify({ ...result.data, model: modelName, type: 'security-duty' }, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify({ ...result.data, model: modelName, type: 'security-duty' }, sourcePathReplacer, 2));
       stats.securityDuties++;
     } catch (error) {
       console.error(`   ❌ Error extracting security duty ${file}:`, error);
@@ -1016,7 +1034,7 @@ async function extractSecurityRoles(
       const result = await parser.parseSecurityRoleFile(filePath);
       if (!result.success || !result.data) { stats.errors++; continue; }
       const outputFile = path.join(outputDir, `${result.data.name}.json`);
-      await fs.writeFile(outputFile, JSON.stringify({ ...result.data, model: modelName, type: 'security-role' }, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify({ ...result.data, model: modelName, type: 'security-role' }, sourcePathReplacer, 2));
       stats.securityRoles++;
     } catch (error) {
       console.error(`   ❌ Error extracting security role ${file}:`, error);
@@ -1055,7 +1073,7 @@ async function extractMenuItems(
       const result = await parser.parseMenuItemFile(filePath, itemType);
       if (!result.success || !result.data) { stats.errors++; continue; }
       const outputFile = path.join(outputDir, `${result.data.name}.json`);
-      await fs.writeFile(outputFile, JSON.stringify({ ...result.data, model: modelName, type: `menu-item-${itemType}` }, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify({ ...result.data, model: modelName, type: `menu-item-${itemType}` }, sourcePathReplacer, 2));
       (stats as any)[statKey]++;
     } catch (error) {
       console.error(`   ❌ Error extracting menu item (${itemType}) ${file}:`, error);
@@ -1099,7 +1117,7 @@ async function extractExtensions(
       const result = await parser.parseExtensionFile(filePath, extensionType);
       if (!result.success || !result.data) { stats.errors++; continue; }
       const outputFile = path.join(outputDir, `${result.data.name}.json`);
-      await fs.writeFile(outputFile, JSON.stringify({ ...result.data, model: modelName, type: extensionType }, null, 2));
+      await fs.writeFile(outputFile, JSON.stringify({ ...result.data, model: modelName, type: extensionType }, sourcePathReplacer, 2));
       const statKey = statKeyMap[extensionType];
       if (statKey) (stats as any)[statKey]++;
     } catch (error) {

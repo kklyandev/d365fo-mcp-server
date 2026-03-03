@@ -826,11 +826,24 @@ export class XppMetadataParser {
 
       const rawEps = root.EntryPoints?.AxSecurityEntryPointReference;
       const epArray = rawEps ? (Array.isArray(rawEps) ? rawEps : [rawEps]) : [];
-      const entryPoints = epArray.map((ep: any) => ({
-        name: ep.Name || '',
-        objectType: ep.ObjectType || '',
-        accessLevel: ep.Grant || ep.Access || '',
-      })).filter((ep: any) => ep.name);
+      const entryPoints = epArray.map((ep: any) => {
+        // Grant / Access can be a plain string (e.g. "Allow") OR an object
+        // ({ Read: "Allow", Create: "Allow", ... }) depending on the XML structure.
+        // Normalise to a string so it can be stored as TEXT in SQLite.
+        const rawAccess = ep.Grant ?? ep.Access;
+        let accessLevel: string;
+        if (rawAccess == null) {
+          accessLevel = '';
+        } else if (typeof rawAccess === 'object') {
+          // Serialize to "Read:Allow,Create:Allow,..." form
+          accessLevel = Object.entries(rawAccess as Record<string, string>)
+            .map(([k, v]) => `${k}:${v}`)
+            .join(',');
+        } else {
+          accessLevel = String(rawAccess);
+        }
+        return { name: ep.Name || '', objectType: ep.ObjectType || '', accessLevel };
+      }).filter((ep: any) => ep.name);
 
       return { success: true, data: { name, label, sourcePath: filePath, entryPoints } };
     } catch (error) {
