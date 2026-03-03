@@ -1523,7 +1523,15 @@ export class XppSymbolIndex {
         });
 
         for (const ep of entryPoints) {
-          insertEntry.run(name, ep.name, ep.objectType, ep.accessLevel, model);
+          // Skip malformed entry points — missing name causes "Too few parameter values" in better-sqlite3
+          if (!ep.name) continue;
+          insertEntry.run(
+            name,
+            ep.name,
+            ep.objectType ?? null,
+            ep.accessLevel ?? null,
+            model
+          );
         }
       } catch (error) {
         console.error(`      ⚠️  Skipped security-privilege ${file}: ${error instanceof Error ? error.message : error}`);
