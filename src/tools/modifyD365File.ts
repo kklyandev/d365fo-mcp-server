@@ -8,6 +8,7 @@ import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { XppServerContext } from '../types/context.js';
 import { promises as fs } from 'fs';
+import { ensureXppDocComment } from '../utils/xppDocGen.js';
 import path from 'path';
 import { parseStringPromise, Builder } from 'xml2js';
 import { getConfigManager } from '../utils/configManager.js';
@@ -499,7 +500,7 @@ async function createFileBackup(filePath: string): Promise<void> {
  * Add method to class/table/form
  */
 async function addMethod(xmlObj: any, objectType: string, args: any): Promise<boolean> {
-  const { methodName, methodCode, methodModifiers: _methodModifiers, methodReturnType: _methodReturnType, methodParameters: _methodParameters } = args;
+  const { methodName, methodCode, methodModifiers, methodReturnType, methodParameters } = args;
 
   if (!methodName) {
     throw new Error('methodName is required for add-method operation');
@@ -519,7 +520,7 @@ async function addMethod(xmlObj: any, objectType: string, args: any): Promise<bo
     if (!root.SourceCode || typeof root.SourceCode[0] !== 'object') {
       root.SourceCode = [{}];
     }
-    root.SourceCode[0].Declaration = [methodCode || ''];
+    root.SourceCode[0].Declaration = [ensureXppDocComment(methodCode || '')];
     return true;
   }
 
@@ -552,10 +553,24 @@ async function addMethod(xmlObj: any, objectType: string, args: any): Promise<bo
     methodsNode[0].Method = [methodsNode[0].Method];
   }
 
+  // Build full method source — if methodCode already contains the signature use it directly,
+  // otherwise assemble from methodModifiers / methodReturnType / methodParameters.
+  let fullSource: string;
+  if (methodCode && methodCode.includes('(')) {
+    // Caller passed a complete method (signature + body)
+    fullSource = methodCode;
+  } else {
+    const modifiers  = methodModifiers  || 'public';
+    const retType    = methodReturnType || 'void';
+    const params     = methodParameters || '';
+    const bodyLines  = methodCode || `// TODO: Implement ${methodName}`;
+    fullSource = `${modifiers} ${retType} ${methodName}(${params})\n{\n    ${bodyLines}\n}`;
+  }
+
   // Create method node
   const newMethod = {
     Name: [methodName],
-    Source: [methodCode || `// TODO: Implement ${methodName}\nreturn;`],
+    Source: [ensureXppDocComment(fullSource)],
   };
 
   methodsNode[0].Method.push(newMethod);

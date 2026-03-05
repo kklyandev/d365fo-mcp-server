@@ -11,6 +11,7 @@ import { Parser, Builder } from 'xml2js';
 import { getConfigManager } from '../utils/configManager.js';
 import { registerCustomModel, resolveObjectPrefix, applyObjectPrefix } from '../utils/modelClassifier.js';
 import { PackageResolver } from '../utils/packageResolver.js';
+import { ensureXppDocComment } from '../utils/xppDocGen.js';
 
 const CreateD365FileArgsSchema = z.object({
   objectType: z
@@ -482,7 +483,7 @@ export class XmlTemplateGenerator {
         : `\t\t<Methods>\n${methods
             .map(
               m =>
-                `\t\t\t<Method>\n\t\t\t\t<Name>${m.name}</Name>\n\t\t\t\t<Source><![CDATA[\n${indentMethodSource(m.source)}\n\n]]></Source>\n\t\t\t</Method>`
+                `\t\t\t<Method>\n\t\t\t\t<Name>${m.name}</Name>\n\t\t\t\t<Source><![CDATA[\n${indentMethodSource(ensureXppDocComment(m.source))}\n\n]]></Source>\n\t\t\t</Method>`
             )
             .join('\n\n')}\n\t\t</Methods>\n`;
 
@@ -491,7 +492,7 @@ export class XmlTemplateGenerator {
 \t<Name>${className}</Name>
 ${extendsAttr}${implementsAttr}${isFinalAttr}${isAbstractAttr}\t<SourceCode>
 \t\t<Declaration><![CDATA[
-${declaration}
+${ensureXppDocComment(declaration)}
 ]]></Declaration>
 ${methodsXml}\t</SourceCode>
 </AxClass>
