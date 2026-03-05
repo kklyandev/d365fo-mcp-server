@@ -76,7 +76,13 @@ class XmlTemplateGenerator {
 
     let declaration = fullSource.substring(0, classEndIdx + 1);
     const rest = fullSource.substring(classEndIdx + 1);
-    if (!rest.trim()) return { declaration, methods: [] };
+    if (!rest.trim()) {
+      const innerResult = XmlTemplateGenerator.extractInnerClassMethods(declaration);
+      if (innerResult) {
+        return innerResult;
+      }
+      return { declaration, methods: [] };
+    }
 
     // ── FIX: Rescue member-variable declarations that appear OUTSIDE the class {}
     const nextBraceInRest = rest.indexOf('{');
@@ -124,7 +130,123 @@ class XmlTemplateGenerator {
       pos = bodyEnd + 1;
     }
 
+    // ── Fallback: methods inside class {} ─────────────────────────────────────
+    // See the same comment in createD365File.ts for the full rationale.
+    // When methods are inside the class body, extract them so they become proper
+    // <Method> elements separated by blank lines via .join('\n\n').
+    if (methods.length === 0) {
+      const innerResult = XmlTemplateGenerator.extractInnerClassMethods(declaration);
+      if (innerResult) {
+        return innerResult;
+      }
+    }
+
     return { declaration, methods };
+  }
+
+  /**
+   * Extract methods defined INSIDE the class body (depth-1 inside {}).
+   * Mirror of the same method in createD365File.ts — kept in sync manually.
+   * See createD365File.ts for the full documentation.
+   */
+  static extractInnerClassMethods(classDeclaration: string): {
+    declaration: string;
+    methods: Array<{ name: string; source: string }>;
+  } | null {
+    const classOpenIdx = classDeclaration.indexOf('{');
+    const classCloseIdx = classDeclaration.lastIndexOf('}');
+    if (classOpenIdx === -1 || classCloseIdx <= classOpenIdx) return null;
+
+    const classBody = classDeclaration.substring(classOpenIdx + 1, classCloseIdx);
+    const methods: Array<{ name: string; source: string }> = [];
+    const memberVarLines: string[] = [];
+
+    let pos = 0;
+    while (pos < classBody.length) {
+      const nextBrace = classBody.indexOf('{', pos);
+      if (nextBrace === -1) {
+        for (const line of classBody.substring(pos).split('\n')) {
+          const t = line.trim();
+          if (t.length > 0 && t.endsWith(';') && !t.includes('(') &&
+              !t.startsWith('//') && !t.startsWith('*')) {
+            memberVarLines.push(t);
+          }
+        }
+        break;
+      }
+
+      const sigText = classBody.substring(pos, nextBrace);
+
+      let depth = 0;
+      let bodyEnd = -1;
+      for (let i = nextBrace; i < classBody.length; i++) {
+        if (classBody[i] === '{') depth++;
+        else if (classBody[i] === '}') {
+          depth--;
+          if (depth === 0) { bodyEnd = i; break; }
+        }
+      }
+      if (bodyEnd === -1) break;
+
+      const parenIdx = sigText.lastIndexOf('(');
+      if (parenIdx !== -1) {
+        for (const line of sigText.split('\n')) {
+          const t = line.trim();
+          if (t.length > 0 && t.endsWith(';') && !t.includes('(') &&
+              !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('[')) {
+            memberVarLines.push(t);
+          }
+        }
+
+        const beforeLastParen = sigText.substring(0, parenIdx);
+        const lastNewlineBeforeLastParen = beforeLastParen.lastIndexOf('\n');
+        let methodStartInSig = lastNewlineBeforeLastParen !== -1
+          ? lastNewlineBeforeLastParen + 1
+          : 0;
+
+        const sigBeforeMethod = sigText.substring(0, methodStartInSig);
+        const sigBeforeLines = sigBeforeMethod.split('\n').reverse();
+        let droppedChars = 0;
+        for (const line of sigBeforeLines) {
+          const t = line.trim();
+          if (t.length === 0 || t.startsWith('[') || t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) {
+            droppedChars += line.length + 1;
+          } else {
+            break;
+          }
+        }
+        methodStartInSig = Math.max(0, methodStartInSig - droppedChars);
+
+        const methodSource = classBody
+          .substring(pos + methodStartInSig, bodyEnd + 1)
+          .trim();
+
+        const nameMatch = sigText.substring(0, parenIdx).match(/(\w+)\s*$/);
+        const methodName = nameMatch ? nameMatch[1] : `method${methods.length + 1}`;
+        methods.push({ name: methodName, source: methodSource });
+      } else {
+        for (const line of sigText.split('\n')) {
+          const t = line.trim();
+          if (t.length > 0 && t.endsWith(';') && !t.includes('(') &&
+              !t.startsWith('//') && !t.startsWith('*')) {
+            memberVarLines.push(t);
+          }
+        }
+      }
+      pos = bodyEnd + 1;
+    }
+
+    if (methods.length === 0) return null;
+
+    const classHeader = classDeclaration.substring(0, classOpenIdx + 1);
+    const memberVarsXpp = memberVarLines.length > 0
+      ? '\n' + memberVarLines.map(v => '    ' + v).join('\n') + '\n'
+      : '\n';
+
+    return {
+      declaration: classHeader + memberVarsXpp + '}',
+      methods,
+    };
   }
 
   /**
@@ -283,6 +405,7 @@ ${titleField1Xml}${titleField2Xml}\t<DeleteActions />
     public class ${formName} extends FormRun
     {
     }
+
 ]]></Source>
 \t\t\t</Method>
 \t\t</Methods>
@@ -371,7 +494,8 @@ ${titleField1Xml}${titleField2Xml}\t<DeleteActions />
    *   style         - Design style template             (e.g. 'TableStyleTemplate')
    *   aotQuery      - AOT query name for DynamicParameter (e.g. 'SalesTable')
    *   fields        - Array of { name, alias?, dataType?, caption?, disableAutoCreate? } → AxReportDataSetField
-   *   datasets      - Array of { name, dpClassName, tmpTableName, fields?, aotQuery? } for multi-dataset reports
+   *   datasets      - Array of { name, dpClassName, tmpTableName, fields?, aotQuery?, contractParams? } for multi-dataset reports
+   *   contractParams - Array of { name, dataType?, label?, defaultValue? } → contract class parameters (DataMember)
    *   rdlContent    - Full RDL XML string to embed (auto-generated from fields when omitted)
    *
    * AOT structure generated (mirrors real D365FO reports like AslReports_CashOrder_CZ):
@@ -403,6 +527,7 @@ ${titleField1Xml}${titleField2Xml}\t<DeleteActions />
     type DatasetDef = {
       name: string; dpClassName: string; tmpTableName: string;
       fields?: FieldDef[]; aotQuery?: string;
+      contractParams?: Array<{ name: string; dataType?: string; label?: string; defaultValue?: string }>;
     };
 
     // ── Resolve datasets (multi-dataset array OR single-dataset shorthand) ──
@@ -419,6 +544,7 @@ ${titleField1Xml}${titleField2Xml}\t<DeleteActions />
         tmpTableName,
         fields:       properties?.fields    as FieldDef[] | undefined,
         aotQuery:     properties?.aotQuery  as string     | undefined,
+        contractParams: properties?.contractParams as Array<{ name: string; dataType?: string; label?: string; defaultValue?: string }> | undefined,
       }];
     }
     const designName = properties?.designName || 'Report';
@@ -525,6 +651,18 @@ ${fieldsXml}
     const dpParamName  = `${firstDs.dpClassName.toUpperCase()}_DynamicParameter`;
     const aotQueryLine = firstDs.aotQuery ? `\n\t\t\t\t<AOTQuery>${firstDs.aotQuery}</AOTQuery>` : '';
 
+    // Contract parameters (from DataContract class with [DataMember] attributes)
+    const contractParamsXml = (firstDs.contractParams || []).map(cp => {
+      const dataTypeLine = cp.dataType ? `\n\t\t\t\t<DataType>${cp.dataType}</DataType>` : '';
+      const promptLine = cp.label ? `\n\t\t\t\t<PromptString>${cp.label}</PromptString>` : '';
+      return `\t\t\t<AxReportParameterBase xmlns=""
+\t\t\t\t\ti:type="AxReportParameter">
+\t\t\t\t<Name>${firstDs.name}_ds_${cp.name}</Name>${dataTypeLine}${promptLine}
+\t\t\t\t<DefaultValue />
+\t\t\t\t<Values />
+\t\t\t</AxReportParameterBase>`;
+    }).join('\n');
+
     const defaultParamGroupXml = `\t<DefaultParameterGroup>
 \t\t<Name xmlns="">Parameters</Name>
 \t\t<ReportParameterBases xmlns="">
@@ -580,7 +718,7 @@ ${fieldsXml}
 \t\t\t\t<DefaultValue />
 \t\t\t\t<Values />
 \t\t\t</AxReportParameterBase>
-\t\t\t<AxReportParameterBase xmlns=""
+${contractParamsXml}${contractParamsXml ? '\n' : ''}\t\t\t<AxReportParameterBase xmlns=""
 \t\t\t\t\ti:type="AxReportParameter">
 \t\t\t\t<Name>${dpParamName}</Name>${aotQueryLine}
 \t\t\t\t<AllowBlank>true</AllowBlank>
@@ -652,6 +790,75 @@ ${rdlFields}      <rd:DataSetInfo>
 
       const rdlDatasetsXml = `  <DataSets>\n${datasets.map(buildRdlDataset).join('\n')}\n  </DataSets>`;
 
+      // ── Build a simple detail tablix for each dataset so the design is not empty ──
+      const buildRdlTablix = (ds: DatasetDef): string => {
+        if (!ds.fields || ds.fields.length === 0) return '';
+        const n      = ds.fields.length;
+        const colW   = +Math.min(1.5, 7 / n).toFixed(2);
+        const totalW = +(colW * n).toFixed(2);
+        const grp    = `Details_${ds.name}`;
+        const cols   = ds.fields.map(() =>
+          `            <TablixColumn><Width>${colW}in</Width></TablixColumn>`).join('\n');
+        const hCells = ds.fields.map(f => [
+          `            <TablixCell><CellContents>`,
+          `              <Textbox Name="Textbox_${f.name}_H">`,
+          `                <CanGrow>true</CanGrow><Value>${f.name}</Value>`,
+          `                <Style><FontWeight>Bold</FontWeight>`,
+          `                  <BackgroundColor>LightGrey</BackgroundColor>`,
+          `                  <Border><Style>Solid</Style></Border>`,
+          `                  <PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight>`,
+          `                  <PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom>`,
+          `                </Style></Textbox>`,
+          `            </CellContents></TablixCell>`,
+        ].join('\n')).join('\n');
+        const dCells = ds.fields.map(f => [
+          `            <TablixCell><CellContents>`,
+          `              <Textbox Name="Textbox_${f.name}">`,
+          `                <CanGrow>true</CanGrow><Value>=Fields!${f.name}.Value</Value>`,
+          `                <Style><Border><Style>Solid</Style></Border>`,
+          `                  <PaddingLeft>2pt</PaddingLeft><PaddingRight>2pt</PaddingRight>`,
+          `                  <PaddingTop>2pt</PaddingTop><PaddingBottom>2pt</PaddingBottom>`,
+          `                </Style></Textbox>`,
+          `            </CellContents></TablixCell>`,
+        ].join('\n')).join('\n');
+        const cMembers = ds.fields.map(() => `          <TablixMember />`).join('\n');
+        return [
+          `        <Tablix Name="Tablix_${ds.name}">`,
+          `          <TablixBody>`,
+          `            <TablixColumns>`,
+          cols,
+          `            </TablixColumns>`,
+          `            <TablixRows>`,
+          `              <TablixRow><Height>0.25in</Height><TablixCells>`,
+          hCells,
+          `              </TablixCells></TablixRow>`,
+          `              <TablixRow><Height>0.25in</Height><TablixCells>`,
+          dCells,
+          `              </TablixCells></TablixRow>`,
+          `            </TablixRows>`,
+          `          </TablixBody>`,
+          `          <TablixColumnHierarchy><TablixMembers>`,
+          cMembers,
+          `          </TablixMembers></TablixColumnHierarchy>`,
+          `          <TablixRowHierarchy><TablixMembers>`,
+          `            <TablixMember>`,
+          `              <KeepWithGroup>After</KeepWithGroup>`,
+          `              <RepeatOnNewPage>true</RepeatOnNewPage>`,
+          `            </TablixMember>`,
+          `            <TablixMember><Group Name="${grp}"><DataGroupName>${grp}</DataGroupName></Group></TablixMember>`,
+          `          </TablixMembers></TablixRowHierarchy>`,
+          `          <DataSetName>${ds.name}</DataSetName>`,
+          `          <Top>0.5in</Top><Left>0.5in</Left>`,
+          `          <Height>0.5in</Height><Width>${totalW}in</Width>`,
+          `          <Style><Border><Style>Solid</Style></Border></Style>`,
+          `        </Tablix>`,
+        ].join('\n');
+      };
+      const rdlBodyItemsXml = datasets.map(buildRdlTablix).filter(Boolean).join('\n');
+      const rdlBodyTag = rdlBodyItemsXml
+        ? `        <ReportItems>\n${rdlBodyItemsXml}\n        </ReportItems>`
+        : `        <ReportItems />`;
+
       const rdlParamDefs = [
         { name: 'AX_PartitionKey',      nullable: true,  blank: true,  usedInQuery: false },
         { name: 'AX_CompanyName',        nullable: false, blank: false, usedInQuery: false },
@@ -665,7 +872,7 @@ ${rdlFields}      <rd:DataSetInfo>
         rdlParamDefs.map(p => {
           const nullLine  = p.nullable     ? `\n      <Nullable>true</Nullable>`        : '';
           const blankLine = p.blank        ? `\n      <AllowBlank>true</AllowBlank>`    : '';
-          const usedLine  = p.usedInQuery  ? `\n      <UsedInQuery>True</UsedInQuery>` : '';
+          const usedLine  = p.usedInQuery  ? `\n      <UsedInQuery>true</UsedInQuery>` : '';
           return `    <ReportParameter Name="${p.name}">\n      <DataType>String</DataType>${nullLine}${blankLine}\n      <Prompt>${p.name}</Prompt>\n      <Hidden>true</Hidden>${usedLine}\n    </ReportParameter>`;
         }).join('\n') + `\n  </ReportParameters>`;
 
@@ -692,7 +899,7 @@ ${rdlDatasetsXml}
   <ReportSections>
     <ReportSection>
       <Body>
-        <ReportItems />
+${rdlBodyTag}
         <Height>1in</Height>
         <Style>
           <Border>
@@ -724,7 +931,11 @@ ${rdlParamLayoutXml}
     const captionLine = properties?.caption ? `\n\t\t\t<Caption>${properties.caption}</Caption>` : '';
     const styleLine   = properties?.style   ? `\n\t\t\t<Style>${properties.style}</Style>`       : '';
     const rdlContent  = properties?.rdlContent as string | undefined;
-    const rdl         = rdlContent || buildRdlSkeleton();
+    // Sanitize: fix old-schema <Header> inside <TablixMember> — renamed to <TablixHeader> in 2016 RDL.
+    // This handles AI-generated or older-tool-generated RDL that still uses the pre-2016 element name.
+    const rdl = (rdlContent || buildRdlSkeleton())
+      .replace(/<Header>/g, '<TablixHeader>')
+      .replace(/<\/Header>/g, '</TablixHeader>');
     // D365FO Designer requires entity-encoded <Text> (not CDATA) to render the design.
     const encodeForText = (s: string) =>
       s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -879,17 +1090,39 @@ ${defaultParamGroupXml}
     const elemName = itemType === 'menu-item-action' ? 'AxMenuItemAction'
       : itemType === 'menu-item-output' ? 'AxMenuItemOutput'
       : 'AxMenuItemDisplay';
-    const objType = itemType === 'menu-item-action' ? 'Class'
-      : itemType === 'menu-item-output' ? 'Report'
-      : 'Form';
     const targetObject = properties?.targetObject || properties?.object || name;
     const label = properties?.label || '@TODO:LabelId';
+
+    // Determine ObjectType based on item type and explicit properties.
+    // D365FO serializer rules (confirmed from real XML files):
+    //   - AxMenuItemAction:  ObjectType is always "Class"; must be present.
+    //   - AxMenuItemDisplay: ObjectType is OMITTED when targeting a Form (default);
+    //                        use "Class" only when explicitly set.
+    //   - AxMenuItemOutput:  ObjectType is "Class" (controller) or "SSRSReport";
+    //                        "Report" is NOT a valid value — real files use "SSRSReport".
+    const explicitObjType: string | undefined = properties?.objectType || properties?.targetType;
+    let objType: string | undefined;
+    if (itemType === 'menu-item-action') {
+      objType = explicitObjType || 'Class';
+    } else if (itemType === 'menu-item-output') {
+      if (explicitObjType === 'Report') {
+        objType = 'SSRSReport';
+      } else {
+        objType = explicitObjType || 'Class';
+      }
+    } else {
+      // Display: omit ObjectType when targeting a Form (implicit default)
+      if (explicitObjType && explicitObjType !== 'Form') {
+        objType = explicitObjType;
+      }
+    }
+
+    const objectTypeXml = objType ? `\n\t<ObjectType>${objType}</ObjectType>` : '';
     return `<?xml version="1.0" encoding="utf-8"?>
 <${elemName} xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V1">
 \t<Name>${name}</Name>
 \t<Label>${label}</Label>
-\t<Object>${targetObject}</Object>
-\t<ObjectType>${objType}</ObjectType>
+\t<Object>${targetObject}</Object>${objectTypeXml}
 </${elemName}>`;
   }
 

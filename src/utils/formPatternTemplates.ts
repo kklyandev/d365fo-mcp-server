@@ -91,6 +91,7 @@ export class FormPatternTemplates {
 public class ${formName} extends FormRun
 {
 }
+
 ]]></Source>
 \t\t\t</Method>
 \t\t</Methods>
@@ -253,6 +254,7 @@ ${fieldControls}\t\t\t\t</Controls>
 public class ${formName} extends FormRun
 {
 }
+
 ]]></Source>
 \t\t\t</Method>
 \t\t</Methods>
@@ -451,6 +453,7 @@ ${detailFieldControls}\t\t\t\t\t\t\t\t\t\t</Controls>
 public class ${formName} extends FormRun
 {
 }
+
 ]]></Source>
 \t\t\t</Method>
 \t\t</Methods>
@@ -609,6 +612,7 @@ ${overviewFieldControls}\t\t\t\t\t\t\t\t</Controls>
 public class ${formName} extends FormRun
 {
 }
+
 ]]></Source>
 \t\t\t</Method>
 \t\t</Methods>
@@ -824,6 +828,7 @@ ${headerFieldControls}\t\t\t\t\t\t\t\t</Controls>
 public class ${formName} extends FormRun
 {
 }
+
 ]]></Source>
 \t\t\t</Method>
 \t\t</Methods>
@@ -940,6 +945,7 @@ ${bodyContent}\t\t\t\t</Controls>
 public class ${formName} extends FormRun
 {
 }
+
 ]]></Source>
 \t\t\t</Method>
 \t\t</Methods>
@@ -1005,6 +1011,7 @@ ${tabPageControls}\t\t\t\t</Controls>
 public class ${formName} extends FormRun
 {
 }
+
 ]]></Source>
 \t\t\t</Method>
 \t\t</Methods>

@@ -68,7 +68,7 @@ export class SmartXmlBuilder {
     if (methods && methods.length > 0) {
       xml += `\t\t<Methods>\n`;
       xml += methods
-        .map(m => `\t\t\t<Method>\n\t\t\t\t<Name>${m.name}</Name>\n\t\t\t\t<Source><![CDATA[\n${m.source}\n]]></Source>\n\t\t\t</Method>`)
+        .map(m => `\t\t\t<Method>\n\t\t\t\t<Name>${m.name}</Name>\n\t\t\t\t<Source><![CDATA[\n${m.source}\n\n]]></Source>\n\t\t\t</Method>`)
         .join('\n\n') + '\n';
       xml += `\t\t</Methods>\n`;
     } else {
