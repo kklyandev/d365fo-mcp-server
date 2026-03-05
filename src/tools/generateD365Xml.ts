@@ -562,12 +562,8 @@ ${titleField1Xml}${titleField2Xml}\t<DeleteActions />
       }
     };
 
-    // ── UUID helper ──
-    const uuid = (): string =>
-      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = Math.random() * 16 | 0;
-        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-      });
+    // ── UUID helper — use Node.js crypto for guaranteed RFC-4122 v4 format ──
+    const uuid = (): string => crypto.randomUUID();
 
     // ── Build one AxReportDataSet XML entry ──
     const buildDatasetXml = (ds: DatasetDef): string => {
@@ -778,6 +774,7 @@ ${contractParamsXml}${contractParamsXml ? '\n' : ''}\t\t\t<AxReportParameterBase
           rdlFields = `      <Fields>\n${flines.join('\n')}\n      </Fields>\n`;
         }
         return `    <DataSet Name="${ds.name}">
+      <rd:DataSetID>${uuid()}</rd:DataSetID>
       <Query>
         <DataSourceName>AutoGen__ReportDataProvider</DataSourceName>
         <QueryParameters>
