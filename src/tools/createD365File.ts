@@ -858,6 +858,11 @@ public class ${queryName} extends QueryRun
     // ── Build one AxReportDataSet XML entry ──
     const buildDatasetXml = (ds: DatasetDef): string => {
       const dpParamName = `${ds.dpClassName.toUpperCase()}_DynamicParameter`;
+      const contractDatasetParamsXml = (ds.contractParams || []).map(cp => {
+        const pn = `${ds.name}_ds_${cp.name}`;
+        const dt = cp.dataType || 'System.String';
+        return `\t\t\t\t<AxReportDataSetParameter>\n\t\t\t\t\t<Name>${pn}</Name>\n\t\t\t\t\t<Alias>${pn}</Alias>\n\t\t\t\t\t<DataType>${dt}</DataType>\n\t\t\t\t\t<Parameter>${pn}</Parameter>\n\t\t\t\t</AxReportDataSetParameter>`;
+      }).join('\n');
       let fieldsXml: string;
       if (ds.fields && ds.fields.length > 0) {
         const entries = ds.fields.map(f => {
@@ -925,7 +930,7 @@ ${fieldsXml}
 \t\t\t\t\t<DataType>System.String</DataType>
 \t\t\t\t\t<Parameter>AX_RdpPreProcessedId</Parameter>
 \t\t\t\t</AxReportDataSetParameter>
-\t\t\t\t<AxReportDataSetParameter>
+${contractDatasetParamsXml ? contractDatasetParamsXml + '\n' : ''}\t\t\t\t<AxReportDataSetParameter>
 \t\t\t\t\t<Name>${dpParamName}</Name>
 \t\t\t\t\t<Alias>${dpParamName}</Alias>
 \t\t\t\t\t<DataType>Microsoft.Dynamics.AX.Framework.Services.Client.QueryMetadata</DataType>
@@ -1044,9 +1049,11 @@ ${contractParamsXml}${contractParamsXml ? '\n' : ''}\t\t\t<AxReportParameterBase
       // Build one RDL DataSet per AxReportDataSet
       const buildRdlDataset = (ds: DatasetDef): string => {
         const dsDpParam   = `${ds.dpClassName.toUpperCase()}_DynamicParameter`;
+        const contractParamNamesRdl = (ds.contractParams || []).map(cp => `${ds.name}_ds_${cp.name}`);
         const paramNames  = [
           'AX_PartitionKey', 'AX_CompanyName', 'AX_UserContext',
           'AX_RenderingCulture', 'AX_ReportContext', 'AX_RdpPreProcessedId',
+          ...contractParamNamesRdl,
           dsDpParam,
         ];
         const queryParams = paramNames
@@ -1152,7 +1159,11 @@ ${rdlFields}      <rd:DataSetInfo>
         ? `        <ReportItems>\n${rdlBodyItemsXml}\n        </ReportItems>`
         : `        <ReportItems />`;
 
-      // ReportParameters — 6 AX system params + DynamicParameter (all hidden)
+      // ReportParameters — 6 AX system params + DynamicParameter + contract params (all hidden)
+      const contractRdlParams = (firstDs.contractParams || []).map(cp => ({
+        name: `${firstDs.name}_ds_${cp.name}`,
+        nullable: true, blank: true, usedInQuery: true,
+      }));
       const rdlParamDefs = [
         { name: 'AX_PartitionKey',      nullable: true,  blank: true,  usedInQuery: false },
         { name: 'AX_CompanyName',        nullable: false, blank: false, usedInQuery: false },
@@ -1161,6 +1172,7 @@ ${rdlFields}      <rd:DataSetInfo>
         { name: 'AX_ReportContext',       nullable: true,  blank: true,  usedInQuery: true  },
         { name: 'AX_RdpPreProcessedId',  nullable: true,  blank: true,  usedInQuery: false },
         { name: dpParamName,             nullable: true,  blank: true,  usedInQuery: false },
+        ...contractRdlParams,
       ];
       const rdlParamsXml = `  <ReportParameters>\n` +
         rdlParamDefs.map(p => {
