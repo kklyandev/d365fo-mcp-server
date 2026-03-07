@@ -1,268 +1,91 @@
-# Setup Guide
+# Setup Guide — Client Configuration
 
-Complete guide for installing and deploying the D365 F&O MCP Server.
+This guide covers everything a **developer** needs to start using the D365 F&O MCP Server
+with GitHub Copilot in Visual Studio 2022.
+
+If you are responsible for deploying the server infrastructure to Azure, see [SETUP_AZURE.md](SETUP_AZURE.md).
+
+---
 
 ## Table of Contents
 
-- [What You Need](#what-you-need)
-- [Local Setup (Windows VM)](#local-setup-windows-vm)
-- [Azure Deployment](#azure-deployment)
-- [Azure DevOps Pipelines](#azure-devops-pipelines)
-- [Visual Studio 2022 Configuration](#visual-studio-2022-configuration)
+- [Prerequisites](#prerequisites)
+- [Step 1 — Enable MCP in GitHub and Visual Studio](#step-1--enable-mcp-in-github-and-visual-studio)
+- [Step 2 — Place copilot-instructions.md](#step-2--place-copilot-instructionsmd)
+- [Step 3 — Create .mcp.json](#step-3--create-mcpjson)
+  - [Scenario A: Azure-hosted server (most teams)](#scenario-a-azure-hosted-server-most-teams)
+  - [Scenario B: Hybrid — Azure search + local file writes](#scenario-b-hybrid--azure-search--local-file-writes)
+  - [Scenario C: Local server only](#scenario-c-local-server-only)
+  - [Scenario D: UDE (Unified Developer Experience)](#scenario-d-ude-unified-developer-experience)
+- [Where to place .mcp.json](#where-to-place-mcpjson)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
-## What You Need
+## Prerequisites
 
-### Software
-- **Node.js** 24.x or later (LTS recommended)
-- **Git**
-- **Azure CLI** (for Azure deployment only)
-
-### Azure Resources (cloud deployment only)
-- **Azure Blob Storage** — stores the metadata databases (~2 GB total: 1-1.5 GB symbols + 500 MB labels for 4 languages)
-- **Azure App Service** — B1 minimum, P0v3 recommended for production
-- **Azure Cache for Redis** — optional, speeds up repeated queries
-
-### D365FO Access
-
-- A D365FO development environment with PackagesLocalDirectory (traditional), or
-- A UDE environment with Power Platform Tools in VS2022 (custom + Microsoft metadata roots), or
-- A metadata export from your D365FO environment
+| Component | Minimum version | Notes |
+|-----------|----------------|-------|
+| Visual Studio 2022 | 17.14 | Earlier versions do not support MCP |
+| GitHub Copilot extension | Latest | Requires an active Copilot subscription |
+| Node.js | 24.x LTS | Required for hybrid setup only |
+| Git | Any | Required for hybrid setup only |
 
 ---
 
-## Local Setup (Windows VM)
+## Step 1 — Enable MCP in GitHub and Visual Studio
 
-### 1. Clone and Install
-
-```powershell
-git clone https://github.com/dynamics365ninja/d365fo-mcp-server.git
-cd d365fo-mcp-server
-npm install
-```
-
-### 2. Configure Environment
-
-Copy the example configuration file and fill in your values:
-
-```powershell
-copy .env.example .env
-```
-
-Key settings in `.env`:
-
-```env
-# Environment type: auto (default), traditional, ude
-DEV_ENVIRONMENT_TYPE=auto
-
-# --- Traditional ---
-PACKAGES_PATH=C:/AosService/PackagesLocalDirectory
-CUSTOM_MODELS=YourModel1,YourModel2
-
-# --- UDE (Unified Developer Experience) ---
-# Leave XPP_CONFIG_NAME empty to auto-select newest config
-# Tip: run  npm run select-config  to pick interactively
-# XPP_CONFIG_NAME=
-
-# --- Database ---
-DB_PATH=./data/xpp-metadata.db                 # Symbols (~1-1.5 GB)
-LABELS_DB_PATH=./data/xpp-metadata-labels.db   # Labels (~500 MB for 4 languages)
-LABEL_LANGUAGES=en-US,cs,sk,de                 # Reduce with fewer languages
-
-# --- Cloud (optional) ---
-# AZURE_STORAGE_CONNECTION_STRING=...
-# REDIS_ENABLED=false
-```
-
-### 3. Extract Metadata
-
-Pull symbol information from your D365FO installation:
-
-```powershell
-# Extract only your custom models (fast, a few minutes)
-npm run extract-metadata
-
-# Or extract everything including standard Microsoft models
-$env:EXTRACT_MODE="all"; npm run extract-metadata
-```
-
-### 4. Build the Database
-
-Index all extracted symbols into the SQLite databases:
-
-```powershell
-npm run build-database
-```
-
-This creates:
-- `data/xpp-metadata.db` — Symbols database (~1-1.5 GB)
-- `data/xpp-metadata-labels.db` — Labels database (~500 MB for 4 languages, up to 8 GB for all 70 languages)
-
-**Performance:** Separated databases ensure symbol search remains fast (<500ms) even with 20M+ labels.
-
-### 5. Start the Server
-
-```powershell
-# Development (auto-restarts on file changes)
-npm run dev
-
-# Production
-npm start
-```
-
-The server runs at `http://localhost:8080`. Check `http://localhost:8080/health` to confirm it is up.
-
-### Startup behaviour by configuration
-
-The server automatically decides whether to download the database on startup based on your environment variables.
-
-| Scenario | Required settings | What happens on startup |
-|----------|-------------------|------------------------|
-| **Local dev — database from Azure** | `AZURE_STORAGE_CONNECTION_STRING` + `BLOB_CONTAINER_NAME` | Downloads `xpp-metadata.db` (~1–1.5 GB) and `xpp-metadata-labels.db` (~500 MB) from Blob Storage if missing or outdated. Validates integrity before use. |
-| **Local dev — database built locally** | `PACKAGES_PATH` + run `npm run build-database` once | No download. Opens `data/xpp-metadata.db` directly. If it doesn't exist the server warns and starts with an empty index. |
-| **Azure App Service** (read-only mode) | `MCP_SERVER_MODE=read-only` + `AZURE_STORAGE_CONNECTION_STRING` | Downloads the latest database on each cold start. Only search and analysis tools are exposed — file-operation tools are hidden. |
-| **Local hybrid companion** (write-only mode) | `MCP_SERVER_MODE=write-only` | Skips all database work entirely. Starts in under one second. Only exposes `create_d365fo_file`, `modify_d365fo_file`, and `create_label`. |
-
-> **Hybrid setup:** When the Azure server runs in `read-only` mode and the local companion runs in `write-only` mode, GitHub Copilot connects to both simultaneously and routes each tool call to the correct instance automatically. See [MCP_CONFIG.md](MCP_CONFIG.md#hybrid-setup-azure--local) for the `.mcp.json` configuration.
-
----
-
-## Azure Deployment
-
-### 1. Create Azure Resources
-
-```bash
-# Storage account (holds the metadata database)
-az storage account create \
-  --name yourstorageaccount \
-  --resource-group your-rg \
-  --location westeurope \
-  --sku Standard_LRS
-
-az storage container create \
-  --name xpp-metadata \
-  --account-name yourstorageaccount
-
-# App Service plan
-az appservice plan create \
-  --name xpp-mcp-plan \
-  --resource-group your-rg \
-  --sku P0v3 \
-  --is-linux
-
-# Web app
-az webapp create \
-  --name xpp-mcp-server \
-  --plan xpp-mcp-plan \
-  --resource-group your-rg \
-  --runtime "NODE:24-lts"
-```
-
-For a development/test server B1 SKU is sufficient. For production use P0v3 or higher.
-
-### 2. Configure App Settings
-
-```bash
-az webapp config appsettings set \
-  --name xpp-mcp-server \
-  --resource-group your-rg \
-  --settings \
-    AZURE_STORAGE_CONNECTION_STRING="..." \
-    BLOB_CONTAINER_NAME="xpp-metadata" \
-    DB_PATH="./data/xpp-metadata.db" \
-    NODE_ENV="production"
-```
-
-### 3. Deploy the Application
-
-```bash
-npm run build
-
-# Include package.json and package-lock.json so App Service can run
-# npm ci at deploy time and compile better-sqlite3 for its own environment.
-# Do NOT include node_modules — Oryx builds them on the server.
-Compress-Archive -Path dist, package.json, package-lock.json, startup.sh `
-  -DestinationPath deploy.zip
-
-az webapp deployment source config-zip \
-  --resource-group your-rg \
-  --name xpp-mcp-server \
-  --src deploy.zip
-```
-
-> `SCM_DO_BUILD_DURING_DEPLOYMENT=true` (set in the Bicep template) tells Oryx
-> to run `npm ci` after the zip is unpacked. This compiles native addons such as
-> `better-sqlite3` against the exact Node.js version running on App Service,
-> avoiding the *"Module did not self-register"* error.
-
-### 4. Verify
-
-```bash
-curl https://xpp-mcp-server.azurewebsites.net/health
-```
-
----
-
-## Azure DevOps Pipelines
-
-Three ready-to-use pipelines are in `.azure-pipelines/`:
-
-| Pipeline | When to use | Duration |
-|----------|-------------|----------|
-| `d365fo-mcp-data-build-custom.yml` | After any change to your custom models | ~5–15 min |
-| `d365fo-mcp-data-build-standard.yml` | After a D365FO version upgrade or hotfix | ~30–45 min |
-| `d365fo-mcp-data-platform-upgrade.yml` | Full rebuild: standard + custom + database | ~1.5–2 h |
-
-### Required Variable Group
-
-Create a variable group named `xpp-mcp-server-config` in Azure DevOps with these variables:
-
-| Variable | Secret | Example value |
-|----------|--------|--------------|
-| `AZURE_STORAGE_CONNECTION_STRING` | ✅ Yes | Connection string from Azure Portal |
-| `BLOB_CONTAINER_NAME` | No | `xpp-metadata` |
-| `CUSTOM_MODELS` | No | `MyModel,MyFinance` |
-| `AZURE_SUBSCRIPTION` | No | Name of your Azure service connection |
-| `AZURE_APP_SERVICE_NAME` | No | `xpp-mcp-server` |
-
-### Uploading Standard Packages
-
-Before running the standard or platform upgrade pipelines, upload `PackagesLocalDirectory.zip`
-to your Blob Storage container named `packages`:
-
-```powershell
-# From your D365FO VM
-Compress-Archive -Path "C:\AosService\PackagesLocalDirectory" -DestinationPath "PackagesLocalDirectory.zip"
-
-az storage blob upload \
-  --connection-string $env:AZURE_STORAGE_CONNECTION_STRING \
-  --container-name packages \
-  --name PackagesLocalDirectory.zip \
-  --file PackagesLocalDirectory.zip \
-  --overwrite
-```
-
----
-
-## Visual Studio 2022 Configuration
-
-### Requirements
-
-| Component | Minimum version |
-|-----------|----------------|
-| Visual Studio 2022 | 17.14 |
-| GitHub Copilot extension | Latest |
-
-### Steps
-
-1. Enable *Editor Preview Features* at **https://github.com/settings/copilot/features**
+1. Go to **https://github.com/settings/copilot/features** and enable **Editor Preview Features**.
 
 2. In Visual Studio: **Tools → Options → GitHub → Copilot**
-   - Enable **"Enable MCP server integration in agent mode"**
+   → Enable **"Enable MCP server integration in agent mode"**
 
-3. Create `.mcp.json` in your solution root:
+3. Open Copilot Chat and switch to **Agent Mode** (not Ask or Edit).
+
+> MCP tools only appear in Agent Mode. If you do not see them, check that both settings above are enabled.
+
+---
+
+## Step 2 — Place copilot-instructions.md
+
+Copy the file `.github/copilot-instructions.md` from this repository into the root of your
+D365FO solution workspace (same folder as your `.sln` file):
+
+```
+K:\VSProjects\MySolution\
+├── .mcp.json                      ← config file (created in Step 3)
+├── .github\
+│   └── copilot-instructions.md   ← copy here from this repo
+├── MySolution.sln
+└── MyProject\
+    └── MyProject.rnrproj
+```
+
+GitHub Copilot automatically picks up `copilot-instructions.md` and uses it to give
+the AI the right D365FO context for every conversation.
+
+---
+
+## Step 3 — Create .mcp.json
+
+Choose the scenario that matches your setup.
+
+---
+
+### Scenario A: Azure-hosted server (most teams)
+
+**What it is:** Your team runs the MCP server on Azure. You only connect to it as a client.
+No local server, no local database.
+
+**What you need:**
+- The URL of the Azure-hosted MCP server (ask your admin)
+- Your `workspacePath` (path to your model on the Windows VM)
+
+**What you do NOT need to do:**
+- Install Node.js or clone the repository
+- Build a metadata index — it lives in the cloud
+
+**.mcp.json:**
 
 ```json
 {
@@ -271,58 +94,265 @@ az storage blob upload \
       "url": "https://your-server.azurewebsites.net/mcp/"
     },
     "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourModel"
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
 ```
 
-4. Copy `.github/copilot-instructions.md` from this repo into your D365FO solution workspace.
+The two-level `workspacePath` (`PackageName\ModelName`) is the only value you need.
+From it the server automatically derives `packagePath`, `packageName`, and `modelName`.
 
-5. Restart Visual Studio and open Copilot Chat in **Agent Mode**.
+> **Read-only limitation:** The Azure server cannot write files to your local Windows VM.
+> To create or modify files, use **Scenario B** (hybrid) or copy the generated XML manually.
 
-See [MCP_CONFIG.md](MCP_CONFIG.md) for all configuration options.
+---
+
+### Scenario B: Hybrid — Azure search + local file writes
+
+**What it is:** The Azure server handles all metadata search (fast, shared index).
+A lightweight local server runs on your Windows VM and handles only file creation/modification.
+GitHub Copilot routes each tool call to the correct server automatically.
+
+**What you need:**
+- The Azure server URL
+- Node.js 24.x installed on your Windows VM
+- A local clone of this repository
+
+**One-time setup on your Windows VM:**
+
+```powershell
+git clone https://github.com/dynamics365ninja/d365fo-mcp-server.git K:\d365fo-mcp-server
+cd K:\d365fo-mcp-server
+npm install
+npm run build
+```
+
+> You do **not** need to extract metadata or build a database. The metadata index lives
+> in Azure Blob Storage and is downloaded by the Azure server, not the local companion.
+> The local server starts in under one second and only handles file operations.
+
+**Keeping it up to date** — pull and rebuild whenever a new version is released:
+
+```powershell
+cd K:\d365fo-mcp-server
+git pull
+npm install
+npm run build
+```
+
+**.mcp.json:**
+
+```json
+{
+  "servers": {
+    "d365fo-azure": {
+      "url": "https://your-server.azurewebsites.net/mcp/"
+    },
+    "d365fo-local": {
+      "command": "node",
+      "args": ["K:\\d365fo-mcp-server\\dist\\index.js", "--stdio"],
+      "env": {
+        "MCP_SERVER_MODE": "write-only"
+      }
+    },
+    "context": {
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
+      "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj"
+    }
+  }
+}
+```
+
+`projectPath` is optional but recommended — it pins the exact `.rnrproj` so file creation
+always targets the right model even when multiple projects are open.
+
+> **How it works:** GitHub Copilot sees both tool lists combined. Search calls go to Azure,
+> `create_d365fo_file` / `modify_d365fo_file` / `create_label` go to the local server.
+
+---
+
+### Scenario C: Local server only
+
+**What it is:** The MCP server runs entirely on your Windows VM. All metadata is indexed
+locally. Suitable for individual developers who do not want to use Azure.
+
+**What you need:**
+- Node.js 24.x, Git
+- A D365FO installation with `PackagesLocalDirectory`
+- Time to build the metadata index (~5–15 min for custom models, ~1–2 h for everything)
+
+**Setup:**
+
+```powershell
+git clone https://github.com/dynamics365ninja/d365fo-mcp-server.git K:\d365fo-mcp-server
+cd K:\d365fo-mcp-server
+npm install
+copy .env.example .env
+```
+
+Edit `.env`:
+
+```env
+DEV_ENVIRONMENT_TYPE=auto
+PACKAGES_PATH=K:/AosService/PackagesLocalDirectory
+CUSTOM_MODELS=YourPackageName
+```
+
+Extract and index the metadata:
+
+```powershell
+# Custom models only (recommended, a few minutes)
+npm run extract-metadata
+npm run build-database
+
+# Full extraction including all Microsoft standard models (~1-2 h)
+$env:EXTRACT_MODE="all"; npm run extract-metadata
+npm run build-database
+```
+
+Start the server:
+
+```powershell
+npm start
+```
+
+The server runs at `http://localhost:8080`. Verify with `http://localhost:8080/health`.
+
+**.mcp.json:**
+
+```json
+{
+  "servers": {
+    "d365fo-code-intelligence": {
+      "url": "http://localhost:8080/mcp/"
+    },
+    "context": {
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
+    }
+  }
+}
+```
+
+**Keeping it up to date** — after a D365FO version upgrade or model changes, re-run extraction:
+
+```powershell
+npm run extract-metadata
+npm run build-database
+```
+
+---
+
+### Scenario D: UDE (Unified Developer Experience)
+
+**What it is:** You use Visual Studio 2022 with Power Platform Tools and the UDE environment.
+Metadata roots are different from traditional `PackagesLocalDirectory`.
+
+The server reads your XPP config from `%LOCALAPPDATA%\Microsoft\Dynamics365\XPPConfig\`
+automatically. In most cases you do not need to set any paths manually.
+
+**.mcp.json (auto-detection, recommended):**
+
+```json
+{
+  "servers": {
+    "d365fo-code-intelligence": {
+      "url": "https://your-server.azurewebsites.net/mcp/"
+    },
+    "context": {
+      "modelName": "YourModelName",
+      "devEnvironmentType": "ude"
+    }
+  }
+}
+```
+
+**.mcp.json (explicit paths, if auto-detection does not work):**
+
+```json
+{
+  "servers": {
+    "d365fo-code-intelligence": {
+      "url": "https://your-server.azurewebsites.net/mcp/"
+    },
+    "context": {
+      "modelName": "YourModelName",
+      "customPackagesPath": "C:\\CustomXppCode",
+      "microsoftPackagesPath": "C:\\Users\\...\\Dynamics365\\10.0.2428.63\\PackagesLocalDirectory",
+      "devEnvironmentType": "ude"
+    }
+  }
+}
+```
+
+---
+
+## Where to place .mcp.json
+
+The server searches for `.mcp.json` starting from the current working directory and walking
+up 5 parent levels. The recommended locations are:
+
+**Option 1 — Per-solution (recommended)**
+
+Place the file next to your `.sln` file:
+
+```
+K:\VSProjects\MySolution\
+├── .mcp.json          ← here
+├── MySolution.sln
+└── MyProject\
+    └── MyProject.rnrproj
+```
+
+This is the most precise option. Visual Studio opens `.mcp.json` automatically when it opens
+the solution folder.
+
+**Option 2 — Global (all solutions on this machine)**
+
+Place the file in your user profile directory (`%USERPROFILE%\.mcp.json`), for example:
+
+```
+C:\Users\YourName\.mcp.json
+```
+
+Use this when you have a single model that applies to all your D365FO work and you do not
+want to maintain per-solution files.
 
 ---
 
 ## Troubleshooting
 
-### "fts5: syntax error" when searching
-Your search query contains special characters. The server now handles this automatically
-with a fallback to LIKE search. If you still see this error, update to the latest version.
-
-### Database build fails with "FTS5 not available"
-Reinstall the native SQLite module:
-```powershell
-npm rebuild better-sqlite3
-```
-
-### No metadata found after extraction
-
-- **Traditional:** Check that `PACKAGES_PATH` points to a directory containing XML model files and that `CUSTOM_MODELS` matches the actual folder names exactly
-- **UDE:** Run `npm run select-config` to verify the correct XPP config is active and that the custom/Microsoft package paths exist
-- Verify file permissions on the packages directory
-
-### Slow response times on Azure
-1. Enable Redis: set `REDIS_ENABLED=true` and configure `REDIS_URL`
-2. Scale up App Service to B2 or P1v3
-3. Check available memory — minimum 1.75 GB for B1, 3.5 GB for P0v3
-
 ### MCP tools not loading in Visual Studio
 - Confirm Visual Studio version is 17.14 or later
-- Confirm *Editor Preview Features* are enabled in your GitHub account
-- Confirm the `.mcp.json` file is in the solution root (same folder as the `.sln` file)
-- Check Copilot Chat is in **Agent Mode** (not Ask or Edit mode)
+- Confirm *Editor Preview Features* are enabled at https://github.com/settings/copilot/features
+- Confirm Copilot Chat is in **Agent Mode** (not Ask or Edit)
+- Confirm `.mcp.json` is in the solution root (same folder as the `.sln` file)
+- Restart Visual Studio after creating or editing `.mcp.json`
 
 ### File created in wrong D365FO model
-Always provide a `workspacePath` in `.mcp.json` or let GitHub Copilot auto-detect
-the `.rnrproj` from the open workspace. See [WORKSPACE_DETECTION.md](WORKSPACE_DETECTION.md).
+Use the two-level `workspacePath` format: `PackagesLocalDirectory\YourPackageName\YourModelName`.
+The server extracts both `packageName` and `modelName` from it automatically.
+See [WORKSPACE_DETECTION.md](WORKSPACE_DETECTION.md).
+
+### Local server (hybrid) does not start
+- Confirm Node.js 24.x is installed: `node --version`
+- Confirm the build is up to date: re-run `npm install && npm run build` in the repo folder
+- Check the path in `.mcp.json` `args` matches where you cloned the repository
+
+### "fts5: syntax error" when searching
+Your search query contains special characters. The server handles this automatically with a
+fallback to LIKE search. If you still see this error, update to the latest version.
+
+### No results when searching
+- Confirm the Azure server is reachable: open the `/health` URL in a browser
+- For local setup: verify the database was built — `data/xpp-metadata.db` should exist and be > 100 MB
 
 ---
 
 ## Next Steps
 
-- [MCP_CONFIG.md](MCP_CONFIG.md) — configure workspace paths
-- [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) — try example prompts
+- [MCP_CONFIG.md](MCP_CONFIG.md) — full reference for all `.mcp.json` options
+- [SETUP_AZURE.md](SETUP_AZURE.md) — deploy the server to Azure (admins only)
+- [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) — example Copilot prompts
 - [CUSTOM_EXTENSIONS.md](CUSTOM_EXTENSIONS.md) — ISV and multi-model setups
 - [PIPELINES.md](PIPELINES.md) — automate metadata refresh

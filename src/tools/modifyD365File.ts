@@ -7,7 +7,7 @@
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { XppServerContext } from '../types/context.js';
-import { promises as fs } from 'fs';
+import * as fs from 'fs/promises';
 import { ensureXppDocComment } from '../utils/xppDocGen.js';
 import path from 'path';
 import { parseStringPromise, Builder } from 'xml2js';

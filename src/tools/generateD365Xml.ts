@@ -1199,10 +1199,10 @@ ${defaultParamGroupXml}
  */
 export async function handleGenerateD365Xml(
   request: CallToolRequest
-): Promise<{ content: Array<{ type: string; text: string }> }> {
-  const args = GenerateD365XmlArgsSchema.parse(request.params.arguments);
-
+): Promise<any> {
   try {
+    const args = GenerateD365XmlArgsSchema.parse(request.params.arguments);
+
     // Resolve model name: arg → mcp.json modelName → workspacePath segment
     const configManager = getConfigManager();
     const modelName = args.modelName || configManager.getModelName();
@@ -1333,6 +1333,7 @@ ${xmlContent}
           text: `❌ Error generating D365FO XML:\n\n${error instanceof Error ? error.message : 'Unknown error'}`,
         },
       ],
+      isError: true,
     };
   }
 }

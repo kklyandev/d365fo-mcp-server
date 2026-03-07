@@ -21,7 +21,7 @@ Server finds MyProject.rnrproj
            ↓
 Model name extracted: "MyModel"
            ↓
-New files created in K:\AosService\PackagesLocalDirectory\MyModel\...
+New files created in K:\AosService\PackagesLocalDirectory\MyPackage\MyModel\...
 ```
 
 ---
@@ -31,9 +31,15 @@ New files created in K:\AosService\PackagesLocalDirectory\MyModel\...
 **Nothing** — if your project is open in Visual Studio, detection is automatic.
 
 The only thing that helps is having a `workspacePath` in your `.mcp.json` pointing to your
-custom model folder. That enables the workspace-aware search (searching your local files
-alongside the standard D365FO metadata). It does **not** affect file creation paths —
-those come from the `.rnrproj` auto-detection.
+custom model using the two-level format:
+
+```
+K:\AosService\PackagesLocalDirectory\YourPackageName\YourModelName
+```
+
+This enables workspace-aware search (searching your local files alongside the standard D365FO
+metadata) and lets the server derive `packagePath`, `packageName`, and `modelName` automatically.
+It does **not** affect file creation paths — those come from the `.rnrproj` auto-detection.
 
 ---
 
@@ -44,8 +50,8 @@ Add explicit paths to `.mcp.json` only in these situations:
 | Situation | What to add |
 |-----------|------------|
 | Multiple D365FO projects in one solution | `projectPath` pointing to the right `.rnrproj` |
-| Non-standard PackagesLocalDirectory location | `packagePath` with the correct base path |
-| Running the server outside a Visual Studio workspace | `workspacePath` and/or `solutionPath` |
+| Non-standard PackagesLocalDirectory location | `workspacePath` with the full `PackagesLocalDirectory\Package\Model` path |
+| Running the server outside a Visual Studio workspace | `workspacePath` (`PackagesLocalDirectory\Package\Model`) and/or `solutionPath` |
 
 Minimal override example:
 ```json
@@ -55,7 +61,7 @@ Minimal override example:
       "url": "http://localhost:8080/mcp/"
     },
     "context": {
-      "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj"
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
@@ -73,7 +79,8 @@ When the server needs the model name for file creation:
 | 2nd | `.mcp.json` projectPath | Explicit path in config file |
 | 3rd | Auto-detection from workspace | Searches for `.rnrproj` in active workspace |
 | 4th | `.mcp.json` solutionPath | Searches inside the configured solution folder |
-| 5th | modelName parameter as-is | Last resort — may be wrong if it is a placeholder |
+| 5th | Last segment of `workspacePath` | `...\PackagesLocalDirectory\Package\Model` → `Model` |
+| 6th | Explicit `modelName` in context | Last resort — may be wrong if it is a placeholder |
 
 ---
 

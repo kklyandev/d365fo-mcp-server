@@ -296,16 +296,18 @@ class ConfigManager {
       return resolved;
     }
 
-    // If workspacePath contains PackagesLocalDirectory, extract the base path
+    // If workspacePath contains PackagesLocalDirectory, extract the base path.
+    // Supports both one-level and two-level paths:
+    //   K:\AosService\PackagesLocalDirectory\MyPackage\MyModel → K:\AosService\PackagesLocalDirectory
+    //   K:\AosService\PackagesLocalDirectory\MyModel           → K:\AosService\PackagesLocalDirectory
     if (context?.workspacePath) {
       const normalized = path.normalize(context.workspacePath);
-      
-      // If workspacePath points to a specific model, extract base path
-      // Example: K:\AosService\PackagesLocalDirectory\MyPackage
-      // Should return: K:\AosService\PackagesLocalDirectory
+
       const match = normalized.match(/^(.+[\\\/]PackagesLocalDirectory)(?:[\\\/]|$)/i);
       if (match) {
-        const resolved = normalizePath(match[1]);
+        // Normalize path separators: D365FO paths are always Windows paths (backslashes)
+        const extracted = match[1].replace(/\//g, '\\');
+        const resolved = normalizePath(extracted);
         console.error(
           `[ConfigManager] Extracted packagePath from workspacePath: ${resolved}`
         );
@@ -348,15 +350,33 @@ class ConfigManager {
 
   /**
    * Get model name from the last segment of workspacePath.
-   * workspacePath like K:\AOSService\PackagesLocalDirectory\MyPackage → "MyPackage"
+   * Supports both path formats:
+   *   K:\AOSService\PackagesLocalDirectory\MyPackage\MyModel → "MyModel"
+   *   K:\AOSService\PackagesLocalDirectory\MyModel           → "MyModel"
    * This allows automatic model detection on non-Windows (Azure) without D365FO_MODEL_NAME env var.
-   * Note: package name usually equals model name, but not always.
    */
   getModelNameFromWorkspacePath(): string | null {
     const workspacePath = this.getContext()?.workspacePath;
     if (!workspacePath) return null;
-    const segment = path.basename(path.normalize(workspacePath));
+    // Handle Windows paths on non-Windows: normalize both slash types and strip trailing slashes
+    const normalized = workspacePath.replace(/\\/g, '/').replace(/\/+$/, '');
+    const segment = normalized.split('/').pop() || null;
     return segment || null;
+  }
+
+  /**
+   * Get package name from workspacePath when it follows the two-level format:
+   *   K:\AOSService\PackagesLocalDirectory\YourPackageName\YourModelName → "YourPackageName"
+   * Returns null for one-level paths or when workspacePath is not set.
+   */
+  getPackageNameFromWorkspacePath(): string | null {
+    const workspacePath = this.getContext()?.workspacePath;
+    if (!workspacePath) return null;
+    const normalized = path.normalize(workspacePath);
+    const twoLevel = normalized.match(
+      /^.+[\\\/]PackagesLocalDirectory[\\\/]([^\\\/]+)[\\\/][^\\\/]+\\?\/?$/i
+    );
+    return twoLevel ? twoLevel[1] : null;
   }
 
   /**

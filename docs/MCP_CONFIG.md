@@ -16,15 +16,22 @@ Place this file in the root of your Visual Studio solution (next to the `.sln` f
       "url": "https://your-server.azurewebsites.net/mcp/"
     },
     "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourModel"
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
 ```
 
-That is all most users need. The server will:
+That is all most users need. From this single path the server automatically derives:
+
+| Derived value | Example |
+|---------------|---------|
+| `packagePath` | `K:\AosService\PackagesLocalDirectory` |
+| `packageName` | `YourPackageName` |
+| `modelName`   | `YourModelName` |
+
+The server will also:
 - Automatically find your `.rnrproj` file in the open workspace
-- Extract the correct model name from it
 - Write any new files to the right location under PackagesLocalDirectory
 
 ---
@@ -40,8 +47,7 @@ That is all most users need. The server will:
       "url": "https://your-server.azurewebsites.net/mcp/"
     },
     "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourModel",
-      "packagePath": "K:\\AosService\\PackagesLocalDirectory",
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
       "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj",
       "solutionPath": "K:\\VSProjects\\MySolution"
     }
@@ -61,10 +67,10 @@ roots — one for your custom code and one for Microsoft standard packages:
       "url": "https://your-server.azurewebsites.net/mcp/"
     },
     "context": {
-      "workspacePath": "C:\\CustomXppCode\\YourPackage\\YourModel",
+      "modelName": "YourModelName",
       "customPackagesPath": "C:\\CustomXppCode",
       "microsoftPackagesPath": "C:\\Users\\...\\Dynamics365\\10.0.2428.63\\PackagesLocalDirectory",
-      "devEnvironmentType": "auto"
+      "devEnvironmentType": "ude"
     }
   }
 }
@@ -73,16 +79,13 @@ roots — one for your custom code and one for Microsoft standard packages:
 In most UDE setups you do not need to set these manually — the server reads your XPP config
 files from `%LOCALAPPDATA%\Microsoft\Dynamics365\XPPConfig\` and detects the paths automatically.
 
-`workspacePath` is optional in UDE. It enables hybrid search (finding local files not yet indexed)
-and project auto-detection (locating `.rnrproj` files). It does not control where files are created —
-that is determined by `customPackagesPath` and `microsoftPackagesPath`.
-
 ### All Properties
 
 | Property | Required | What it does |
 |----------|----------|-------------|
-| `workspacePath` | Recommended | Root folder of your custom D365FO model. Enables workspace-aware search. |
-| `packagePath` | Optional | Base PackagesLocalDirectory path. Auto-extracted from `workspacePath` if not set. |
+| `workspacePath` | Recommended | Path to your model: `...\PackagesLocalDirectory\PackageName\ModelName`. All three values are derived from it automatically. |
+| `packagePath` | Optional | Base PackagesLocalDirectory path. Auto-extracted from `workspacePath` — only needed when `workspacePath` is not set. |
+| `modelName` | Optional | Explicit model name override — only needed when it differs from the last `workspacePath` segment. |
 | `customPackagesPath` | Optional | UDE: Custom X++ code root (from XPP config `ModelStoreFolder`). |
 | `microsoftPackagesPath` | Optional | UDE: Microsoft X++ root (from XPP config `FrameworkDirectory`). |
 | `devEnvironmentType` | Optional | `auto` (default), `traditional`, or `ude`. Controls path resolution behavior. |
@@ -110,7 +113,7 @@ When the server needs to create a file, it resolves the target path in this orde
 
 1. **Tool argument** — if the tool call itself includes a `packagePath`, that wins
 2. **`.mcp.json` packagePath** — explicit value from the config file
-3. **Auto-extracted** — if `workspacePath` contains `PackagesLocalDirectory`, the base is extracted
+3. **Auto-extracted from `workspacePath`** — everything up to `PackagesLocalDirectory` is used as the base
 4. **Default fallback** — `K:\AosService\PackagesLocalDirectory`
 
 **UDE mode:**
@@ -120,8 +123,9 @@ When the server needs to create a file, it resolves the target path in this orde
 3. **Fallback** — existing `PACKAGES_PATH` env var or `packagePath` from `.mcp.json`
 
 In D365FO, a package can contain multiple models (e.g., package "CustomExtensions" may contain
-models "Contoso Utilities" and "Contoso Reporting"). When the package name differs from the model
-name, you can pass `packageName` explicitly to any file creation tool. In UDE mode, the server
+models "Contoso Utilities" and "Contoso Reporting"). The two-level `workspacePath` format
+(`PackagesLocalDirectory\PackageName\ModelName`) encodes both, so the server knows exactly
+which package directory to write to without any descriptor XML scanning. In UDE mode, the server
 also auto-resolves package names by reading descriptor XML files. In traditional mode, it defaults
 to assuming package name equals model name.
 
@@ -129,7 +133,8 @@ For the model name used when creating files:
 1. **Auto-detected from `.rnrproj`** found in the active GitHub Copilot workspace
 2. **`projectPath` from `.mcp.json`** — the model name is read from the `.rnrproj` file
 3. **`solutionPath` from `.mcp.json`** — the server searches for `.rnrproj` files inside it
-4. **modelName parameter** — used as-is only if none of the above are available
+4. **Last segment of `workspacePath`** — `...\PackagesLocalDirectory\PackageName\ModelName` → `ModelName`
+5. **Explicit `modelName`** in context — used only if none of the above are available
 
 ---
 
@@ -190,6 +195,7 @@ GitHub Copilot connects to both servers at the same time and selects the right o
       }
     },
     "context": {
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
       "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj"
     }
   }

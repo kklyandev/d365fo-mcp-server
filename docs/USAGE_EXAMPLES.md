@@ -1,547 +1,170 @@
 # Usage Examples
 
-Practical examples you can copy and paste directly into Copilot Chat.
-
-## Table of Contents
-
-- [Searching for Code](#searching-for-code)
-- [Exploring Classes and Tables](#exploring-classes-and-tables)
-- [Chain of Command Extensions](#chain-of-command-extensions)
-- [Generating New Classes](#generating-new-classes)
-- [Creating Files](#creating-files)
-- [Where-Used Analysis](#where-used-analysis)
-- [Batch Jobs (SysOperation)](#batch-jobs-sysoperation)
-- [Financial Dimensions](#financial-dimensions)
-- [Ledger Journals](#ledger-journals)
-- [Form Extensions](#form-extensions)
-- [Working with Labels](#working-with-labels)
-- [Security and Extensions](#security-and-extensions)
+Five real-world scenarios that show how GitHub Copilot chains multiple MCP tools together
+to complete complex D365FO tasks in a single conversation.
 
 ---
 
-## Searching for Code
+## Scenario 1 — Implement a Safe Chain of Command Extension
 
-### Find a class by name or concept
-```
-Find all classes related to sales invoice posting
-```
-Returns: SalesInvoiceJournalPost, SalesInvoiceController, CustInvoiceJour...
+**Goal:** Safely extend an existing D365FO method without breaking other ISV extensions
+or producing a duplicate wrapper.
 
-### Find classes, tables, and methods at once
+**Prompt:**
 ```
-Find the SalesTable class, SalesLine table, and any helper classes for sales processing
-```
-Runs three searches in parallel and combines the results.
-
-### Search only your custom code
-```
-Find my custom extensions for CustTable
-Show me all ISV_ helper classes
-Find classes in the MyModel model
+I need to extend SalesFormLetter.run() in my MyPackage\MyModel model.
+Before writing anything:
+1. Check if CoC extensions already exist for this method
+2. Show me what other extension points SalesFormLetter has
+3. Get the exact method signature I need to match
+Then generate the CoC extension class that logs a custom audit record
+after the base call completes, and create the file in my project.
 ```
 
-### Find a method across all classes
-```
-Find all validateWrite methods in the codebase
-Search for methods that handle credit limit validation
-```
+**Tools Copilot chains:**
+1. `find_coc_extensions` — lists all existing wrappers for `SalesFormLetter.run()`
+2. `analyze_extension_points` — shows CoC-eligible methods, `final` blocks, and delegate hooks on `SalesFormLetter`
+3. `get_method_signature` — returns the exact return type and parameters to match
+4. `generate_code` with `pattern: coc-extension` — produces the complete extension class
+5. `create_d365fo_file` — writes the XML to `MyPackage\MyModel\AxClass\` and adds it to the `.rnrproj`
+6. `verify_d365fo_project` — confirms the file is on disk and in the project
 
----
-
-## Exploring Classes and Tables
-
-### View all methods on a class
-```
-Show me all methods on CustTable
-What methods does SalesFormLetter have?
-```
-
-Returns each method with its full signature and a brief description.
-
-### View table fields and relations
-```
-Show me the fields and relations on SalesLine
-What is the primary key of CustTable?
-List all foreign keys on InventTable
-```
-
-### Explore a form's structure
-```
-Show me the datasources and buttons in the SalesTable form
-What methods does the CustTable form override?
-```
-
-### Look up enum values
-```
-What values does SalesStatus have?
-Show me all values in CustAccountType enum
-```
-
-Returns each value with its integer value and label.
-
-### Find methods by prefix (IntelliSense-style)
-```
-What methods on SalesTable start with "calc"?
-Show me all "find" methods on CustTable
-List methods starting with "init" on InventTable
-```
+**Why this matters:** Calling `find_coc_extensions` first prevents creating a duplicate wrapper
+that would shadow an existing ISV extension and cause a build conflict.
 
 ---
 
-## Chain of Command Extensions
+## Scenario 2 — Design and Build a Complete SysOperation Batch Job
 
-### Get the exact method signature first
-```
-Get the signature of CustTable.validateWrite()
-```
+**Goal:** Create a full batch job from scratch, following the exact patterns already used in the codebase.
 
-Returns the exact signature you must match:
-```xpp
-public boolean validateWrite()
+**Prompt:**
 ```
+I need to create a SysOperation batch job that recalculates vendor payment terms
+for all active vendors. The job should:
+- Run nightly as a recurring batch
+- Report progress and write errors to the infolog
+- Follow the same patterns as existing batch jobs in my MyPackage model
 
-### Create the extension
-```
-Create a CoC extension for CustTable.validateWrite() that checks credit limit
-```
-
-Copilot will:
-1. Call `get_method_signature` to get the exact signature
-2. Analyze similar validation patterns in your code
-3. Generate the complete extension class with `[ExtensionOf(tableStr(CustTable))]`
-
-### Table extension with modifiedField
-```
-Create a table extension for SalesLine that overrides modifiedField for the ItemId field
+Analyse the existing patterns first, then generate the DataContract,
+Controller, and Service classes, and create all three files in my project.
 ```
 
----
+**Tools Copilot chains:**
+1. `search` — finds existing batch jobs in `MyPackage` to analyse patterns
+2. `get_class_info` — reads the DataContract, Controller, and Service signatures of a representative existing job
+3. `batch_search` — fetches `SysOperationServiceController`, `SysOperationDataContractBase`, and `LedgerParameters` in parallel
+4. `generate_code` with `pattern: sysoperation` — generates all three classes following the discovered patterns
+5. `create_d365fo_file` × 3 — writes each class file and registers it in the project
+6. `verify_d365fo_project` — confirms all three objects are correctly placed
 
-## Generating New Classes
-
-### Helper class
-```
-Create a helper class for validating vendor transactions
-```
-
-Copilot will:
-1. Analyze helper class patterns in your codebase
-2. Find similar helper classes (e.g., CustHelper, VendHelper)
-3. Generate a new class following your team's style
-
-### Service class
-```
-Create a service class for processing inventory adjustments
-```
-
-### Class with custom logic
-```
-Analyze patterns for customer credit management, then create a helper class
-that validates credit limits and blocks orders when the limit is exceeded
-```
+**Why this matters:** Analysing real patterns before generating ensures the new job uses
+the same error-handling, progress-reporting, and ttsbegin/ttscommit structure
+as everything else in the codebase — not a generic template.
 
 ---
 
-## Creating Files
+## Scenario 3 — New Feature with Labels, Table Extension, and Form Extension
 
-### Create a class and add it to the project (local VM)
-```
-Create a class MyInventoryHelper and add it to my Visual Studio project
-```
+**Goal:** Add a custom field to an existing table, label it in all supported languages,
+and expose it on the standard form.
 
-The server automatically:
-- Detects the model from your open `.rnrproj`
-- Creates the XML in the correct AOT path
-- Adds the file to the project
-
-### Create a table extension (local VM)
+**Prompt:**
 ```
-Create a table extension for InventTable with a custom field VendorCategory
-```
-
-### Generate XML only (Azure/cloud server)
-```
-Generate the XML for a class MyHelper in the MyModel model
+I want to add a "Customer priority tier" field (enum: Standard, Silver, Gold, Platinum)
+to CustTable in my MyPackage\MyModel model. Steps:
+1. Check if a label for "Customer priority tier" already exists in my model
+2. If not, create it in en-US, cs, and de
+3. Create the enum AxEnum CustPriorityTier
+4. Create a table extension CustTable.MyModel_Extension with the new field using the label
+5. Show me the CustTable form structure, then create a form extension that adds
+   the field to the General tab
+6. Verify everything is in place
 ```
 
-Returns the XML content. Copilot then creates the file in your workspace.
+**Tools Copilot chains:**
+1. `search_labels` — checks if a matching label already exists (avoids duplication)
+2. `create_label` — creates `CustPriorityTier` in en-US, cs, and de across all label files
+3. `get_method_signature` / `get_edt_info` — looks up the correct base EDT to extend for the enum
+4. `create_d365fo_file` — creates the `AxEnum` XML
+5. `get_table_info` — reads `CustTable` fields and relations to choose the right field group
+6. `create_d365fo_file` — creates the table extension XML with the field and label reference
+7. `get_form_info` — reads `CustTable` form datasources, tabs, and field groups
+8. `create_d365fo_file` — creates the form extension that adds the field to the General tab
+9. `verify_d365fo_project` — checks all four objects (label, enum, table extension, form extension) are on disk and in the project
 
----
-
-## Where-Used Analysis
-
-### Find all usages of a class
-```
-Where is DimensionAttributeValueSet used in the codebase?
-```
-
-Returns file paths, method names, and code snippets for each usage.
-
-### Find all callers of a method
-```
-Find all places where CustTable.validateWrite() is called
-Which classes call SalesTable.insert()?
-```
-
-### Find usages of a field
-```
-Where is SalesLine.RemainSalesPhysical accessed?
-Find all references to CustTable.CreditLimit
-```
+**Why this matters:** Searching for the label first is always safer — duplicate labels waste
+translation budget and cause merge conflicts in label files.
 
 ---
 
-## Batch Jobs
+## Scenario 4 — Security Audit and Minimal-Privilege Extension
 
-### Generate a complete batch job
-```
-Create a batch job that processes all open customer invoices older than 30 days
-and sends them to a collection agency
-```
+**Goal:** Before releasing a new feature, understand who already has access and create
+a correctly scoped privilege without duplicating existing ones.
 
-Copilot will:
-1. Analyze batch job patterns in your codebase
-2. Generate a controller class (SysOperationServiceController)
-3. Generate a service class with the `process()` method
-4. Include standard patterns: error handling, progress reporting, ttsbegin/ttscommit
-
-### Based on existing patterns
+**Prompt:**
 ```
-Analyze batch job patterns in my code, then create a batch job for
-recalculating inventory costs
+I'm adding a new "Vendor Payment Terms" maintenance page in my model.
+Before I create security objects:
+1. Show me how the existing VendPaymTerms form is secured —
+   which roles and duties already grant access
+2. Check if a privilege for VendPaymTerms maintenance already exists
+3. Validate that "MyModel_VendPaymTermsMaintain" is a valid privilege name
+   that won't clash with anything in the symbol index
+Then create the privilege, add it to the VendPaymentTermsMaintain duty,
+and verify the objects are in place.
 ```
 
----
+**Tools Copilot chains:**
+1. `get_security_coverage_for_object` — returns the full chain: form → menu items → privileges → duties → roles
+2. `search` with `objectType: SecurityPrivilege` — checks if a maintenance privilege already exists
+3. `validate_object_naming` — confirms `MyModel_VendPaymTermsMaintain` follows D365FO naming conventions and has no collision in 584K+ symbols
+4. `get_security_artifact_info` for the existing duty — reads its current privileges to understand what to add to
+5. `create_d365fo_file` — creates the privilege XML
+6. `modify_d365fo_file` — adds the privilege reference to the existing duty extension
+7. `verify_d365fo_project` — confirms both objects exist and are registered
 
-## Financial Dimensions
-
-### Understand how dimensions work
-```
-How is DimensionAttributeValueSet typically initialized and used?
-Show me how financial dimensions are stored on ledger transactions
-```
-
-### Generate dimension handling code
-```
-Analyze dimension handling patterns in my code, then create a helper
-method that copies default dimensions from CustTable to a ledger journal line
-```
+**Why this matters:** Running `get_security_coverage_for_object` first often reveals that
+an existing privilege already grants exactly the right access — no new security object needed.
 
 ---
 
-## Ledger Journals
+## Scenario 5 — Understand and Port a Financial Process
 
-### Understand the structure
-```
-Show me the structure of LedgerJournalTable and LedgerJournalTrans
-How is LedgerJournalCheckPost used in the codebase?
-```
+**Goal:** Understand how a complex standard process works, then replicate its pattern
+for a custom business requirement.
 
-### Generate journal creation code
+**Prompt:**
 ```
-Analyze ledger journal creation patterns, then create methods to:
-1. Create a general ledger journal header
-2. Add one journal line with an account and offset account
-3. Post the journal
-```
+I need to create a process that posts custom adjustment journal entries
+for inventory revaluation. I've never worked with ledger journals before.
 
----
-
-## Form Extensions
-
-### Understand the form first
-```
-Show me the structure of the SalesTable form: datasources, buttons, and methods
+1. Show me the structure of LedgerJournalTable and LedgerJournalTrans
+   (fields, relations, relevant methods)
+2. Find how LedgerJournalCheckPost is used in the codebase —
+   what parameters it needs and how existing code calls it
+3. Analyse ledger journal creation patterns in my MyPackage model
+4. Generate a service class LedgerInventAdjustmentService with methods to:
+   - Create the journal header
+   - Add lines with the correct dimension defaulting from InventTable
+   - Post using LedgerJournalCheckPost
+5. Show how financial dimensions are copied from InventTable to the journal line
+6. Create the service class file in my project
 ```
 
-### Create a form extension
-```
-Create a form extension for SalesTable that adds a custom button
-called "Send to approval" and shows a message when clicked
-```
-
-### Add a datasource method
-```
-Show me the SalesTable form datasource methods, then create an
-extension that overrides the active() method to filter records
-```
-
----
-
-## Common Questions
-
-**Do I need to say which tool to use?**
-No. Just describe what you want and Copilot picks the right tool automatically.
-
-**How fast are the searches?**
-Under 50 ms for most queries. The database has 584 799+ symbols fully indexed.
-
-**Can I search only my own code?**
-Yes. Say "search my custom extensions" or "find ISV_ classes" and the search will
-exclude all standard Microsoft symbols.
-
-**Does file creation work when the server is on Azure?**
-The server generates the XML content and Copilot creates the file using VS Code's
-file tools. Full automation (write + add to project) requires the server running locally.
-
-**What if Copilot generates the wrong model name?**
-Add a `workspacePath` to your `.mcp.json` or check that your solution is open
-in Visual Studio. See [WORKSPACE_DETECTION.md](WORKSPACE_DETECTION.md).
-
----
-
-## Working with Labels
-
-### Find an existing label before creating a new one
-
-Always search first — reusing an existing label avoids duplication and saves translation effort.
-
-```
-Find a label for the text "customer account" in MyModel
-```
-
-Copilot will:
-1. Call `search_labels` with full-text search across label IDs, text, and comments
-2. Return matching labels with their `@LabelFileId:LabelId` reference
-3. Show the label text and a ready-to-use X++ snippet
-
-```
-Search for labels about "invoice" in the MyModel model
-Find all labels matching "vendor" in English
-```
-
-### View all translations for a label
-
-```
-Show me all translations of label MyFeature in MyModel
-```
-
-Copilot will:
-1. Call `get_label_info` with the label ID
-2. Return translations in every indexed language (en-US, cs, de, sk…)
-3. Show the developer comment and generate X++ / XML usage snippets:
-   - X++: `literalStr("@MyModel:MyFeature")`
-   - XML: `<Label>@MyModel:MyFeature</Label>`
-
-### List all label files in a model
-
-```
-What label files does the MyModel model have?
-List all AxLabelFile IDs available in MyModel
-```
-
-Copilot will call `get_label_info` without a label ID and return a table of
-file IDs, supported languages, and label counts.
-
-### Create a new label with all language translations
-
-```
-Create a new label MyNewField in the MyModel model with the text:
-- en-US: "Customer account number"
-- cs: "Číslo účtu zákazníka"
-- de: "Kundenkontaktsnummer"
-- sk: "Číslo účtu zákazníka"
-```
-
-Copilot will:
-1. Call `search_labels` first to confirm the label doesn't already exist
-2. Call `create_label` with the translations for all supported languages
-3. Insert the label alphabetically into every `.label.txt` file
-4. Update the MCP index so the new label is immediately searchable
-5. Return the ready-to-use reference: `@MyModel:MyNewField`
-
-### Rename an existing label ID
-
-Use this when you want to rename a label ID (e.g. after a refactoring) while keeping all translations
-and automatically updating every reference in X++ source and XML metadata.
-
-```
-Rename label OldFeatureName to NewFeatureName in MyModel
-Rename label @MyModel:InvoiceTotal to @MyModel:InvoiceAmountTotal
-```
-
-Copilot will:
-1. Call `search_labels` to confirm `OldFeatureName` exists in `MyModel`
-2. Confirm `NewFeatureName` is not already taken (to avoid collisions)
-3. Rename the entry in every `.label.txt` file (all languages) in `MyModel`
-4. Replace every `@MyModel:OldFeatureName` reference in `.xpp` and `.xml` files
-5. Update the MCP index so the new ID is immediately searchable
-6. Return a summary: files modified, references replaced
-
-**Dry-run first** — safe to preview before applying:
-
-```
-Preview renaming label OldFeatureName to NewFeatureName in MyModel (dry run)
-```
-
-Copilot will report how many references would be replaced without writing any files.
-
-### Use a label in X++ code and metadata
-
-After searching for or creating a label:
-
-```
-How do I use label @MyModel:MyNewField in X++ code?
-Generate the metadata XML property for @MyModel:MyNewField
-```
-
-In X++ source code:
-```xpp
-str labelText = literalStr("@MyModel:MyNewField");
-```
-
-In metadata XML (field property):
-```xml
-<Label>@MyModel:MyNewField</Label>
-<HelpText>@MyModel:MyNewFieldHelp</HelpText>
-```
-
-### Check a label in a specific language
-
-```
-Find the Czech translation of label BatchGroup in MyModel
-Search for labels containing "dávk" in Czech (cs) language
-```
-
-Use the `language` parameter in `search_labels` to restrict results to a
-specific locale.
-
----
-
-## Security and Extensions
-
-### Trace the security chain for a form
-
-```
-What roles have access to the CustTable form?
-```
-
-Copilot calls `get_security_coverage_for_object` and returns the complete chain:
-form → menu items → privileges → duties → roles. No AOT browsing required.
-
-```
-Who has access to the SalesTable form?
-Which roles can open the VendTable form?
-```
-
-### Inspect a security privilege
-
-```
-Show me everything in the CustTableFullControl privilege
-What entry points does the CustTableView privilege require?
-```
-
-Copilot calls `get_security_artifact_info` with `artifactType: privilege` and returns
-the privilege label, every entry point name, object type, and access level granted.
-
-### Trace a duty and its privileges
-
-```
-Show me the full privilege chain for the CustTableMaintain duty
-Which privileges are in the AccountsPayableInquire duty?
-```
-
-With `includeChain: true` (the default), Copilot walks: Duty → Privileges → EntryPoints
-and returns the full three-level breakdown in one response.
-
-### Check what CoC extensions already exist
-
-Before you write a new Chain of Command extension, check whether the method is already
-wrapped — avoids duplicating logic or breaking existing wrappers.
-
-```
-Does CustTable.validateWrite have any CoC extensions?
-Are there any CoC wrappers for SalesFormLetter.run()?
-```
-
-Copilot calls `find_coc_extensions` and lists every extension class that wraps the method,
-which model it belongs to, and whether it calls `next`.
-
-### Find event handlers for a table
-
-```
-Who handles the onInserted event of SalesLine?
-Are there any event handlers subscribed to CustTable events?
-```
-
-Copilot calls `find_event_handlers` and lists all `[SubscribesTo]` static methods
-for the table, grouped by event name (onInserted, onUpdated, onValidatedWrite, …).
-
-### See what a table extension adds
-
-```
-What extra fields has any ISV added to CustTable?
-Show me all extensions of the InventTable table
-```
-
-Copilot calls `get_table_extension_info` and returns each extension's model, added fields,
-added indexes, and added methods — plus an effective schema that merges base + extensions.
-
-### Inspect a data entity
-
-```
-Show me the CustCustomerV3Entity data entity
-Is CustCustomerV3Entity available via OData?
-What tables does SalesOrderHeaderV2Entity read from?
-```
-
-Copilot calls `get_data_entity_info` and returns: entity category, `PublicEntityName` (OData
-resource name), whether OData and DMF are enabled, data sources, field-to-table mapping,
-and entity keys.
-
-### Discover what you can extend on an object
-
-Before writing an extension you want to know: which methods are CoC-eligible, which are
-blocked with `final`, and whether any events are already subscribed.
-
-```
-What can I extend on SalesLine?
-What CoC-eligible methods does SalesFormLetter have?
-Are any methods on CustTable blocked from CoC?
-```
-
-Copilot calls `analyze_extension_points`, returns a categorised list: CoC-eligible, final
-(blocked), delegate hooks, table events, and any already-extended points.
-
-### Validate an extension name before you create it
-
-```
-Is SalesTableExtension a valid name for a class extension of SalesTable?
-Validate the name SalesTable.WHSExtension as a table extension
-Is MyOrderTableMaintain a valid security privilege name?
-```
-
-Copilot calls `validate_object_naming`, checks D365FO naming conventions
-(e.g. `{Base}{Prefix}_Extension` for class extensions, `{Base}.{Prefix}Extension` for AOT
-extensions), detects conflicts against the 584K+ symbol index, and suggests the correct name.
-
-### Verify that created objects are in place
-
-```
-Verify that all objects I just created exist on disk and are in the project file
-Check MyTable, MyClass, MyForm are correctly placed in the WHSModel project
-```
-
-Copilot calls `verify_d365fo_project`, checks that each object has its XML file on disk
-and a `<Content Include>` entry in the `.rnrproj` project file. Returns a markdown table
-with ✅/❌ per object plus a summary — no PowerShell needed.
-
-### Create a SysOperation batch job
-
-```
-Create a SysOperation batch job for nightly invoice calculation
-Generate a SysOperation DataContract + Controller + Service for vendor aging report processing
-```
-
-Copilot calls `generate_code` with `pattern: sysoperation` and produces all three classes:
-`DataContract`, `Controller`, and `Service` — ready to paste into Visual Studio.
-
-### Create event handlers for a table
-
-```
-Create an event handler class for SalesLine that handles onInserted and onValidatedWrite
-Generate a [SubscribesTo] event handler for CustTable.onInserted
-```
-
-Copilot calls `generate_code` with `pattern: event-handler` and generates a static handler
-class with correctly typed sender arguments and `delegateStr()` references.
+**Tools Copilot chains:**
+1. `get_table_info` × 2 — reads `LedgerJournalTable` and `LedgerJournalTrans` fields, relations, and methods in parallel
+2. `search` — finds all usages of `LedgerJournalCheckPost` in the codebase
+3. `get_class_info` — reads the class methods and signatures for `LedgerJournalCheckPost`
+4. `search` — finds existing ledger journal creation code in `MyPackage`
+5. `get_table_info` — reads `InventTable` to find the dimension attribute field
+6. `batch_search` — fetches `DimensionAttributeValueSet`, `DimensionDefaultingEngine`, and `LedgerDimensionFacade` in parallel to understand dimension defaulting APIs
+7. `generate_code` — produces the service class with header creation, line creation, dimension defaulting, and posting
+8. `create_d365fo_file` — writes the class and registers it in the project
+9. `verify_d365fo_project` — confirms the file is on disk and in the project
+
+**Why this matters:** Fetching `DimensionAttributeValueSet`, `DimensionDefaultingEngine`,
+and `LedgerDimensionFacade` in one batch call gives Copilot the full dimension API picture
+before generating code — otherwise it guesses at method signatures and produces code that
+does not compile.

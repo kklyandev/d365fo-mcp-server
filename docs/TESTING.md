@@ -11,251 +11,235 @@ npm test
 # Run tests with coverage
 npm test -- --coverage
 
-# Run specific test file
-npm test tests/tools/search.test.ts
+# Run a specific test file
+npm test tests/tools/discovery.test.ts
 ```
 
 ## Test Structure
 
 Tests are organized into the following directories:
 
-- `tests/tools/` - Unit tests for MCP tools (search, batchSearch, classInfo, tableInfo, formInfo, queryInfo, viewInfo, edtInfo, enumInfo, findReferences, methodSignature, and intelligent tools)
-- `tests/server/` - Integration tests for server components (HTTP transport)
-- `tests/utils/` - Unit tests for utility functions (fuzzyMatching, modelClassifier, suggestionEngine, configManager, packageResolver, xppConfigProvider)
-- `tests/metadata/` - Unit tests for XML metadata parsing (table and view XML parsers)
-- `tests/e2e/` - End-to-end tests with real MCP protocol communication and full user scenario simulations
-- `tests/` - Root-level tests (symbolIndex, workspaceDetector, modelClassifier auto-detection, model tag extraction, setup configuration)
+- `tests/tools/` - Unit tests for MCP tools, grouped by functional area
+- `tests/utils/` - Unit tests for utility functions and configuration
 
-## Test Coverage
+All tests run without a live D365FO environment. External dependencies (SQLite DB,
+file system, cache, configManager) are mocked with Vitest's `vi.fn()` / `vi.mock()`.
 
-The test suite covers:
+## Test Suite Overview
 
-### Tools (Unit Tests)
-- **search.test.ts**: Tests for symbol search functionality
-  - Search with results
-  - Empty query handling
-  - Cache integration
-  - MaxResults parameter
-  - Error handling
+**7 test files · 157 tests · all passing**
 
-- **batchSearch.test.ts**: Tests for parallel batch search functionality
-  - Multiple parallel queries execution
-  - Result aggregation and deduplication
-  - Individual query error handling
-  - Empty batch handling
-  - Performance optimization validation
+```
+tests/
+├── tools/
+│   ├── code-generation.test.ts   (30 tests)
+│   ├── discovery.test.ts         (17 tests)
+│   ├── extensions-security.test.ts (26 tests)
+│   ├── file-ops.test.ts          (20 tests)
+│   ├── labels.test.ts            (15 tests)
+│   └── object-info.test.ts       (28 tests)
+└── utils/
+    └── configManager.test.ts     (21 tests)
+```
 
-- **searchSuggestions.test.ts**: Integration tests for intelligent search suggestions
-  - Typo correction when no results found ("Did you mean?")
-  - Broader search suggestions
-  - Narrower search suggestions
-  - Integration with search tool and term relationship graph
-  - Cache integration for suggestions
+---
 
-- **classInfo.test.ts**: Tests for class information retrieval
-  - XML parsing
-  - Database fallback when XML missing
-  - Class not found handling
-  - Error handling
+## Test File Reference
 
-- **tableInfo.test.ts**: Tests for table information retrieval
-  - XML parsing
-  - Database fallback when XML missing
-  - Table not found handling
-  - Error handling
+### `tests/tools/code-generation.test.ts`
 
-- **formInfo.test.ts**: Tests for form information retrieval
-  - XML parsing of form datasources, controls, and methods
-  - Form not found handling
-  - Error handling
+Covers all AI-driven and template-based code generation tools.
 
-- **queryInfo.test.ts**: Tests for query information retrieval
-  - XML parsing of query datasources, joins, and ranges
-  - Query not found handling
-  - Error handling
+| Tool | What is tested |
+|------|---------------|
+| `generate_code` | Class, runnable, SysOperation, table-extension, event-handler, security-privilege templates; missing-name error; invalid-pattern error |
+| `code_completion` | Completions with correct `kind`/`label` shape; empty-result when class has no members; missing-className error |
+| `generate_d365fo_xml` | Class, table, enum XML generation; missing-objectType error |
+| `generate_smart_table` | Field hint parsing; primary key index from `primaryKeyFields` |
+| `generate_smart_form` | Form XML from a table datasource |
+| `suggest_edt` | EDT suggestion for a known field name; obscure field name (always returns JSON) |
+| `analyze_code_patterns` | Pattern analysis result with exampleClasses; missing-scenario error |
+| `suggest_method_implementation` | Implementation suggestions; missing required fields error |
+| `analyze_class_completeness` | Completeness report; missing-className error |
+| `get_api_usage_patterns` | API usage patterns; missing-apiName error |
+| `get_table_patterns` | Table group analysis using `tableGroup: 'Main'` (mock DB returns empty, output still contains "Patterns" heading) |
+| `get_form_patterns` | Form patterns from `tableName` parameter |
 
-- **viewInfo.test.ts**: Tests for view/data entity information retrieval
-  - XML parsing of view fields, relations, and methods
-  - View not found handling
-  - Error handling
+**Key mock requirements:**
+- `symbolIndex.getCompletions` must return `{ kind: 'Method'|'Field', label: string, detail?: string }` objects (not `name`/`type`)
+- `symbolIndex.getSymbolByName` must return `null` (not `undefined`) when a symbol is not found, to avoid `undefined !== null` being `true` in existence checks
+- `generate_smart_table` requires `fieldsHint` to be non-empty; omitting it triggers the BLOCKED guard and returns `isError: true`
 
-- **edtInfo.test.ts**: Tests for Extended Data Type information retrieval
-  - XML parsing of AxEdt metadata (base type, reference table, constraints)
-  - EDT not found handling
-  - Error handling
+---
 
-- **enumInfo.test.ts**: Tests for enum information retrieval
-  - XML parsing of AxEnum values, labels, and properties
-  - Enum not found handling
-  - Error handling
+### `tests/tools/discovery.test.ts`
 
-- **findReferences.test.ts**: Tests for cross-codebase reference lookup
-  - Finding usages across methods (source_snippet scan)
-  - Finding subclasses (extends relationship)
-  - Finding method-level references
-  - Empty result handling
-  - Error handling
+Covers symbol search and reference lookup tools.
 
-- **methodSignature.test.ts**: Tests for exact method signature extraction
-  - Full signature with return type, modifiers, and parameters
-  - Default parameter values
-  - Protected vs. public modifiers
-  - Method not found handling
-  - Error handling
+| Tool | What is tested |
+|------|---------------|
+| `search` | Formatted results; empty result message; objectType filter; missing-query error; limit parameter; cache hit (uses `cache.getFuzzy`) |
+| `batch_search` | Multiple queries with combined results; >10 queries rejected; empty queries rejected; `globalTypeFilter` applied |
+| `search_extensions` | Extension matches from custom models; no-results message; missing-query error; prefix filter |
+| `find_references` | References found in DB; no-references message; missing-symbolName error |
 
-- **intelligentTools.test.ts**: Tests for intelligent code generation tools
-  - Pattern analysis (analyze_code_patterns)
-  - Method implementation suggestions (suggest_method_implementation)
-  - Class completeness analysis (analyze_class_completeness)
-  - API usage patterns (get_api_usage_patterns)
-  - Cache integration for pattern analysis
-  - Error handling and empty result scenarios
+**Key note:** The `search` tool uses `cache.getFuzzy()`, not `cache.get()`. The context mock must include `getFuzzy`.
 
-### Server Components (Integration Tests)
-- **transport.test.ts**: Tests for MCP protocol HTTP transport layer
-  - Initialize request handling
-  - Tools list endpoint
-  - Tool call execution
-  - Notification handling
-  - Ping endpoint
-  - Resource templates
-  - Invalid method handling
-  - Health endpoint
+---
 
-### Database Tests
-- **symbolIndex.test.ts**: Tests for SQLite symbol indexing
-  - Database creation
-  - Symbol addition and retrieval
-  - Full-text search
-  - Symbol counting
-  - Method/field retrieval
+### `tests/tools/extensions-security.test.ts`
 
-### Metadata Parser Tests (`tests/metadata/`)
-- **xmlParser.table.test.ts**: Tests for AxTable XML parsing
-  - Nested index field extraction
-  - Relation and constraint parsing
-  - PrimaryIndex / ClusteredIndex resolution
-  - Field metadata (type, mandatory flag)
+Covers Chain-of-Command extensions, event handlers, and security tooling.
 
-- **xmlParser.view.test.ts**: Tests for AxView XML parsing
-  - View field extraction
-  - Computed column handling
-  - Relation parsing from view metadata
+| Tool | What is tested |
+|------|---------------|
+| `find_coc_extensions` | CoC class found; no extension found; missing-className error |
+| `find_event_handlers` | Handlers returned; no handlers found; missing-targetName error |
+| `get_table_extension_info` | Extension fields/methods; not found; missing-extensionName error |
+| `get_security_artifact_info` | Security privilege/duty/role info; not found; missing-name error |
+| `get_security_coverage_for_object` | Objects with security coverage; objects without coverage; missing-objectName error |
+| `analyze_extension_points` | Extension points for a class; missing-className error |
+| `get_menu_item_info` | Display/action/output menu item info; not found; type filter |
+| `get_data_entity_info` | Data entity fields/methods; not found; missing-entityName error |
 
-### End-to-End Tests (`tests/e2e/`)
-- **mcp-protocol.test.ts**: Full MCP protocol communication tests
-  - Initialize handshake and server capabilities
-  - Tools list endpoint returning all tool definitions
-  - Tool call execution via JSON-RPC over HTTP
-  - Notification handling
-  - Health and ping endpoints
-  - Error responses for unknown methods
-  - Session management
+---
 
-- **user-scenarios.test.ts**: Real-world user scenario simulations
-  - Searching for D365FO symbols by name and keyword
-  - Retrieving class and table information
-  - Code completion (IntelliSense-style)
-  - Code generation patterns (batch job, CoC, etc.)
-  - Pattern analysis and method suggestion workflows
-  - Error handling for missing/unknown objects
+### `tests/tools/file-ops.test.ts`
 
-### Root-Level Tests
-- **workspaceDetector.test.ts**: Tests for D365FO workspace auto-detection
-  - Detecting `.rnrproj` project files in a workspace
-  - Resolving project model name from project file
-  - Handling missing or invalid project structures
+Covers file creation, modification, naming validation, and project verification.
 
-- **modelClassifierAutoDetect.test.ts**: Tests for model classifier with auto-detection support
-  - Recognizing Microsoft standard models (ApplicationSuite, ApplicationPlatform, etc.)
-  - Registering and recognizing auto-detected custom models
-  - `clearAutoDetectedModels()` isolation between tests
+**Module mocks:**
+- `fs/promises` — `readFile`, `writeFile`, `mkdir`, `access`, `stat`, `readdir` are all mocked (no actual disk I/O)
+- `../../src/utils/configManager` — returns fixed paths for `packagePath`, `modelName`, `projectPath`, etc.
+- `../../src/utils/packageResolver` — resolves any model name to a fixed `K:\PackagesLocalDirectory` root
+- `../../src/utils/modelClassifier` — `resolveObjectPrefix` returns `''`, `applyObjectPrefix` is a no-op
 
-- **modelTagExtraction.test.ts**: Tests for `<Model>` / `<ModelName>` tag extraction from `.rnrproj`
-  - Standard `<Model>` tag format
-  - Alternative `<ModelName>` tag format
-  - Multiple PropertyGroup handling
+| Tool | What is tested |
+|------|---------------|
+| `validate_object_naming` | Valid class name passes; 82-char name fails; 75-char name warns; table-extension name; name collision detected; missing objectType/proposedName errors; all supported objectType values |
+| `verify_d365fo_project` | Object found on disk and in `.rnrproj`; missing object reported; multiple objects at once; missing-objects array error |
+| `create_d365fo_file` | Class file creation; table-extension; custom `xmlContent` (hybrid); missing objectType/objectName errors (throws) |
+| `modify_d365fo_file` | Method added to existing class XML; missing required args error; file-not-found error |
 
-- **renameLabel.test.ts**: Tests for `rename_label` helper functions and label index operations
-  - `renameLabelInTxt`: correct rename in `.label.txt` content, BOM preservation, comment preservation, null when not found, no partial-word substitution
-  - `replaceReferences`: replacing `@LabelFileId:LabelId` references in X++ and XML content, boundary detection, no false positives on similar IDs
-  - `XppSymbolIndex.renameLabelInIndex`: SQLite UPDATE via `renameLabelInIndex()`, FTS rebuild after rename, no-op for non-existent labels
+**Key note:** `modifyD365File.ts` must import fs as `import * as fs from 'fs/promises'` (namespace import). The `import { promises as fs } from 'fs'` style is **not** intercepted by `vi.mock('fs/promises', ...)`.
 
-### Utilities (Unit Tests)
-- **fuzzyMatching.test.ts**: Tests for fuzzy string matching algorithms
-  - Levenshtein distance calculation (edit distance)
-  - Similarity scoring (normalized 0.0-1.0)
-  - Fuzzy match finding with threshold
-  - Probable typo detection
-  - Broader/narrower search generation
-  - Root term extraction
+---
 
-- **modelClassifier.test.ts**: Tests for D365FO model classification
-  - Parsing CUSTOM_MODELS environment variable
-  - Custom vs standard model identification
-  - EXTENSION_PREFIX matching logic
-  - Model filtering by type (custom/standard)
-  - Case-insensitive model name comparison
+### `tests/tools/labels.test.ts`
 
-- **suggestionEngine.test.ts**: Tests for intelligent suggestion system
-  - Typo correction with Levenshtein distance
-  - Broader and narrower search suggestions
-  - Term relationship graph building and traversal
-  - Suggestion formatting and ranking
-  - Limit enforcement and result deduplication
+Covers label search, retrieval, creation, and renaming.
 
-- **configManager.test.ts**: Tests for configuration manager
-  - `DEV_ENVIRONMENT_TYPE=ude` detection
-  - `XPP_CONFIG_NAME` environment variable support
-  - Runtime context update via `setRuntimeContext()`
+**Module mock:** `fs` is mocked with `{ promises: { readFile, writeFile, readdir, ... } }`.
 
-- **packageResolver.test.ts**: Tests for D365FO package/model resolver
-  - Resolving model name to package directory via Descriptor XML
-  - Handling spaces in model display names
-  - Missing descriptor and empty directory edge cases
+| Tool | What is tested |
+|------|---------------|
+| `search_labels` | Results from symbolIndex; no-results message; missing-query error |
+| `get_label_info` | Label details from `.label.txt`; not found; missing-labelId error |
+| `create_label` | Label created with `createLabelFileIfMissing: true, updateIndex: false` (readdir mock returns `[]`); missing-labelId error |
+| `rename_label` | Dry-run rename (mocks `readdir → ['en-US']` and `readFile → BOM+label text`); missing-labelId error |
 
-- **xppConfigProvider.test.ts**: Tests for XPP environment config provider (UDE support)
-  - Listing available XPP configs sorted by modification time
-  - Parsing `configName` and `version` from filename pattern (`name___version`)
-  - Loading `ModelStoreFolder` and `FrameworkDirectory` from JSON config
-  - Handling empty or missing config directories
+**Key note for `create_label`:** Because `readdir` returns `[]`, `existingLanguages` is empty. Without `createLabelFileIfMissing: true`, the tool returns an early error. Tests must set this flag explicitly.
+
+**Key note for `rename_label`:** The test must override the `readdir` and `readFile` mocks before calling the tool so that the rename logic finds the label.
+
+---
+
+### `tests/tools/object-info.test.ts`
+
+Covers all "get info" lookup tools for D365FO object types.
+
+| Tool | What is tested |
+|------|---------------|
+| `get_class_info` | Class found with methods; not found; missing-className error |
+| `get_table_info` | Table found with fields; not found; missing-tableName error |
+| `get_method_signature` | Signature extracted; method not found; missing parameter errors |
+| `get_form_info` | Form with datasources and controls; not found; missing-formName error |
+| `get_query_info` | Query with datasources; not found; missing-queryName error |
+| `get_view_info` | View with fields; not found; missing-viewName error |
+| `get_enum_info` | Enum with values; not found; missing-enumName error |
+| `get_edt_info` | EDT with base type; not found; missing-edtName error |
+| `get_report_info` | Report not on disk (not-found message); unknown report; missing-reportName error |
+
+---
+
+### `tests/utils/configManager.test.ts`
+
+Covers configuration manager path parsing, model resolution, and runtime context updates.
+
+| Scenario | What is tested |
+|----------|---------------|
+| One-level workspacePath | `PackagesLocalDirectory\ModelName` → `modelName` = last segment; `packagePath` extracted correctly |
+| Two-level workspacePath | `PackagesLocalDirectory\PackageName\ModelName` → second-to-last as package, last as model; forward-slash paths; case-insensitive `PackagesLocalDirectory` match |
+| Explicit `packagePath` | Overrides any workspacePath-extracted value |
+| Explicit `modelName` | Overrides workspacePath last-segment extraction |
+| No `workspacePath` | Returns `null` for both model and package |
+| `setRuntimeContext` | Runtime workspacePath takes priority over file context; merges runtime and file contexts |
+| UDE context | `customPackagesPath` / `microsoftPackagesPath` returned correctly |
+| Kebab-case path rejection | Kebab-format paths are rejected with a clear error |
+
+**Key fix:** `getModelNameFromWorkspacePath()` uses `replace(/\\/g, '/').split('/').pop()` instead of `path.basename(path.normalize())` to correctly handle Windows-style backslash paths on macOS/Linux hosts.
+
+---
 
 ## Writing New Tests
 
-When adding new functionality, ensure to:
+When adding new functionality:
 
-1. Create unit tests for individual functions/tools
-2. Use mocks for external dependencies (database, cache, parser)
+1. Create unit tests for individual functions/tools in the appropriate `tests/tools/*.test.ts` file
+2. Mock all external dependencies — no live DB, disk, or network access
 3. Test both success and error scenarios
-4. Test edge cases (empty inputs, null values, etc.)
-5. Maintain test isolation - each test should be independent
+4. Test edge cases (empty inputs, null values, missing required args)
+5. Ensure each `describe` block has an independent `buildContext()` call in `beforeEach`
+
+### Mock Shape Guidelines
+
+```typescript
+// Correct completion shape (formatCompletions filters by .kind, renders .label)
+{ kind: 'Method', label: 'CustTable_find', detail: 'CustTable find()' }
+
+// Correct "not found" return (undefined !== null is true — causes false positives)
+symbolIndex.getSymbolByName = vi.fn(() => null);  // ✅ null, NOT undefined
+
+// Correct fs mock for file-ops tests
+vi.mock('fs/promises', () => ({ readFile: vi.fn(), writeFile: vi.fn(), ... }));
+// Combined with import in source:
+import * as fs from 'fs/promises';  // ✅ namespace import
+```
+
+---
 
 ## CI/CD Integration
 
 Tests run automatically in GitHub Actions on:
-- Every push to main and develop branches
-- Pull requests to main and develop branches
+- Every push to `main` and `develop` branches
+- Pull requests to `main` and `develop` branches
 - Matrix testing on Node.js 20.x and 22.x
 
-**Note:** Tests currently run with `continue-on-error: true` in the CI pipeline, meaning the build can proceed even if tests fail. This is temporary during active development.
+---
 
 ## Mock Strategy
 
-We use Vitest's `vi.fn()` to create mock implementations:
-- **XppSymbolIndex**: Database operations (searchSymbols, getClassMethods, etc.) are mocked with predefined return values
-- **RedisCacheService**: Cache operations (get, set, getFuzzy) return controlled test data and track calls
-- **Parser, WorkspaceScanner, HybridSearch**: Mocked as empty objects when not needed for specific tests
+| Dependency | Mock approach |
+|------------|--------------|
+| `XppSymbolIndex` | `vi.fn()` on individual methods (`searchSymbols`, `getSymbolByName`, `getCompletions`, `analyzeCodePatterns`, etc.) |
+| `fs/promises` | `vi.mock('fs/promises', ...)` module mock at top of file |
+| `configManager` | `vi.mock('../../src/utils/configManager', ...)` returning fixed paths |
+| `packageResolver` | `vi.mock('../../src/utils/packageResolver', ...)` returning fixed `K:\PackagesLocalDirectory` |
+| `modelClassifier` | `vi.mock('../../src/utils/modelClassifier', ...)` with no-op prefix application |
+| Cache | `{ get, getFuzzy, set, generateSearchKey, generateExtensionSearchKey }` as `vi.fn()` |
+| Parser / WorkspaceScanner | Empty object `{} as any` when not exercised by the test |
 
-Mocks are created with partial types and reset in `beforeEach()` hooks to ensure test isolation and deterministic behavior.
+Mocks reset automatically between test files. Use `beforeEach` with a fresh `buildContext()` call to reset per-test state.
+
+---
 
 ## Coverage Requirements
 
 Aim for:
 - **80%+ line coverage** for critical paths
 - **100% coverage** for error handling
-- **All exported functions** should have tests
+- **All exported tool handler functions** should have at least one passing and one error test
 
-Run coverage reports with:
 ```bash
 npm test -- --coverage
 ```

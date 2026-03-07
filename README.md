@@ -22,13 +22,13 @@ This MCP server pre-indexes your entire D365FO installation — 584,799+ symbols
 
 ```
 ┌─────────────────────────┐   MCP / HTTP    ┌────────────────────────────────────┐
-│  GitHub Copilot          │ ◄────────────► │  D365 F&O MCP Server               │
-│  (Agent Mode)            │                 │                                    │
-│                          │                 │  ┌──────────────┐  ┌────────────┐ │
-│  "Create a CoC for       │                 │  │ 584K+ symbols │  │ 19M labels │ │
-│   SalesTable.insert()"   │                 │  │ SQLite FTS5   │  │ 70 langs   │ │
-│                          │                 │  │ < 50ms resp.  │  │            │ │
-│  ← compiles first try    │                 │  └──────────────┘  └────────────┘ │
+│  GitHub Copilot         │ ◄────────────►  │  D365 F&O MCP Server               │
+│  (Agent Mode)           │                 │                                    │
+│                         │                 │  ┌──────────────┐  ┌────────────┐  │
+│  "Create a CoC for      │                 │  │ 584K+ symbols│  │ 19M labels │  │
+│   SalesTable.insert()"  │                 │  │ SQLite FTS5  │  │ 70 langs   │  │
+│                         │                 │  │ < 50ms resp. │  │            │  │
+│  ← compiles first try   │                 │  └──────────────┘  └────────────┘  │ 
 └─────────────────────────┘                 └────────────────────────────────────┘
 ```
 
@@ -72,7 +72,7 @@ npm run dev                      # Server at http://localhost:3000
       "url": "http://localhost:3000/mcp/"
     },
     "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourModel"
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackage\\YourModel"
     }
   }
 }

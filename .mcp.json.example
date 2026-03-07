@@ -7,11 +7,16 @@
  *   2. Single server (Azure, read-only mode)
  *   3. Hybrid setup (Azure read-only + local write-only companion)
  *
- * Model name resolution priority (from highest to lowest):
- *   1. modelName argument passed directly in the tool call
- *   2. modelName in context below (explicit, use when package name ≠ model name)
- *   3. Last segment of workspacePath (e.g. "MyModel" from "...PackagesLocalDirectory\MyModel")
- *   4. D365FO_MODEL_NAME environment variable (legacy fallback)
+ * workspacePath format:
+ *   "...\PackagesLocalDirectory\YourPackageName\YourModelName"
+ *
+ * From this single path the server automatically derives:
+ *   - packagePath  → everything up to PackagesLocalDirectory
+ *   - packageName  → YourPackageName (second-to-last segment)
+ *   - modelName    → YourModelName   (last segment)
+ *
+ * You only need to add explicit modelName when the model name differs from what
+ * is the last segment, or explicit packagePath when it cannot be derived from workspacePath.
  */
 
 // ─── Option 1: Single local server (full mode) ───────────────────────────────
@@ -22,8 +27,7 @@
       "url": "http://localhost:8080/mcp/"
     },
     "context": {
-      "workspacePath": "K:\\AOSService\\PackagesLocalDirectory\\YourModelName",
-      "packagePath": "K:\\AOSService\\PackagesLocalDirectory",
+      "workspacePath": "K:\\AOSService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
       "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj"
     }
   }
@@ -38,23 +42,7 @@
       "url": "https://your-app-name.azurewebsites.net/mcp/"
     },
     "context": {
-      "workspacePath": "K:\\AOSService\\PackagesLocalDirectory\\YourModelName",
-      "packagePath": "K:\\AOSService\\PackagesLocalDirectory",
-      "devEnvironmentType": "auto"
-    }
-  }
-}
-
-// When package name ≠ model name, add modelName explicitly:
-{
-  "servers": {
-    "d365fo-code-intelligence": {
-      "url": "https://your-app-name.azurewebsites.net/mcp/"
-    },
-    "context": {
-      "workspacePath": "K:\\AOSService\\PackagesLocalDirectory\\YourPackageName",
-      "modelName": "YourModelName",
-      "packagePath": "K:\\AOSService\\PackagesLocalDirectory",
+      "workspacePath": "K:\\AOSService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
       "devEnvironmentType": "auto"
     }
   }
@@ -64,12 +52,6 @@
 // Recommended for teams sharing an Azure-hosted metadata server.
 // GitHub Copilot connects to both servers simultaneously and routes each tool
 // call to the correct instance automatically.
-//
-// Azure server  → search, get_class_info, get_table_info, … (25 tools)
-// Local server  → create_d365fo_file, modify_d365fo_file, create_label (3 tools)
-//
-// Requires the local server to be running:
-//   set MCP_SERVER_MODE=write-only && node K:\d365fo-mcp-server\dist\index.js --stdio
 {
   "servers": {
     "d365fo-azure": {
@@ -79,21 +61,19 @@
       "command": "node",
       "args": ["K:\\d365fo-mcp-server\\dist\\index.js", "--stdio"],
       "env": {
-        "MCP_SERVER_MODE": "write-only",
-        "DB_PATH": "K:\\d365fo-mcp-server\\data\\xpp-metadata.db"
+        "MCP_SERVER_MODE": "write-only"
       }
     },
     "context": {
-      "modelName": "YourModelName",
+      "workspacePath": "K:\\AOSService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
       "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj",
-      "packagePath": "K:\\AOSService\\PackagesLocalDirectory",
       "devEnvironmentType": "auto"
     }
   }
 }
 
 // ─── UDE (Unified Developer Experience / Power Platform Tools) ───────────────
-// Add these context properties instead of workspacePath + packagePath when using
+// Add these context properties instead of workspacePath when using
 // the UDE environment in Visual Studio 2022 with Power Platform Tools.
 // The server reads XPP config files from %LOCALAPPDATA%\Microsoft\Dynamics365\XPPConfig\
 // automatically — you usually do not need to set the paths manually.
