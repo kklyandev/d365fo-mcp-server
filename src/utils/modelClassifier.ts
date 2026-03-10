@@ -82,13 +82,39 @@ export function resolveObjectPrefix(modelName: string): string {
 }
 
 /**
+ * Derive the extension infix form from an already-resolved prefix.
+ *
+ * Extension elements (dot-notation and _Extension classes) embed the prefix
+ * as a PascalCase infix WITHOUT any underscore separator:
+ *   - Underscore-style EXTENSION_PREFIX "XY_"  → resolved prefix "XY"  → infix "Xy"
+ *   - Normal prefix "Contoso"                  → resolved prefix "Contoso" → infix "Contoso"
+ *   - All-caps prefix "WHS" with "WHS_" in env → infix "Whs"
+ *   - All-caps prefix "WHS" with "WHS" in env  → infix "WHS" (unchanged)
+ *
+ * Detection: if EXTENSION_PREFIX env var ends with '_', apply first-upper + rest-lower.
+ */
+export function deriveExtensionInfix(resolvedPrefix: string): string {
+  if (!resolvedPrefix) return '';
+  const rawEnvPrefix = process.env.EXTENSION_PREFIX?.trim() ?? '';
+  const envHasUnderscore = rawEnvPrefix.endsWith('_');
+  if (envHasUnderscore) {
+    // XY_ → Xy  (first char uppercase, remaining chars lowercase)
+    return resolvedPrefix.charAt(0).toUpperCase() + resolvedPrefix.slice(1).toLowerCase();
+  }
+  // Normal PascalCase — just capitalize first letter, keep the rest as-is
+  return resolvedPrefix.charAt(0).toUpperCase() + resolvedPrefix.slice(1);
+}
+
+/**
  * Apply prefix to a NEW model element name.
  * Per MS guidelines, the prefix is concatenated directly (no separator):
  *   WHSMyTable, MyPrefixMyClass, ContosoMyForm
  *
- * SPECIAL CASE: For extension classes ending with "_Extension",
- * the prefix goes BEFORE "_Extension" as a suffix:
- *   SalesFormLetterContoso_Extension (not ContosoSalesFormLetter_Extension)
+ * Underscore-style prefixes (EXTENSION_PREFIX="XY_") are handled specially:
+ *   - Regular objects (classes, tables, forms, …): prefix kept with underscore
+ *       XY_CustTable, XY_MyClass  (NOT XyCustTable)
+ *   - Extension elements (dot-notation or _Extension class infix): PascalCase, no underscore
+ *       CustTable.XyExtension, CustTableXy_Extension  (NOT CustTable.XY_Extension)
  *
  * CRITICAL for extension classes: If EXTENSION_PREFIX is set in .env,
  * it should be used EXCLUSIVELY - never combined with modelName prefix.
@@ -99,53 +125,64 @@ export function resolveObjectPrefix(modelName: string): string {
  */
 export function applyObjectPrefix(objectName: string, prefix: string): string {
   if (!prefix) return objectName;
-  
-  // Capitalize first letter of prefix (e.g. "whs" → "Whs", "WHS" stays "WHS", "contoso" → "Contoso")
-  const normalizedPrefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
-  
+
+  // Extension infix form — PascalCase without underscore (e.g. "XY" → "Xy" when env had "XY_")
+  const extensionInfix = deriveExtensionInfix(prefix);
+
+  // Regular object prefix — keep underscore for underscore-style prefixes
+  //   EXTENSION_PREFIX="XY_" → rawEnvPrefix="XY_" → regularPrefix="XY_" → XY_CustTable
+  //   EXTENSION_PREFIX="Contoso" → regularPrefix="Contoso" → ContosoCustTable
+  const rawEnvPrefix = process.env.EXTENSION_PREFIX?.trim() ?? '';
+  const envHasUnderscore = rawEnvPrefix.endsWith('_');
+  const regularPrefix = envHasUnderscore
+    ? rawEnvPrefix                                         // keep "XY_" as-is
+    : prefix.charAt(0).toUpperCase() + prefix.slice(1);   // normalize PascalCase
+
   // SPECIAL CASE A: Dot-notation extension elements — BaseElement.PrefixExtension
-  // For table/form/EDT/enum/menu-item extensions: "CustTable.MyExtension", "HCMWorker.ContosoExtension"
-  // The suffix after the dot is always {Prefix}Extension. Replace any stale prefix with the correct one.
-  // Example: "CustTable.MyModelExtension" + prefix "My" → "CustTable.MyExtension"
+  // For table/form/EDT/enum extensions: "CustTable.XyExtension", "HCMWorker.ContosoExtension"
+  // The suffix after the dot is always {ExtensionInfix}Extension.
   if (objectName.includes('.') && objectName.toLowerCase().endsWith('extension')) {
     const dotIdx = objectName.lastIndexOf('.');
     const basePart = objectName.slice(0, dotIdx);    // e.g., "CustTable"
     const suffixPart = objectName.slice(dotIdx + 1); // e.g., "MyModelExtension"
-    const correctSuffix = `${normalizedPrefix}Extension`;
+    const correctSuffix = `${extensionInfix}Extension`;
     if (suffixPart.toLowerCase() === correctSuffix.toLowerCase()) {
-      return objectName; // Already has the correct prefix suffix, return as-is
+      return objectName; // Already has the correct extension suffix, return as-is
     }
     return `${basePart}.${correctSuffix}`;
   }
 
-  // SPECIAL CASE B: Extension classes — prefix goes as SUFFIX before "_Extension"
-  // Example: SalesFormLetter + Contoso → SalesFormLetterContoso_Extension
+  // SPECIAL CASE B: Extension classes — extension infix goes BEFORE "_Extension"
+  // Example: SalesFormLetter + "Contoso"       → SalesFormLetterContoso_Extension
+  // Example: SalesFormLetter + "XY" (env "XY_") → SalesFormLetterXy_Extension
   //
   // IMPORTANT: objectName MUST be the BASE class name + "_Extension" WITHOUT any prefix infix.
-  // E.g. "SalesFormLetter_Extension", NOT "SalesFormLetterContoso_Extension".
-  // Callers (e.g. createD365File) are responsible for stripping any stale model-name infix
-  // before calling this function when EXTENSION_PREFIX differs from modelName.
   if (objectName.endsWith('_Extension')) {
     const baseName = objectName.slice(0, -'_Extension'.length);
-    
-    // Check if the target prefix is already present at the end (case-insensitive)
-    if (baseName.toLowerCase().endsWith(normalizedPrefix.toLowerCase())) {
-      return objectName; // Already has the correct prefix, return as-is
+
+    // Check if the extension infix is already present at the end (case-insensitive)
+    if (baseName.toLowerCase().endsWith(extensionInfix.toLowerCase())) {
+      return objectName; // Already has the correct infix, return as-is
     }
-    
-    // Inject the correct prefix before "_Extension"
-    return `${baseName}${normalizedPrefix}_Extension`;
+
+    // Inject the extension infix before "_Extension"
+    return `${baseName}${extensionInfix}_Extension`;
   }
-  
+
   // NORMAL CASE: Regular objects — prefix at the START
-  // Check if already prefixed (case-insensitive)
-  if (objectName.toLowerCase().startsWith(normalizedPrefix.toLowerCase())) {
+  // Check if already prefixed (case-insensitive check against the full regular prefix)
+  if (objectName.toLowerCase().startsWith(regularPrefix.toLowerCase())) {
     return objectName;
   }
-  
-  // Capitalize first letter of objectName part so result is PascalCase
+  // For underscore-style: also check against the clean prefix (without underscore)
+  // to avoid re-prefixing objects that were already prefixed without the underscore.
+  if (envHasUnderscore && objectName.toLowerCase().startsWith(prefix.toLowerCase())) {
+    return objectName;
+  }
+
+  // Capitalize first letter of objectName part so result is PascalCase after the prefix
   const normalizedName = objectName.charAt(0).toUpperCase() + objectName.slice(1);
-  return `${normalizedPrefix}${normalizedName}`;
+  return `${regularPrefix}${normalizedName}`;
 }
 
 /**
@@ -163,7 +200,8 @@ export function buildExtensionElementName(baseElement: string, prefix: string): 
       `Bad pattern: "${baseElement}.Extension" (too generic, risk of conflicts).`
     );
   }
-  return `${baseElement}.${prefix}Extension`;
+  const infix = deriveExtensionInfix(prefix);
+  return `${baseElement}.${infix}Extension`;
 }
 
 /**
@@ -181,9 +219,11 @@ export function buildExtensionClassName(baseClass: string, prefix: string): stri
       `Bad pattern: "${baseClass}_Extension" (too generic, risk of conflicts).`
     );
   }
-  // Avoid double infix if baseClass already contains the prefix
-  const infix = baseClass.toLowerCase().includes(prefix.toLowerCase()) ? '' : prefix;
-  return `${baseClass}${infix}_Extension`;
+  // Derive the PascalCase infix form (e.g. "XY_" env → "Xy" infix, "Contoso" → "Contoso")
+  const infix = deriveExtensionInfix(prefix);
+  // Avoid double infix if baseClass already contains the infix
+  const infixToAdd = baseClass.toLowerCase().includes(infix.toLowerCase()) ? '' : infix;
+  return `${baseClass}${infixToAdd}_Extension`;
 }
 
 /**

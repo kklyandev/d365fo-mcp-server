@@ -25,6 +25,7 @@ If you are a developer who only wants to **use** an existing server, see [SETUP.
 
 - **Azure CLI** installed and logged in (`az login`)
 - **Node.js** 24.x LTS (for building the application and metadata)
+- **Python** 3.x (required by `node-gyp` to compile the native SQLite addon during `npm install`)
 - **Git**
 - An Azure subscription with permissions to create App Service, Storage Account, and optionally Redis
 

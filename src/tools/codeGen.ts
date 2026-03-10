@@ -5,7 +5,7 @@
 
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { resolveObjectPrefix, applyObjectPrefix } from '../utils/modelClassifier.js';
+import { resolveObjectPrefix, applyObjectPrefix, deriveExtensionInfix } from '../utils/modelClassifier.js';
 import { getConfigManager } from '../utils/configManager.js';
 
 const CodeGenArgsSchema = z.object({
@@ -427,6 +427,8 @@ export async function codeGenTool(request: CallToolRequest) {
     // Resolve prefix: EXTENSION_PREFIX env var (stripped of trailing '_') or modelName arg → mcp.json → empty
     const resolvedModelName = args.modelName || getConfigManager().getModelName() || '';
     const prefix = resolveObjectPrefix(resolvedModelName);
+    // Extension infix: PascalCase form without underscore (e.g. "XY" → "Xy" when env has "XY_")
+    const extensionInfix = deriveExtensionInfix(prefix);
 
     let code: string;
     let displayName: string;
@@ -476,7 +478,7 @@ export async function codeGenTool(request: CallToolRequest) {
           isError: true,
         };
       }
-      code = extTemplate(baseName, prefix);
+      code = extTemplate(baseName, extensionInfix);
       displayName = baseName;
 
       if (args.pattern === 'event-handler') {
@@ -486,10 +488,10 @@ export async function codeGenTool(request: CallToolRequest) {
       } else {
         const exampleClass =
           args.pattern === 'table-extension'
-            ? `${baseName}${prefix}_Extension`
-            : `${baseName}${prefix}Form_Extension`;
-        namingNote = prefix
-          ? `📌 **Naming (MS guidelines):** Generated class: \`${exampleClass}\`\n  Base element: \`${baseName}\`, Prefix infix: \`${prefix}\``
+            ? `${baseName}${extensionInfix}_Extension`
+            : `${baseName}${extensionInfix}Form_Extension`;
+        namingNote = extensionInfix
+          ? `📌 **Naming (MS guidelines):** Generated class: \`${exampleClass}\`\n  Base element: \`${baseName}\`, Prefix infix: \`${extensionInfix}\``
           : `⚠️ **No prefix resolved** — set \`EXTENSION_PREFIX\` env var or pass \`modelName\` argument.\n  Generated bare name without prefix infix (e.g. \`${baseName}_Extension\`) which is **not MS-compliant**.`;
       }
     } else {

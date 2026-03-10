@@ -1181,6 +1181,40 @@ async function modifyProperty(xmlObj: any, objectType: string, args: any): Promi
     throw new Error('propertyValue is required for modify-property operation');
   }
 
+  // Special case: changing the base type of an EDT (i:type XML attribute on the root element).
+  // Accepted aliases: BaseType / i:type / edtType — all map to the same XML attribute.
+  const edtTypeAliases = new Set(['basetype', 'i:type', 'edttype']);
+  if (objectType === 'edt' && edtTypeAliases.has(propertyPath.toLowerCase())) {
+    const edtTypeNormMap: Record<string, string> = {
+      string:      'AxEdtString',
+      integer:     'AxEdtInt',
+      int:         'AxEdtInt',
+      int64:       'AxEdtInt64',
+      real:        'AxEdtReal',
+      date:        'AxEdtDate',
+      datetime:    'AxEdtUtcDateTime',
+      utcdatetime: 'AxEdtUtcDateTime',
+      enum:        'AxEdtEnum',
+      guid:        'AxEdtGuid',
+      container:   'AxEdtContainer',
+    };
+    const normalizedValue = edtTypeNormMap[propertyValue.toLowerCase()] ?? propertyValue;
+    const rootKey = getRootKey(objectType);
+    const root = xmlObj[rootKey];
+    if (!root) {
+      throw new Error(`Invalid XML structure: root element <${rootKey}> not found`);
+    }
+    if (!root['$']) {
+      root['$'] = {};
+    }
+    root['$']['i:type'] = normalizedValue;
+    // Also update StringSize presence: AxEdtString needs it, others should not have it
+    if (normalizedValue !== 'AxEdtString') {
+      delete root['StringSize'];
+    }
+    return true;
+  }
+
   // Parse property path (e.g., "Table1.Visible")
   const parts = propertyPath.split('.');
   

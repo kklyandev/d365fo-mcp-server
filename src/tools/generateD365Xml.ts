@@ -1061,7 +1061,21 @@ ${defaultParamGroupXml}
   }
 
   static generateAxEdtXml(name: string, properties?: Record<string, any>): string {
-    const edtType = properties?.edtType || 'AxEdtString';
+    const edtTypeRaw = properties?.edtType || 'AxEdtString';
+    const edtTypeNormMap: Record<string, string> = {
+      string:      'AxEdtString',
+      integer:     'AxEdtInt',
+      int:         'AxEdtInt',
+      int64:       'AxEdtInt64',
+      real:        'AxEdtReal',
+      date:        'AxEdtDate',
+      datetime:    'AxEdtUtcDateTime',
+      utcdatetime: 'AxEdtUtcDateTime',
+      enum:        'AxEdtEnum',
+      guid:        'AxEdtGuid',
+      container:   'AxEdtContainer',
+    };
+    const edtType = edtTypeNormMap[edtTypeRaw.toLowerCase()] ?? edtTypeRaw;
     const label = properties?.label || '@TODO:LabelId';
     const extends_ = properties?.extends ? `\n\t<Extends>${properties.extends}</Extends>` : '';
     const stringSize = edtType === 'AxEdtString'

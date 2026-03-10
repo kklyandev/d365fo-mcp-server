@@ -30,6 +30,7 @@ If you are responsible for deploying the server infrastructure to Azure, see [SE
 | Visual Studio 2022 | 17.14 | Earlier versions do not support MCP |
 | GitHub Copilot extension | Latest | Requires an active Copilot subscription |
 | Node.js | 24.x LTS | Required for hybrid setup only |
+| Python | 3.x | Required for hybrid setup only — used by `node-gyp` to compile native SQLite addon |
 | Git | Any | Required for hybrid setup only |
 
 ---
