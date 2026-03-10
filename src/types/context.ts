@@ -38,6 +38,13 @@ export interface XppServerContext {
   hybridSearch: HybridSearch;
   termRelationshipGraph: TermRelationshipGraph;
   editorContext?: EditorContext;
+  /**
+   * Resolves when the real symbol database has been loaded.
+   * Present only in stdio mode when the stub pattern is active.
+   * Tool handlers await this before executing so they always use the real
+   * index rather than the empty in-memory stub.
+   */
+  dbReady?: Promise<void>;
 }
 
 

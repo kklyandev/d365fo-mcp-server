@@ -59,7 +59,7 @@ npm run dev                      # Server at http://localhost:3000
 
 ## Connect to GitHub Copilot
 
-**1.** Enable *Editor Preview Features* at **github.com/settings/copilot/features**
+**1.** Enable *MCP servers in Copilot* at **github.com/settings/copilot/features**
 
 **2.** In Visual Studio: **Tools → Options → GitHub → Copilot** → check *Enable MCP server integration in agent mode*
 

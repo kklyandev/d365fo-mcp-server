@@ -17,6 +17,7 @@ If you are responsible for deploying the server infrastructure to Azure, see [SE
   - [Scenario B: Hybrid — Azure search + local file writes](#scenario-b-hybrid--azure-search--local-file-writes)
   - [Scenario C: Local server only](#scenario-c-local-server-only)
   - [Scenario D: UDE (Unified Developer Experience)](#scenario-d-ude-unified-developer-experience)
+  - [Scenario E: Local stdio server (single developer, zero-config)](#scenario-e-local-stdio-server-single-developer-zero-config)
 - [Where to place .mcp.json](#where-to-place-mcpjson)
 - [Troubleshooting](#troubleshooting)
 
@@ -35,7 +36,7 @@ If you are responsible for deploying the server infrastructure to Azure, see [SE
 
 ## Step 1 — Enable MCP in GitHub and Visual Studio
 
-1. Go to **https://github.com/settings/copilot/features** and enable **Editor Preview Features**.
+1. Go to **https://github.com/settings/copilot/features** and enable **MCP servers in Copilot**.
 
 2. In Visual Studio: **Tools → Options → GitHub → Copilot**
    → Enable **"Enable MCP server integration in agent mode"**
@@ -157,18 +158,23 @@ npm run build
     },
     "d365fo-local": {
       "command": "node",
-      "args": ["K:\\d365fo-mcp-server\\dist\\index.js", "--stdio"],
+      "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
       "env": {
-        "MCP_SERVER_MODE": "write-only"
+        "MCP_SERVER_MODE": "write-only",
+        "DB_PATH": "K:\\d365fo-mcp-server\\data\\xpp-metadata.db",
+        "LABELS_DB_PATH": "K:\\d365fo-mcp-server\\data\\xpp-metadata-labels.db",
+        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects"
       }
     },
     "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
-      "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj"
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
 ```
+
+> **Note:** The `--stdio` argument is no longer required. The server detects stdio mode
+> automatically when launched as a subprocess (stdin is a pipe, not a terminal).
 
 `projectPath` is optional but recommended — it pins the exact `.rnrproj` so file creation
 always targets the right model even when multiple projects are open.
@@ -240,6 +246,9 @@ The server runs at `http://localhost:8080`. Verify with `http://localhost:8080/h
 }
 ```
 
+> **Tip:** For a fully local setup without an HTTP server, see **Scenario E** which uses stdio
+> transport and does not require `npm start` or a running port.
+
 **Keeping it up to date** — after a D365FO version upgrade or model changes, re-run extraction:
 
 ```powershell
@@ -293,6 +302,75 @@ automatically. In most cases you do not need to set any paths manually.
 
 ---
 
+### Scenario E: Local stdio server (single developer, zero-config)
+
+**What it is:** The MCP server runs entirely on your Windows VM using **stdio transport**.
+VS 2022 launches it automatically as a subprocess — no `npm start`, no open port, no HTTP.
+Model auto-detection works via the MCP roots protocol without any `context` block.
+
+**What you need:**
+- Node.js 24.x, Git
+- A D365FO installation with `PackagesLocalDirectory`
+- A pre-built metadata database
+
+**Setup:**
+
+```powershell
+git clone https://github.com/dynamics365ninja/d365fo-mcp-server.git C:\d365fo-mcp-server
+cd C:\d365fo-mcp-server
+npm install
+copy .env.example .env
+```
+
+Extract and index the metadata (same as Scenario C), then build:
+
+```powershell
+npm run extract-metadata
+npm run build-database
+npm run build
+```
+
+**`%USERPROFILE%\.mcp.json`** (global, covers all solutions on this machine):
+
+```json
+{
+  "servers": {
+    "d365fo-mcp-tools": {
+      "command": "node",
+      "args": ["C:\\d365fo-mcp-server\\dist\\index.js"],
+      "env": {
+        "DB_PATH": "C:\\d365fo-mcp-server\\data\\xpp-metadata.db",
+        "LABELS_DB_PATH": "C:\\d365fo-mcp-server\\data\\xpp-metadata-labels.db",
+        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects"
+      }
+    }
+  }
+}
+```
+
+Replace `K:\VSProjects` with the folder that contains your D365FO solution(s).
+
+**How it works:**
+1. VS 2022 starts the server process on first use — no manual `npm start` needed.
+2. The MCP roots protocol delivers the open workspace URI automatically.
+3. `D365FO_SOLUTIONS_PATH` is scanned for all `.rnrproj` files at startup.
+4. `get_workspace_info` shows all found projects and the active one.
+5. To switch to a different solution without restarting: call `get_workspace_info` with
+   `projectPath` pointing to the target `.rnrproj`.
+
+**Keeping it up to date:**
+
+```powershell
+cd C:\d365fo-mcp-server
+git pull
+npm install
+npm run build
+```
+
+Restart the MCP server in VS 2022 after updating (MCP panel → Restart).
+
+---
+
 ## Where to place .mcp.json
 
 The server searches for `.mcp.json` starting from the current working directory and walking
@@ -330,7 +408,7 @@ want to maintain per-solution files.
 
 ### MCP tools not loading in Visual Studio
 - Confirm Visual Studio version is 17.14 or later
-- Confirm *Editor Preview Features* are enabled at https://github.com/settings/copilot/features
+- Confirm *MCP servers in Copilot* is enabled at https://github.com/settings/copilot/features
 - Confirm Copilot Chat is in **Agent Mode** (not Ask or Edit)
 - Confirm `.mcp.json` is in the solution root or user home directory (`%USERPROFILE%\.mcp.json`)
 - Restart Visual Studio after creating or editing `.mcp.json`

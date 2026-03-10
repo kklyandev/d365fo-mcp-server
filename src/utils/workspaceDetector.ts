@@ -4,6 +4,7 @@
  */
 
 import * as fs from 'fs/promises';
+import { existsSync } from 'fs';
 import * as path from 'path';
 
 export interface D365ProjectInfo {
@@ -71,7 +72,7 @@ async function findProjectFiles(
  * Extract ModelName from .rnrproj file
  * Tries <Model> tag first (standard), then falls back to <ModelName>
  */
-async function extractModelNameFromProject(projectPath: string): Promise<string | null> {
+export async function extractModelNameFromProject(projectPath: string): Promise<string | null> {
   try {
     const content = await fs.readFile(projectPath, 'utf-8');
     
@@ -157,12 +158,19 @@ export async function autoDetectD365Project(
   }
 
   // Priority 2: Current working directory
+  // Skip if it's a Node.js project (the MCP server itself or any npm package).
+  // VS 2022 starts the stdio subprocess from the server's own directory, not the D365FO solution.
   const cwd = process.cwd();
-  console.error(`[WorkspaceDetector] Trying current working directory: ${cwd}`);
-  const cwdResult = await detectD365Project(cwd);
-  if (cwdResult) return cwdResult;
+  const cwdIsNodeProject = existsSync(path.join(cwd, 'package.json'));
+  if (cwdIsNodeProject) {
+    console.error(`[WorkspaceDetector] Skipping cwd (Node.js project): ${cwd}`);
+  } else {
+    console.error(`[WorkspaceDetector] Trying current working directory: ${cwd}`);
+    const cwdResult = await detectD365Project(cwd);
+    if (cwdResult) return cwdResult;
+  }
 
-  // Priority 3: Environment variable
+  // Priority 3: Explicit env vars
   const envWorkspace = process.env.WORKSPACE_PATH;
   if (envWorkspace) {
     console.error(`[WorkspaceDetector] Trying WORKSPACE_PATH env var: ${envWorkspace}`);
@@ -170,16 +178,24 @@ export async function autoDetectD365Project(
     if (envResult) return envResult;
   }
 
+  // Priority 3b: D365FO_SOLUTIONS_PATH — scan root for ALL D365FO projects, use first as primary.
+  // This is the recommended way to configure multi-solution setups.
+  // All found projects are also returned via scanAllD365Projects() for listing in get_workspace_info.
+  const solutionsRoot = process.env.D365FO_SOLUTIONS_PATH;
+  if (solutionsRoot) {
+    console.error(`[WorkspaceDetector] Scanning D365FO_SOLUTIONS_PATH: ${solutionsRoot}`);
+    const result = await detectD365Project(solutionsRoot, 6);
+    if (result) return result;
+  }
+
   // Priority 4: Well-known VS project directories (Windows only)
-  // ONLY reached when Priority 1-3 all failed to find a .rnrproj
-  // .rnrproj files live in VS solution folders, NOT in PackagesLocalDirectory
+  // NOTE: %USERPROFILE%\source\repos intentionally excluded — it often contains the MCP server
+  // repo itself alongside D365FO projects, making the first-found result unpredictable.
+  // Configure D365FO_SOLUTIONS_PATH instead for reliable detection.
   if (process.platform === 'win32') {
     const userProfile = process.env.USERPROFILE || `C:\\Users\\${process.env.USERNAME}`;
     const wellKnownPaths = [
-      `${userProfile}\\source\\repos`,
       `${userProfile}\\Documents\\Visual Studio 2022\\Projects`,
-      // K:\VSProjects and C:\VSProjects removed — scanning them causes 24+ Get-ChildItem calls.
-      // If users keep projects there, they should set projectPath in .mcp.json instead.
     ];
     for (const searchRoot of wellKnownPaths) {
       try {
@@ -246,4 +262,52 @@ export async function autoDetectD365Project(
 
   console.error('[WorkspaceDetector] ⚠️ Could not auto-detect D365FO project from any source');
   return null;
+}
+
+/**
+ * Get the currently checked-out git branch name for a directory.
+ * Returns null if the directory is not a git repository, git is unavailable,
+ * or HEAD is detached (detached HEAD is unhelpful for project matching).
+ */
+export async function detectGitBranch(workspaceRoot: string): Promise<string | null> {
+  try {
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', workspaceRoot, 'rev-parse', '--abbrev-ref', 'HEAD'],
+      { timeout: 5000, windowsHide: true, encoding: 'utf8' } as any
+    );
+    const branch = (stdout as unknown as string).trim();
+    // 'HEAD' means detached HEAD — not useful for project matching
+    return branch && branch !== 'HEAD' ? branch : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Scan a root directory for ALL D365FO projects (.rnrproj files).
+ * Used when D365FO_SOLUTIONS_PATH is configured — lists every project available
+ * so the user can pick the active one via get_workspace_info(projectPath).
+ */
+export async function scanAllD365Projects(rootPath: string): Promise<D365ProjectInfo[]> {
+  try {
+    const projectFiles = await findProjectFiles(rootPath, 6);
+    const results: D365ProjectInfo[] = [];
+    for (const pf of projectFiles) {
+      const modelName = await extractModelNameFromProject(pf);
+      if (modelName) {
+        results.push({
+          projectPath: pf,
+          modelName,
+          solutionPath: path.dirname(path.dirname(pf)),
+        });
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
 }

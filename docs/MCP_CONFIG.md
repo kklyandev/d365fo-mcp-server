@@ -36,6 +36,59 @@ The server will also:
 
 ---
 
+## Transport Modes
+
+### stdio (recommended for local / single-developer setup)
+
+The server is launched directly by the MCP client as a subprocess. No HTTP server, no port.
+VS 2022 and VS Code both support this via the `command:` key.
+
+```json
+{
+  "servers": {
+    "d365fo-mcp-tools": {
+      "command": "node",
+      "args": ["C:\\path\\to\\d365fo-mcp-server\\dist\\index.js"],
+      "env": {
+        "DB_PATH": "C:\\path\\to\\d365fo-mcp-server\\data\\xpp-metadata.db",
+        "LABELS_DB_PATH": "C:\\path\\to\\d365fo-mcp-server\\data\\xpp-metadata-labels.db",
+        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects"
+      }
+    }
+  }
+}
+```
+
+Key points:
+- `DB_PATH` / `LABELS_DB_PATH` must be **absolute paths** — the server's working directory in
+  stdio mode is controlled by the client, not the repo folder.
+- `D365FO_SOLUTIONS_PATH` — folder containing your `.rnrproj` files. The server scans it at
+  startup and auto-detects the model name. Required for reliable model detection.
+- No `context` block needed — model name is resolved from `.rnrproj` automatically.
+- `MCP_SERVER_MODE` defaults to `full` — omit it unless you need `read-only` or `write-only`.
+
+### HTTP (Azure-hosted or `npm run dev`)
+
+The server listens on a TCP port. Used for Azure deployments and for local `npm run dev` sessions.
+
+```json
+{
+  "servers": {
+    "d365fo-mcp-tools": {
+      "url": "https://your-server.azurewebsites.net/mcp/"
+    },
+    "context": {
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
+    }
+  }
+}
+```
+
+Note: VS 2022 HTTP transport does **not** send workspace headers. Use `workspacePath` or
+`projectPath` in the `context` block, or switch to stdio.
+
+---
+
 ## All Configuration Options
 
 ### Traditional
@@ -88,8 +141,19 @@ files from `%LOCALAPPDATA%\Microsoft\Dynamics365\XPPConfig\` and detects the pat
 | `customPackagesPath` | Optional | UDE: Custom X++ code root (from XPP config `ModelStoreFolder`). |
 | `microsoftPackagesPath` | Optional | UDE: Microsoft X++ root (from XPP config `FrameworkDirectory`). |
 | `devEnvironmentType` | Optional | `auto` (default), `traditional`, or `ude`. Controls path resolution behavior. |
-| `projectPath` | Optional | Full path to your `.rnrproj` file. Usually auto-detected by GitHub Copilot. |
+| `projectPath` | Optional | Full path to your `.rnrproj` file. Auto-detected from roots/list (stdio) or D365FO_SOLUTIONS_PATH. |
 | `solutionPath` | Optional | Visual Studio solution folder. Used when `projectPath` is not set. |
+
+### Environment Variables (stdio `env` block)
+
+| Variable | Required | What it does |
+|----------|----------|--------------|
+| `DB_PATH` | Yes (stdio) | Absolute path to `xpp-metadata.db`. Must be absolute — cwd is not the repo folder in stdio mode. |
+| `LABELS_DB_PATH` | Yes (stdio) | Absolute path to `xpp-metadata-labels.db`. Same reason as DB_PATH. |
+| `D365FO_SOLUTIONS_PATH` | Recommended | Folder containing D365FO `.rnrproj` files. Server scans it at startup for model auto-detection and lists all found projects in `get_workspace_info`. Required for project switching by name (`projectName` parameter). |
+| `MCP_SERVER_MODE` | No | `full` (default), `read-only`, or `write-only`. Only needed in hybrid setups. |
+| `MCP_FORCE_HTTP` | No | Set to `true` to prevent stdio mode even when stdin is piped (rare). |
+| `DEBUG_LOGGING` | No | Set to `true` to dump workspace-related HTTP headers to stderr (HTTP transport only). |
 
 ### When do you need the optional properties?
 
@@ -129,11 +193,12 @@ also auto-resolves package names by reading descriptor XML files. In traditional
 to assuming package name equals model name.
 
 For the model name used when creating files:
-1. **Auto-detected from `.rnrproj`** found in the active GitHub Copilot workspace
-2. **`projectPath` from `.mcp.json`** — the model name is read from the `.rnrproj` file
-3. **`solutionPath` from `.mcp.json`** — the server searches for `.rnrproj` files inside it
-4. **Last segment of `workspacePath`** — `...\PackagesLocalDirectory\PackageName\ModelName` → `ModelName`
-5. **Explicit `modelName`** in context — used only if none of the above are available
+1. **Explicit `modelName`** in `.mcp.json` context — always wins
+2. **Last segment of `workspacePath`** — only when the path contains `PackagesLocalDirectory` (AOT paths). Skipped for repo paths like `K:\repos\Contoso` to avoid returning the repo folder name instead of the real model.
+3. **Auto-detected from `.rnrproj`** — triggered by roots/list protocol (stdio), `D365FO_SOLUTIONS_PATH` scan, or workspace seed from env vars
+4. **`D365FO_MODEL_NAME`** env var — last resort fallback
+
+Each resolved value and its detection source are visible in `get_workspace_info` output.
 
 ---
 
@@ -172,8 +237,8 @@ this by running two servers simultaneously:
 
 | Instance | Runs on | `MCP_SERVER_MODE` | Tools |
 |----------|---------|-------------------|-------|
-| `d365fo-azure` | Azure App Service | `read-only` | All 25 search & analysis tools |
-| `d365fo-local` | Windows VM (stdio) | `write-only` | `create_d365fo_file`, `modify_d365fo_file`, `create_label` |
+| `d365fo-azure` | Azure App Service | `read-only` | 38 search & analysis tools |
+| `d365fo-local` | Windows VM (stdio) | `write-only` | `create_d365fo_file`, `modify_d365fo_file`, `create_label`, `rename_label` |
 
 GitHub Copilot connects to both servers at the same time and selects the right one automatically.
 
@@ -187,24 +252,27 @@ GitHub Copilot connects to both servers at the same time and selects the right o
     },
     "d365fo-local": {
       "command": "node",
-      "args": ["K:\\d365fo-mcp-server\\dist\\index.js", "--stdio"],
+      "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
       "env": {
-        "MCP_SERVER_MODE": "write-only"
+        "MCP_SERVER_MODE": "write-only",
+        "D365FO_SOLUTIONS_PATH": "K:\\VSProjects\\MySolution"
       }
     },
     "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
-      "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj"
+      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
 ```
 
+> **Note:** The `--stdio` argument is no longer needed — the server detects stdio mode
+> automatically via `process.stdin.isTTY`.
+
 ### How it works
 
 1. `d365fo-azure` starts with `MCP_SERVER_MODE=read-only` → only exposes search/analysis tools
 2. `d365fo-local` starts with `MCP_SERVER_MODE=write-only` → only exposes file-operation tools
-3. GitHub Copilot aggregates both tool lists — from Copilot's perspective it sees all 28 tools
+3. GitHub Copilot aggregates both tool lists — from Copilot's perspective it sees all 42 tools
 4. When Copilot calls `create_d365fo_file`, it goes to the local server which has K:\ access
 5. When Copilot calls `search`, it goes to the Azure server with the full metadata database
 
@@ -215,22 +283,22 @@ When the server starts, it logs the detected mode and tool count:
 **Write-only mode (local companion):**
 ```
 🔧 Server mode: write-only (from env: write-only)
-🎯 Registered 3 X++ MCP tools (create_d365fo_file, modify_d365fo_file, create_label)
-[MCP Server] Tool list filtered for write-only mode: 3 tools (create_d365fo_file, modify_d365fo_file, create_label)
+🎯 Registered 4 X++ MCP tools (create_d365fo_file, modify_d365fo_file, create_label, rename_label)
+[MCP Server] Tool list filtered for write-only mode: 4 tools (create_d365fo_file, modify_d365fo_file, create_label, rename_label)
 ```
 
 **Read-only mode (Azure server):**
 ```
 🔧 Server mode: read-only (from env: read-only)
-🎯 Registered 26 X++ MCP tools (all except write tools)
-[MCP Server] Tool list filtered for read-only mode: 26 tools (write tools excluded)
+🎯 Registered 38 X++ MCP tools (all except write tools)
+[MCP Server] Tool list filtered for read-only mode: 38 tools (write tools excluded)
 ```
 
 **Full mode (local development):**
 ```
 🔧 Server mode: full (from env: not set, defaulting to full)
-🎯 Registered 40 X++ MCP tools (8 discovery + 4 labels + 6 object-info + 4 intelligent + 3 smart-generation + 3 file-ops + 3 pattern-analysis + 9 security-extensions)
-[MCP Server] Tool list in full mode: 40 tools (no filtering)
+🎯 Registered 42 X++ MCP tools (8 discovery + 4 labels + 6 object-info + 4 intelligent + 3 smart-generation + 5 file-ops + 3 pattern-analysis + 9 security-extensions)
+[MCP Server] Tool list in full mode: 42 tools (no filtering)
 ```
 
 > **Note:** The local server in `write-only` mode still needs access to the metadata database

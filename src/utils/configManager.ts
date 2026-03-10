@@ -7,7 +7,7 @@ import * as fs from 'fs/promises';
 import { existsSync, realpathSync } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { autoDetectD365Project, detectD365Project, type D365ProjectInfo } from './workspaceDetector.js';
+import { autoDetectD365Project, detectD365Project, scanAllD365Projects, extractModelNameFromProject, detectGitBranch, type D365ProjectInfo } from './workspaceDetector.js';
 import { registerCustomModel } from './modelClassifier.js';
 import { XppConfigProvider, type XppEnvironmentConfig } from './xppConfigProvider.js';
 
@@ -52,6 +52,23 @@ class ConfigManager {
   private autoDetectionAttempted: boolean = false;
   // Cache auto-detection results per workspace path (PERFORMANCE FIX)
   private autoDetectionCache = new Map<string, D365ProjectInfo | null>();
+  // All projects found when D365FO_SOLUTIONS_PATH is configured
+  private allDetectedProjects: D365ProjectInfo[] = [];
+  // Monotonically-increasing counter — each new background detection call gets a unique ID.
+  // Before writing autoDetectedProject, the call verifies its ID is still current.
+  // This prevents a slower earlier scan (e.g. home-dir BFS) from overwriting a faster,
+  // more specific scan (e.g. direct workspace path lookup) that finished first.
+  private detectionGeneration = 0;
+  // Promise that resolves once the D365FO_SOLUTIONS_PATH eager scan completes.
+  // setRuntimeContextFromRoots awaits this before trying matchProjectForWorkspace,
+  // eliminating the race where roots/list arrives before allDetectedProjects is populated.
+  private allDetectedProjectsReady: Promise<void> | null = null;
+  // Promise for the currently in-progress background autoDetectProject call.
+  // getWorkspaceInfoDiagnostics awaits this when autoDetectedProject is still null,
+  // fixing the "null on first call" race (autoDetectionAttempted is set immediately
+  // at the start of autoDetectProject, so the !autoDetectionAttempted guard is
+  // bypassed even though the async scan hasn't returned a result yet).
+  private detectionInProgress: Promise<void> | null = null;
   private xppConfigProvider: XppConfigProvider | null = null;
   private xppConfig: XppEnvironmentConfig | null = null;
   private xppConfigLoaded: boolean = false;
@@ -62,11 +79,40 @@ class ConfigManager {
   }
 
   /**
+   * Start scanning D365FO_SOLUTIONS_PATH immediately at startup (fire-and-forget).
+   * Stores a Promise so setRuntimeContextFromRoots can await it, guaranteeing
+   * that allDetectedProjects is populated before the first roots/list notification
+   * is processed — otherwise matchProjectForWorkspace always returns null because
+   * the list is empty (roots/list often arrives within 1–2 s of startup).
+   * Safe to call multiple times; subsequent calls are no-ops.
+   */
+  initEagerScan(): void {
+    const solutionsRoot = process.env.D365FO_SOLUTIONS_PATH;
+    if (!solutionsRoot || this.allDetectedProjectsReady) return;
+
+    console.error(`[ConfigManager] 🔍 Eager project scan starting: ${solutionsRoot}`);
+    this.allDetectedProjectsReady = (async () => {
+      try {
+        const all = await scanAllD365Projects(solutionsRoot);
+        if (all.length > 0) {
+          this.allDetectedProjects = all;
+          console.error(`[ConfigManager] 🔍 Eager scan complete: ${all.length} project(s) found`);
+          all.forEach(p => console.error(`   - ${p.modelName}: ${p.projectPath}`));
+        } else {
+          console.error(`[ConfigManager] 🔍 Eager scan: no projects found under ${solutionsRoot}`);
+        }
+      } catch (err) {
+        console.error(`[ConfigManager] 🔍 Eager scan failed:`, err);
+      }
+    })();
+  }
+
+  /**
    * Auto-detect D365FO project from workspace
    * Called automatically when projectPath/solutionPath is requested but not configured
    * PERFORMANCE: Results are cached per workspace path
    */
-  private async autoDetectProject(workspacePath?: string): Promise<void> {
+  private async autoDetectProject(workspacePath?: string, generation?: number): Promise<void> {
     if (this.autoDetectionAttempted) {
       return; // Only attempt once per workspace
     }
@@ -123,18 +169,45 @@ class ConfigManager {
 
     // Store in cache (PERFORMANCE FIX)
     this.autoDetectionCache.set(cacheKey, detectedProject);
-    
-    if (detectedProject) {
+
+    // Guard: if a newer setRuntimeContext call has already started a fresher detection,
+    // discard this (now stale) result so we never overwrite a more recent correct answer.
+    const isStale = generation !== undefined && generation < this.detectionGeneration;
+    if (isStale) {
+      console.error(`[ConfigManager] ⚠️ Stale workspace detection (gen ${generation} < current ${this.detectionGeneration}) — skipping project assignment`);
+      // Do NOT return early: D365FO_SOLUTIONS_PATH scan below must still run so
+      // that allDetectedProjects is populated for future matchProjectForWorkspace calls.
+    } else if (detectedProject) {
       this.autoDetectedProject = detectedProject;
       console.error('[ConfigManager] ✅ Auto-detection successful:');
       console.error(`   ProjectPath: ${detectedProject.projectPath}`);
       console.error(`   ModelName: ${detectedProject.modelName}`);
       console.error(`   SolutionPath: ${detectedProject.solutionPath}`);
-      
       // ✨ Register the auto-detected model as custom
       registerCustomModel(detectedProject.modelName);
     } else {
       console.error('[ConfigManager] ⚠️ Auto-detection failed - no .rnrproj files found');
+    }
+
+    // Scan D365FO_SOLUTIONS_PATH for all available projects (for solution-switching support).
+    // ALWAYS runs — even on stale scans — because allDetectedProjects must be ready for
+    // matchProjectForWorkspace() which is called from setRuntimeContextFromRoots().
+    const solutionsRoot = process.env.D365FO_SOLUTIONS_PATH;
+    if (solutionsRoot) {
+      const all = await scanAllD365Projects(solutionsRoot);
+      if (all.length > 0) {
+        this.allDetectedProjects = all;
+        console.error(`[ConfigManager] Found ${all.length} project(s) under D365FO_SOLUTIONS_PATH:`);
+        all.forEach(p => console.error(`   - ${p.modelName}: ${p.projectPath}`));
+        // Re-check staleness: time has passed since the initial check above.
+        const isNowStale = generation !== undefined && generation < this.detectionGeneration;
+        // Use first found as primary if workspace detection yielded nothing and scan is current.
+        if (!this.autoDetectedProject && !isNowStale) {
+          this.autoDetectedProject = all[0];
+          registerCustomModel(all[0].modelName);
+          console.error(`[ConfigManager] ✅ Using first found project as primary: ${all[0].modelName}`);
+        }
+      }
     }
   }
 
@@ -157,11 +230,211 @@ class ConfigManager {
       if (!this.autoDetectionCache.has(cacheKey)) {
         this.autoDetectionAttempted = false;
         this.autoDetectedProject = null;
+
+        // Fast-path: try exact or close match against known projects.
+        // Falls through to BFS only when nothing specific is found.
+        if (this.allDetectedProjects.length > 0 && context.workspacePath) {
+          const matched = this.matchProjectForWorkspace(context.workspacePath);
+          if (matched) {
+            // Increment generation so any in-flight BFS (started earlier) treats
+            // its result as stale and will not overwrite this fast-path assignment.
+            ++this.detectionGeneration;
+            this.autoDetectedProject = matched;
+            this.autoDetectionAttempted = true;
+            this.autoDetectionCache.set(cacheKey, matched);
+            console.error(`[ConfigManager] ⚡ Workspace matched known project: ${matched.modelName} (gen ${this.detectionGeneration})`);
+            return;
+          }
+        }
+
         console.error(
-          `[ConfigManager] New workspace — will auto-detect: ${cacheKey}`
+          `[ConfigManager] New workspace — eager auto-detect starting: ${cacheKey}`
         );
+        // Increment generation so any previous background scan that finishes later
+        // will recognise its result as stale and discard it.
+        const gen = ++this.detectionGeneration;
+        // Eager: kick off detection immediately (background) so the result is
+        // ready in cache before the first tool call arrives.
+        // Store the promise so getWorkspaceInfoDiagnostics() can await it when
+        // autoDetectedProject is still null (fixes "null on first call" race).
+        this.detectionInProgress = this.autoDetectProject(context.workspacePath, gen);
+        this.detectionInProgress.catch(() => {});
+      } else {
+        // Cache hit — recycle result without re-scanning disk
+        this.autoDetectedProject = this.autoDetectionCache.get(cacheKey) || null;
+        this.autoDetectionAttempted = true;
+        if (this.autoDetectedProject) {
+          console.error(`[ConfigManager] ⚡ Cache hit — recycled detection for: ${cacheKey}`);
+        }
       }
     }
+  }
+
+  /**
+   * Called by mcpServer when roots/list arrives (all roots from VS 2022 / VS Code).
+   * Tries every root path to find an unambiguous project match.
+   *
+   * Detection order:
+   *   1. Exact/contained path match (workspace IS or is INSIDE a project dir)
+   *   2. Git branch name → project name substring match
+   *      (handles VS 2022 sending solution root K:\repos\Contoso for ALL projects;
+   *       branch feature/4105-ContosoBankPaymProposal → matches model "ContosoBank")
+   *   3. BFS fallback
+   */
+  async setRuntimeContextFromRoots(rootPaths: string[]): Promise<void> {
+    // Increment generation upfront so any in-flight BFS scan started earlier
+    // will recognise its result as stale and discard it.
+    const gen = ++this.detectionGeneration;
+
+    // Await the eager D365FO_SOLUTIONS_PATH scan so allDetectedProjects is populated
+    // before we try matchProjectForWorkspace (otherwise it always returns null).
+    if (this.allDetectedProjectsReady) {
+      await this.allDetectedProjectsReady;
+    }
+
+    // Priority 1: exact / unambiguous path match
+    for (const rootPath of rootPaths) {
+      const match = this.matchProjectForWorkspace(rootPath);
+      if (match) {
+        this.runtimeContext = { ...this.runtimeContext, workspacePath: rootPath };
+        this.autoDetectedProject = match;
+        this.autoDetectionAttempted = true;
+        this.autoDetectionCache.set(rootPath, match);
+        registerCustomModel(match.modelName);
+        console.error(`[ConfigManager] ⚡ Root matched project: ${match.modelName} (gen ${gen}, ${match.projectPath})`);
+        return;
+      }
+    }
+
+    // Priority 2: git branch name → project name fuzzy match.
+    // VS 2022 always sends the solution root (ancestor of ALL projects) so path
+    // matching is always ambiguous. The git branch, however, usually encodes the
+    // feature/project being worked on, e.g. "feature/4105-ContosoBankPaymProposal".
+    if (this.allDetectedProjects.length > 0 && rootPaths.length > 0) {
+      for (const rootPath of rootPaths) {
+        const branch = await detectGitBranch(rootPath);
+        if (branch) {
+          const gitMatch = this.findProjectByBranchName(branch);
+          if (gitMatch) {
+            this.runtimeContext = { ...this.runtimeContext, workspacePath: rootPath };
+            this.autoDetectedProject = gitMatch;
+            this.autoDetectionAttempted = true;
+            this.autoDetectionCache.set(rootPath, gitMatch);
+            registerCustomModel(gitMatch.modelName);
+            console.error(`[ConfigManager] 🌿 Git branch "${branch}" → project: ${gitMatch.modelName} (gen ${gen})`);
+            return;
+          }
+          console.error(`[ConfigManager] 🌿 Git branch "${branch}" — no project name match (gen ${gen})`);
+          break; // only try git on the first root that has a branch
+        }
+      }
+    }
+
+    // Priority 3: BFS fallback — only when no cached result exists.
+    // We deliberately do NOT delete the cache here: if forceProject() stored a
+    // specific project for this workspace path, we want to honour that choice
+    // across roots/list notifications (e.g. git branch switch that produces no
+    // project-name match). The user can always call get_workspace_info with
+    // projectPath to explicitly override.
+    if (rootPaths.length > 0) {
+      const firstPath = rootPaths[0];
+      const normalizedFirst = normalizePath(firstPath);
+      if (this.autoDetectionCache.has(normalizedFirst)) {
+        // Use the cached (possibly user-forced) result instead of running BFS.
+        const cached = this.autoDetectionCache.get(normalizedFirst);
+        this.runtimeContext = { ...this.runtimeContext, workspacePath: firstPath };
+        this.autoDetectedProject = cached ?? null;
+        this.autoDetectionAttempted = true;
+        if (cached) {
+          console.error(`[ConfigManager] ⚡ BFS skipped — cache hit for workspace: ${cached.modelName} (gen ${gen})`);
+          registerCustomModel(cached.modelName);
+        }
+        return;
+      }
+      console.error(`[ConfigManager] Roots ambiguous (gen ${gen}) — BFS fallback on: ${firstPath}`);
+      // If stored workspace already equals firstPath, setRuntimeContext sees
+      // workspaceChanged=false and skips detection — prevent that.
+      if (this.runtimeContext.workspacePath === firstPath) {
+        this.runtimeContext = { ...this.runtimeContext, workspacePath: undefined };
+      }
+      this.autoDetectionAttempted = false;
+      this.autoDetectedProject = null;
+      this.setRuntimeContext({ workspacePath: firstPath });
+    }
+  }
+
+  /**
+   * Find the project whose model name appears as a substring of the git branch name.
+   * Prefer the LONGEST match to avoid short-prefix false positives
+   * (e.g. "Con" would match everything; "ContosoBank" is more specific than "Contoso").
+   *
+   * Examples:
+   *   branch "feature/4105-ContosoBankPaymProposal"  → model "ContosoBank"  (prefix of "ContosoBankPaymProposal")
+   *   branch "feature/ContosoEDS-cleanup"             → model "ContosoEDS"
+   */
+  private findProjectByBranchName(branchName: string): D365ProjectInfo | null {
+    const lowerBranch = branchName.toLowerCase();
+    let bestMatch: D365ProjectInfo | null = null;
+    let bestMatchLength = 0;
+
+    for (const project of this.allDetectedProjects) {
+      const lowerModel = project.modelName.toLowerCase();
+      // Require at least 4 characters to avoid accidental single-letter matches
+      if (lowerModel.length >= 4 && lowerBranch.includes(lowerModel) && lowerModel.length > bestMatchLength) {
+        bestMatch = project;
+        bestMatchLength = lowerModel.length;
+      }
+    }
+
+    if (bestMatch) {
+      console.error(`[ConfigManager] 🌿 Branch "${branchName}" → longest model match: "${bestMatch.modelName}" (${bestMatchLength} chars)`);
+    }
+    return bestMatch;
+  }
+
+  /**
+   * Find the single unambiguous project that corresponds to a workspace path.
+   * Returns null when:
+   *   - no known projects (allDetectedProjects is empty)
+   *   - workspace is a BROAD ancestor that contains MULTIPLE projects (ambiguous)
+   *
+   * Only returns a project when the match is specific:
+   *   a) workspace == project directory (exact)
+   *   b) workspace is INSIDE the project directory (workspace is a sub-folder)
+   *   c) workspace is DIRECT parent of EXACTLY ONE project (unambiguous ancestor)
+   */
+  private matchProjectForWorkspace(workspacePath: string): D365ProjectInfo | null {
+    if (!this.allDetectedProjects.length) return null;
+
+    const normalizedWp = path.normalize(workspacePath).toLowerCase();
+
+    // Priority A: workspace IS or is INSIDE a project directory
+    // (most specific — unambiguous by definition)
+    for (const p of this.allDetectedProjects) {
+      if (!p.projectPath) continue;
+      const projectDir = path.normalize(path.dirname(p.projectPath)).toLowerCase();
+      if (normalizedWp === projectDir || normalizedWp.startsWith(projectDir + path.sep)) {
+        return p;
+      }
+    }
+
+    // Priority B: workspace is an ancestor — but only if EXACTLY ONE project lives under it
+    const children = this.allDetectedProjects.filter(p => {
+      if (!p.projectPath) return false;
+      const projectDir = path.normalize(path.dirname(p.projectPath)).toLowerCase();
+      return projectDir.startsWith(normalizedWp + path.sep);
+    });
+
+    if (children.length === 1) {
+      console.error(`[ConfigManager] Single project under workspace — using: ${children[0].modelName}`);
+      return children[0];
+    }
+
+    if (children.length > 1) {
+      console.error(`[ConfigManager] Workspace is ancestor of ${children.length} projects — ambiguous, not switching`);
+    }
+
+    return null;
   }
 
   /**
@@ -385,21 +658,186 @@ class ConfigManager {
    * Get model name from configuration.
    * Priority:
    *   1) Explicit modelName in mcp.json context
-   *   2) Last segment of workspacePath (only when it looks like a D365FO package, i.e. no hyphens)
-   *   3) D365FO_MODEL_NAME env var
+   *   2) Last segment of workspacePath — ONLY when path contains PackagesLocalDirectory
+   *      (AOT paths like K:\AosService\PackagesLocalDirectory\MyModel).
+   *      Skipped for solution/repo paths like K:\repos\ASL — those would wrongly
+   *      return "ASL" instead of the real model name from the .rnrproj file.
+   *   3) Auto-detected model name from .rnrproj scan
+   *   4) D365FO_MODEL_NAME env var
    */
   getModelName(): string | null {
     const context = this.getContext();
-    if (context?.modelName) {
-      return context.modelName;
+
+    // 1. Explicit config always wins
+    if (context?.modelName) return context.modelName;
+
+    // 2. WorkspacePath derivation ONLY for AOT paths inside PackagesLocalDirectory
+    const wp = context?.workspacePath;
+    if (wp && /PackagesLocalDirectory/i.test(wp)) {
+      const fromWp = this.getModelNameFromWorkspacePath();
+      // Skip kebab-case names (repo slugs, not D365FO package names)
+      if (fromWp && !fromWp.includes('-')) return fromWp;
     }
-    const fromWorkspace = this.getModelNameFromWorkspacePath();
-    // Skip workspace-derived name when it clearly isn't a D365FO package
-    // (D365FO package names use PascalCase/underscore, not kebab-case like repo names)
-    if (fromWorkspace && !fromWorkspace.includes('-')) {
-      return fromWorkspace;
+
+    // 3. Result from background auto-detection (.rnrproj scan)
+    if (this.autoDetectedProject?.modelName) {
+      return this.autoDetectedProject.modelName;
     }
+
+    // 4. Env var fallback
     return process.env.D365FO_MODEL_NAME || null;
+  }
+
+  /**
+   * Get model name together with its detection source for diagnostics.
+   * Mirrors the exact priority chain of getModelName() but also returns
+   * a human-readable source string for display in get_workspace_info.
+   */
+  getModelNameWithSource(): { modelName: string | null; source: string } {
+    const context = this.getContext();
+
+    if (context?.modelName) {
+      return { modelName: context.modelName, source: '.mcp.json' };
+    }
+
+    const wp = context?.workspacePath;
+    if (wp && /PackagesLocalDirectory/i.test(wp)) {
+      const fromWp = this.getModelNameFromWorkspacePath();
+      if (fromWp && !fromWp.includes('-')) {
+        return { modelName: fromWp, source: 'workspacePath segment' };
+      }
+    }
+
+    if (this.autoDetectedProject?.modelName) {
+      return { modelName: this.autoDetectedProject.modelName, source: 'auto-detected from .rnrproj' };
+    }
+
+    const envVar = process.env.D365FO_MODEL_NAME || null;
+    if (envVar) {
+      return { modelName: envVar, source: 'D365FO_MODEL_NAME env var' };
+    }
+
+    return { modelName: null, source: '(not configured)' };
+  }
+
+  /**
+   * Returns all workspace-info diagnostics in one async call, including
+   * the human-readable source for each resolved value.
+   * Used by the get_workspace_info tool to produce the Phase-5 diagnostics output.
+   */
+  async getWorkspaceInfoDiagnostics(): Promise<{
+    modelName: string | null;
+    modelSource: string;
+    projectPath: string | null;
+    projectSource: string;
+    packagePath: string | null;
+    packageSource: string;
+  }> {
+    // Ensure config is loaded and auto-detection has had a chance to run
+    await this.ensureLoaded();
+    if (!this.autoDetectionAttempted) {
+      const ctx = this.config?.servers.context;
+      await this.autoDetectProject(this.runtimeContext.workspacePath || ctx?.workspacePath);
+    } else if (!this.autoDetectedProject && this.detectionInProgress) {
+      // autoDetectionAttempted was set immediately when background scan started,
+      // but the scan hasn't finished yet — wait up to 12 s for the result.
+      // This fixes "null on first call" when VS 2022 makes a tool call before
+      // the D365FO_SOLUTIONS_PATH scan or BFS completes.
+      await Promise.race([
+        this.detectionInProgress,
+        new Promise<void>(resolve => setTimeout(resolve, 12_000)),
+      ]);
+      this.detectionInProgress = null;
+    }
+
+    // Model name
+    const { modelName, source: modelSource } = this.getModelNameWithSource();
+
+    // Project path
+    let projectPath: string | null = null;
+    let projectSource = '(not detected)';
+
+    if (this.runtimeContext.projectPath) {
+      projectPath = this.runtimeContext.projectPath;
+      projectSource = 'runtime context (from VS Code)';
+    } else if (this.config?.servers.context?.projectPath) {
+      projectPath = this.config.servers.context.projectPath;
+      projectSource = '.mcp.json';
+    } else if (this.autoDetectedProject?.projectPath) {
+      projectPath = this.autoDetectedProject.projectPath;
+      projectSource = 'auto-detected from .rnrproj';
+    }
+
+    // Package path
+    const packagePath = this.getPackagePath();
+    let packageSource = '(not configured)';
+
+    const context = this.getContext();
+    if (context?.packagePath) {
+      packageSource = '.mcp.json';
+    } else if (context?.workspacePath && /PackagesLocalDirectory/i.test(context.workspacePath)) {
+      packageSource = 'workspacePath';
+    } else if (this.autoDetectedProject?.packagePath) {
+      packageSource = 'auto-detected from .rnrproj';
+    } else if (packagePath) {
+      packageSource = 'well-known path probe';
+    }
+
+    return { modelName, modelSource, projectPath, projectSource, packagePath, packageSource };
+  }
+
+  /**
+   * Returns all projects discovered by the D365FO_SOLUTIONS_PATH scan.
+   * Used by get_workspace_info to list available projects for solution switching.
+   */
+  getAllDetectedProjects(): D365ProjectInfo[] {
+    return this.allDetectedProjects;
+  }
+
+  /**
+   * Explicitly force a specific .rnrproj as the active project.
+   * Called when the user passes projectPath to get_workspace_info() to switch solutions.
+   * Bypasses the auto-detection cache — takes effect immediately.
+   */
+  async forceProject(projectPath: string): Promise<D365ProjectInfo | null> {
+    try {
+      const normalizedPath = path.normalize(projectPath);
+      const modelName = await extractModelNameFromProject(normalizedPath);
+      if (!modelName) {
+        console.error(`[ConfigManager] forceProject: could not read model name from ${projectPath}`);
+        return null;
+      }
+      const project: D365ProjectInfo = {
+        projectPath: normalizedPath,
+        modelName,
+        solutionPath: path.dirname(path.dirname(normalizedPath)),
+      };
+      this.autoDetectedProject = project;
+      this.autoDetectionAttempted = true;
+      // Cache under the project path key so direct lookups work.
+      this.autoDetectionCache.set(normalizedPath, project);
+      // ALSO cache under the current workspace path key.
+      // setRuntimeContext() (called per HTTP request with the VS 2022 workspace path)
+      // does a cache lookup by workspace path. Without this, it would overwrite
+      // autoDetectedProject with the OLD cached value on the very next request.
+      const currentWorkspace = this.runtimeContext.workspacePath;
+      if (currentWorkspace) {
+        this.autoDetectionCache.set(normalizePath(currentWorkspace), project);
+      }
+      // Persist projectPath in runtimeContext so getWorkspaceInfoDiagnostics()
+      // displays the correct project path even if autoDetectedProject is later
+      // overridden by automatic detection (git branch / roots/list).
+      // NOTE: we intentionally do NOT pin modelName here — automatic detection
+      // (setRuntimeContextFromRoots) should be able to override the model when
+      // the user switches git branches or opens a different workspace.
+      this.runtimeContext = { ...this.runtimeContext, projectPath: normalizedPath };
+      registerCustomModel(modelName);
+      console.error(`[ConfigManager] ✅ forceProject: switched to ${modelName} (${normalizedPath})`);
+      return project;
+    } catch (err) {
+      console.error(`[ConfigManager] forceProject error:`, err);
+      return null;
+    }
   }
 
   /**

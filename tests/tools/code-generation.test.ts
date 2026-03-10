@@ -7,7 +7,7 @@
  *         get_table_patterns, get_form_patterns
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { codeGenTool } from '../../src/tools/codeGen';
 import { completionTool } from '../../src/tools/completion';
 import { handleGenerateD365Xml } from '../../src/tools/generateD365Xml';
@@ -215,7 +215,7 @@ describe('XmlTemplateGenerator.splitXppClassSource', () => {
   it('adds a blank line before } when member vars have no trailing blank line', () => {
     const source = [
       '[DataContractAttribute]',
-      'public final class AslVendPaymTermRecalcContract',
+      'public final class ContosoVendPaymTermRecalcContract',
       '{',
       '    VendGroupId vendGroupId;',
       '}',

@@ -144,6 +144,22 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
     extractAndApplyWorkspaceFromMeta((request as any).params?._meta);
     extractAndApplyWorkspaceFromMeta((request.params as any)._meta);
 
+    // In stdio mode the DB loads asynchronously after transport connect.
+    // ctx.dbReady resolves once the real 1.5 GB symbol database is open and
+    // patched into the context. Awaiting it here ensures every tool call uses
+    // the real index — tools that arrive during DB loading will block (showing
+    // a spinner in the IDE) rather than silently returning empty results.
+    // Write-only tools (create_d365fo_file etc.) don't need the DB, so they
+    // skip the wait and execute immediately.
+    if (context.dbReady && !WRITE_TOOLS.has(toolName)) {
+      const t0 = Date.now();
+      await context.dbReady;
+      const elapsed = Date.now() - t0;
+      if (elapsed > 200) {
+        console.error(`[toolHandler] ⏳ ${toolName}: DB was loading, waited ${elapsed} ms`);
+      }
+    }
+
     // Enforce server mode: block write tools in read-only mode, block read tools in write-only mode
     if (SERVER_MODE === 'read-only' && WRITE_TOOLS.has(toolName)) {
       return {
@@ -267,11 +283,38 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
       case 'verify_d365fo_project':
         return verifyD365ProjectTool(request, context);
       case 'get_workspace_info': {
+        const args = (request as any).params?.arguments || {};
         const configManager = getConfigManager();
-        await configManager.ensureLoaded();
-        const modelName = configManager.getModelName() ?? null;
-        const packagePath = configManager.getPackagePath() ?? null;
-        const projectPath = await configManager.getProjectPath() ?? null;
+
+        // projectName: resolve by name from known projects list (user-friendly switch)
+        if (args.projectName && !args.projectPath) {
+          const needle = (args.projectName as string).toLowerCase();
+          const allProjects = configManager.getAllDetectedProjects();
+          const match = allProjects.find(p => p.modelName.toLowerCase() === needle)
+            ?? allProjects.find(p => p.modelName.toLowerCase().includes(needle));
+          if (!match) {
+            const names = allProjects.map(p => p.modelName).join(', ') || '(none — set D365FO_SOLUTIONS_PATH)';
+            return {
+              content: [{ type: 'text', text: `❌ No project found matching "${args.projectName}".\nAvailable: ${names}` }],
+              isError: true,
+            };
+          }
+          args.projectPath = match.projectPath;
+        }
+
+        // projectPath: force-switch to specific .rnrproj
+        if (args.projectPath) {
+          const forced = await configManager.forceProject(args.projectPath);
+          if (!forced) {
+            return {
+              content: [{ type: 'text', text: `❌ Could not read model name from: ${args.projectPath}\nMake sure the path points to a valid .rnrproj file.` }],
+              isError: true,
+            };
+          }
+        }
+
+        const { modelName, modelSource, projectPath, projectSource, packagePath, packageSource } =
+          await configManager.getWorkspaceInfoDiagnostics();
         const envType = await configManager.getDevEnvironmentType();
 
         // Prefix diagnostics
@@ -288,9 +331,9 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         const lines: string[] = [
           `## D365FO Workspace Configuration`,
           ``,
-          `Model name      : ${modelName ?? '(not configured)'}`,
-          `Package path    : ${packagePath ?? '(not configured)'}`,
-          `Project path    : ${projectPath ?? '(not detected)'}`,
+          `Model name      : ${modelName ?? '(not configured)'}  (source: ${modelSource})`,
+          `Package path    : ${packagePath ?? '(not configured)'}  (source: ${packageSource})`,
+          `Project path    : ${projectPath ?? '(not detected)'}  (source: ${projectSource})`,
           `Env type        : ${envType}`,
           ``,
           `## Prefix Configuration`,
@@ -331,6 +374,20 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
           if (customModels.length > 0) {
             lines.push(`Custom models in index: ${customModels.join(', ')}`);
           }
+        }
+
+        // List all projects found under D365FO_SOLUTIONS_PATH so the user can switch
+        const allProjects = configManager.getAllDetectedProjects();
+        if (allProjects.length > 1) {
+          lines.push(``);
+          lines.push(`## Available Projects (D365FO_SOLUTIONS_PATH)`);
+          lines.push(``);
+          for (const p of allProjects) {
+            const active = p.projectPath === projectPath ? '▶ ' : '  ';
+            lines.push(`${active}${p.modelName.padEnd(40)} ${p.projectPath}`);
+          }
+          lines.push(``);
+          lines.push(`To switch project: call get_workspace_info with projectName = "<ModelName>"`);
         }
 
         return { content: [{ type: 'text', text: lines.join('\n') }] };

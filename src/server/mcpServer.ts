@@ -6,6 +6,9 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   ListToolsRequestSchema,
+  InitializedNotificationSchema,
+  RootsListChangedNotificationSchema,
+  ListRootsResultSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { registerToolHandler } from '../tools/toolHandler.js';
 import { registerClassResource } from '../resources/classResource.js';
@@ -13,10 +16,54 @@ import { registerWorkspaceResources } from '../resources/workspaceResource.js';
 import { registerCodeReviewPrompt } from '../prompts/codeReview.js';
 import type { XppServerContext } from '../types/context.js';
 import { SERVER_MODE, WRITE_TOOLS } from './serverMode.js';
+import { getConfigManager } from '../utils/configManager.js';
 
 export type { XppServerContext };
 export { SERVER_MODE, WRITE_TOOLS } from './serverMode.js';
 export type { ServerMode } from './serverMode.js';
+
+/**
+ * Convert a file:// URI to a local Windows path.
+ * Duplicated from transport.ts to keep mcpServer.ts self-contained
+ * (no circular dep between transport ↔ mcpServer).
+ */
+function fileUriToPath(uri: string): string | null {
+  if (!uri) return null;
+  if (uri.startsWith('file:///')) {
+    return decodeURIComponent(uri.slice('file:///'.length)).replace(/\//g, '\\');
+  }
+  if (uri.startsWith('file://')) {
+    return decodeURIComponent(uri.slice('file://'.length)).replace(/\//g, '\\');
+  }
+  if (uri.length > 2 && (uri[1] === ':' || uri.startsWith('\\\\'))) return uri;
+  return null;
+}
+
+/**
+ * Apply MCP roots list to ConfigManager.
+ * Called after InitializedNotification and RootsListChanged notification.
+ * All roots are passed so that unambiguous single-project matches work correctly
+ * even when VS 2022 sends multiple roots (open project folders).
+ */
+function applyRootsToConfig(roots: Array<{ uri: string }>): void {
+  if (!roots?.length) return;
+
+  // Log all received roots for diagnostics
+  process.stderr.write(`[mcpServer] roots/list received (${roots.length} root(s)):\n`);
+  roots.forEach((r, i) => process.stderr.write(`  [${i}] ${r.uri}\n`));
+
+  // Convert all URIs to local paths
+  const paths = roots
+    .map(r => fileUriToPath(r.uri))
+    .filter((p): p is string => p !== null);
+
+  if (paths.length === 0) return;
+
+  // Pass all paths; configManager will pick the most specific unambiguous one.
+  getConfigManager().setRuntimeContextFromRoots(paths).catch(err => {
+    process.stderr.write(`[mcpServer] setRuntimeContextFromRoots error: ${err}\n`);
+  });
+}
 
 export function createXppMcpServer(context: XppServerContext): Server {
   const serverNameSuffix = SERVER_MODE !== 'full' ? ` (${SERVER_MODE})` : '';
@@ -33,6 +80,34 @@ export function createXppMcpServer(context: XppServerContext): Server {
       },
     }
   );
+
+  // -----------------------------------------------------------------------
+  // Workspace roots: VS Code (stdio mode) sends roots after initialization.
+  // Request them immediately after `initialized` notification, then keep
+  // up-to-date on `notifications/roots/list_changed`.
+  // -----------------------------------------------------------------------
+  server.setNotificationHandler(InitializedNotificationSchema, async () => {
+    try {
+      const result = await server.request(
+        { method: 'roots/list', params: {} },
+        ListRootsResultSchema
+      );
+      applyRootsToConfig(result.roots ?? []);
+    } catch {
+      // Client doesn't support roots/list — workspace already seeded from
+      // process.cwd() or env vars in index.ts stdio startup.
+    }
+  });
+
+  server.setNotificationHandler(RootsListChangedNotificationSchema, async () => {
+    try {
+      const result = await server.request(
+        { method: 'roots/list', params: {} },
+        ListRootsResultSchema
+      );
+      applyRootsToConfig(result.roots ?? []);
+    } catch {}
+  });
 
   // Register centralized tool handler
   registerToolHandler(server, context);
@@ -1953,11 +2028,27 @@ When the configured modelName IS a placeholder, this tool auto-detects the real 
 from the .rnrproj file and shows it as a concrete fix suggestion, so the user knows exactly
 what value to put in .mcp.json.
 
+**Solution switching (VS 2022):** When the user opens a different D365FO solution or says
+"switch to <ProjectName>", call get_workspace_info with projectName (preferred) or projectPath.
+  - projectName: just the model name, e.g. "ContosoEDS" — server resolves the path automatically.
+  - projectPath: full path to the .rnrproj file (fallback when name is ambiguous).
+The server switches context immediately without restart.
+If D365FO_SOLUTIONS_PATH is configured, the output lists all available projects.
+
 Use this instead of get_label_info or search to detect the correct model — those tools return
 SOURCE models of existing objects, not the TARGET model for new objects.`,
         inputSchema: {
           type: 'object',
-          properties: {},
+          properties: {
+            projectName: {
+              type: 'string',
+              description: 'Preferred way to switch projects. Just the model name, e.g. "ContosoEDS" or "ContosoBank". The server resolves the full path from D365FO_SOLUTIONS_PATH automatically. Use this when the user says "switch to <project>" or opens a different solution.',
+            },
+            projectPath: {
+              type: 'string',
+              description: 'Absolute path to a .rnrproj file. Fallback when projectName is ambiguous or D365FO_SOLUTIONS_PATH is not configured. Example: "K:\\\\repos\\\\Contoso\\\\MyProject\\\\MyProject.rnrproj"',
+            },
+          },
           required: [],
         },
       },

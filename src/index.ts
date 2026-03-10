@@ -30,7 +30,7 @@ import { RedisCacheService } from './cache/redisCache.js';
 import { WorkspaceScanner } from './workspace/workspaceScanner.js';
 import { HybridSearch } from './workspace/hybridSearch.js';
 import { initializeDatabase } from './database/download.js';
-import { initializeConfig } from './utils/configManager.js';
+import { initializeConfig, getConfigManager } from './utils/configManager.js';
 import { SERVER_MODE, WRITE_TOOLS } from './server/serverMode.js';
 import * as fs from 'fs/promises';
 
@@ -62,13 +62,28 @@ console.error = (...args: any[]) => {
 };
 
 const PORT = parseInt(process.env.PORT || '8080');
-const DB_PATH = process.env.DB_PATH || './data/xpp-metadata.db';
-const LABELS_DB_PATH = process.env.LABELS_DB_PATH || './data/xpp-metadata-labels.db';
-const METADATA_PATH = process.env.METADATA_PATH || './metadata';
+// Derive server root from this file's location so paths are absolute
+// regardless of process.cwd() — critical when VS Code launches this as stdio subprocess.
+const __serverDir = dirname(fileURLToPath(import.meta.url));
+const DB_PATH = process.env.DB_PATH
+  ? resolve(process.env.DB_PATH)
+  : resolve(__serverDir, '../data/xpp-metadata.db');
+const LABELS_DB_PATH = process.env.LABELS_DB_PATH
+  ? resolve(process.env.LABELS_DB_PATH)
+  : resolve(__serverDir, '../data/xpp-metadata-labels.db');
+const METADATA_PATH = process.env.METADATA_PATH
+  ? resolve(process.env.METADATA_PATH)
+  : resolve(__serverDir, '../metadata');
 
-// Detect if running in stdio mode (launched by MCP client)
-// Force HTTP mode in Azure (when PORT or WEBSITES_PORT env var is set)
-const isStdioMode = !process.env.PORT && !process.env.WEBSITES_PORT && !process.stdin.isTTY;
+// Detect if running in stdio mode (launched by MCP client as subprocess).
+// Primary signal: stdin is NOT a TTY — in Node.js isTTY is `true` for terminals
+// and `undefined` (never `false`) for pipes, so use !isTTY, not === false.
+// WEBSITES_PORT guards Azure App Service (HTTP-only, stdin may also be non-TTY there).
+// MCP_FORCE_HTTP lets an operator explicitly keep HTTP even when stdin is piped.
+const isStdioMode =
+  !process.env.WEBSITES_PORT &&
+  process.env.MCP_FORCE_HTTP !== 'true' &&
+  (process.env.MCP_STDIO_MODE === 'true' || !process.stdin.isTTY);
 
 // Readiness state tracking
 interface ServerState {
@@ -321,25 +336,108 @@ async function main() {
   console.log(`🔧 Server mode: ${SERVER_MODE}`);
 
   if (isStdioMode) {
-    // STDIO mode - initialize synchronously before connecting
-    const { mcpServer } = await initializeServices();
-    console.log('📡 Using stdio transport for MCP client');
+    // Pre-seed workspace so auto-detection starts before the first tool call.
+    // VS Code sets process.cwd() to the first workspace folder for stdio servers.
+    // VSCODE_WORKSPACE_FOLDER_PATHS is a more reliable VS Code-specific env var.
+    const envRoots = process.env.VSCODE_WORKSPACE_FOLDER_PATHS
+      ?.split(';')
+      .filter(Boolean)
+      .map(u => u.startsWith('file:///')
+        ? decodeURIComponent(u.slice(8)).replace(/\//g, '\\')
+        : u);
+    const initialWorkspace = envRoots?.[0] ?? process.cwd();
+    // Eagerly scan D365FO_SOLUTIONS_PATH so allDetectedProjects is populated before
+    // VS 2022 sends roots/list (usually within 1–2 s of startup).
+    getConfigManager().initEagerScan();
+    process.stderr.write(`[stdio] Seeding workspace: ${initialWorkspace}\n`);
+    getConfigManager().setRuntimeContext({ workspacePath: initialWorkspace });
+
+    // STDIO mode: connect transport BEFORE the heavy database open so the MCP
+    // handshake completes within VS 2022's initialization timeout (~10 s).
+    //
+    // Strategy:
+    //  1. Create a lightweight "stub" server with an in-memory (empty) symbol index.
+    //  2. Connect the stdio transport — handshake completes immediately.
+    //  3. Yield the event loop (setImmediate) so VS 2022's `initialized` notification
+    //     and the roots/list exchange are processed BEFORE the synchronous DB open
+    //     blocks the event loop. Without this yield, project auto-detection via
+    //     roots/list could be delayed until after DB load.
+    //  4. Run full initializeServices() in the background.
+    //  5. Swap the real symbol index into the context once init finishes.
+    //     Tool handlers await ctx.dbReady so they always use the real index —
+    //     they will block (showing a spinner in the IDE) until the DB is ready,
+    //     then execute immediately with full results.
+
+    // Step 1: lightweight stub + deferred dbReady promise
+    const { TermRelationshipGraph } = await import('./utils/suggestionEngine.js');
+    const stubCache = new RedisCacheService();
+    stubCache.waitForConnection().catch(() => {});
+    const stubIndex = new XppSymbolIndex(':memory:', ':memory:');
+    const stubParser = new XppMetadataParser();
+    const stubScanner = new WorkspaceScanner();
+    const stubHybrid = new HybridSearch(stubIndex, stubScanner);
+    const stubGraph = new TermRelationshipGraph();
+
+    let resolveDbReady!: () => void;
+    let rejectDbReady!: (err: unknown) => void;
+    const dbReadyPromise = new Promise<void>((res, rej) => {
+      resolveDbReady = res;
+      rejectDbReady  = rej;
+    });
+
+    const stubContext: import('./types/context.js').XppServerContext = {
+      symbolIndex: stubIndex,
+      parser: stubParser,
+      cache: stubCache,
+      workspaceScanner: stubScanner,
+      hybridSearch: stubHybrid,
+      termRelationshipGraph: stubGraph,
+      dbReady: dbReadyPromise,
+    };
+    const mcpServer = createXppMcpServer(stubContext);
+
+    // Step 2: connect transport — handshake completes here
     const transport = new StdioServerTransport();
     await mcpServer.connect(transport);
-    console.log('✅ Stdio transport connected');
-    
-    // Log actual tool count based on server mode
-    const totalTools = 41;
+    console.log('✅ Stdio transport connected (DB loading in background)');
+
+    // Step 3: yield the event loop so `initialized` + roots/list can be processed
+    // BEFORE the synchronous new Database() call blocks the event loop.
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    // Step 4: load real database in the background
+    initializeServices().then(({ symbolIndex, parser, cache, workspaceScanner, hybridSearch, termRelationshipGraph }) => {
+      // Step 5: patch the context references used by tool handlers
+      stubContext.symbolIndex       = symbolIndex;
+      stubContext.parser            = parser;
+      stubContext.cache             = cache;
+      stubContext.workspaceScanner  = workspaceScanner;
+      stubContext.hybridSearch      = hybridSearch;
+      stubContext.termRelationshipGraph = termRelationshipGraph;
+      serverState.symbolIndex = symbolIndex;
+      serverState.parser      = parser;
+      serverState.cache       = cache;
+      serverState.statusMessage = 'Ready';
+      // Resolve dbReady AFTER context is patched — tools can now run with real index.
+      resolveDbReady();
+      console.log('✅ Database loaded — all tools fully operational');
+    }).catch(err => {
+      rejectDbReady(err);
+      console.error('❌ Background initialization failed:', err);
+    });
+
+    // Log tool count immediately (transport is already connected)
+    const totalTools = 42;
     const writeToolCount = WRITE_TOOLS.size;
     const toolCount = SERVER_MODE === 'write-only' ? writeToolCount :
                      SERVER_MODE === 'read-only' ? totalTools - writeToolCount : totalTools;
     const toolDesc = SERVER_MODE === 'write-only' ? `(${Array.from(WRITE_TOOLS).join(', ')})` :
                     SERVER_MODE === 'read-only' ? '(all except write tools)' :
-                    '(8 discovery + 4 labels + 6 object-info + 4 intelligent + 3 smart-generation + 3 file-ops + 3 pattern-analysis + 9 security-extensions)';
+                    '(8 discovery + 4 labels + 6 object-info + 4 intelligent + 3 smart-generation + 5 file-ops + 3 pattern-analysis + 9 security-extensions)';
     console.log(`🎯 Registered ${toolCount} X++ MCP tools ${toolDesc}`);
     serverState.isReady = true;
     serverState.isHealthy = true;
-    serverState.statusMessage = 'Ready';
+    serverState.statusMessage = 'Loading database...';
   } else {
     // HTTP mode - initialize fully BEFORE opening the port.
     // VS Copilot's MCP client does not retry on 503/404, so the port must only

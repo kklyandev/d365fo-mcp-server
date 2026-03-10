@@ -2,33 +2,51 @@
  * Example .mcp.json configuration for Visual Studio 2022 / VS Code
  * Place this file in your solution root directory or in %USERPROFILE%\.mcp.json
  *
- * Three deployment variants are shown below — uncomment the one that fits your setup:
- *   1. Single server (local only, full mode)
- *   2. Single server (Azure, read-only mode)
+ * Four deployment variants are shown below — uncomment the one that fits your setup:
+ *   1. Local stdio server (recommended for single developers, zero-config)
+ *   2. Single Azure server (read-only, team-shared metadata)
  *   3. Hybrid setup (Azure read-only + local write-only companion)
+ *   4. UDE (Unified Developer Experience / Power Platform Tools)
  *
- * workspacePath format:
+ * stdio vs HTTP:
+ *   - stdio (command:)  → server is launched automatically as a subprocess by VS 2022.
+ *                         No running port, no npm start needed.
+ *                         Model auto-detection works via the MCP roots protocol.
+ *   - HTTP  (url:)      → server listens on a TCP port (Azure or local npm start).
+ *                         VS 2022 does not send workspace headers over HTTP —
+ *                         configure workspacePath or D365FO_SOLUTIONS_PATH instead.
+ *
+ * D365FO_SOLUTIONS_PATH:
+ *   Folder containing your D365FO .rnrproj files.
+ *   The server scans it at startup, auto-detects model names, and lists all found
+ *   projects in get_workspace_info. To switch between solutions call
+ *   get_workspace_info with the projectPath argument — no server restart needed.
+ *
+ * DB_PATH / LABELS_DB_PATH:
+ *   Must be ABSOLUTE paths. In stdio mode process.cwd() is not the repo folder,
+ *   so relative paths like "./data/..." would point to the wrong directory.
+ *
+ * workspacePath format (HTTP mode only):
  *   "...\PackagesLocalDirectory\YourPackageName\YourModelName"
- *
- * From this single path the server automatically derives:
- *   - packagePath  → everything up to PackagesLocalDirectory
- *   - packageName  → YourPackageName (second-to-last segment)
- *   - modelName    → YourModelName   (last segment)
- *
- * You only need to add explicit modelName when the model name differs from what
- * is the last segment, or explicit packagePath when it cannot be derived from workspacePath.
+ *   From this single path the server automatically derives:
+ *     - packagePath  → everything up to PackagesLocalDirectory
+ *     - packageName  → YourPackageName (second-to-last segment)
+ *     - modelName    → YourModelName   (last segment)
  */
 
-// ─── Option 1: Single local server (full mode) ───────────────────────────────
-// Use when the MCP server runs on the same Windows VM as your D365FO installation.
+// ─── Option 1: Local stdio server (recommended for single developers) ─────────
+// VS 2022 launches the server automatically as a subprocess.
+// No npm start required. Model is auto-detected from D365FO_SOLUTIONS_PATH.
 {
   "servers": {
-    "d365fo-code-intelligence": {
-      "url": "http://localhost:8080/mcp/"
-    },
-    "context": {
-      "workspacePath": "K:\\AOSService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
-      "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj"
+    "d365fo-mcp-tools": {
+      "command": "node",
+      "args": ["C:\\d365fo-mcp-server\\dist\\index.js"],
+      "env": {
+        "DB_PATH": "C:\\d365fo-mcp-server\\data\\xpp-metadata.db",
+        "LABELS_DB_PATH": "C:\\d365fo-mcp-server\\data\\xpp-metadata-labels.db",
+        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects"
+      }
     }
   }
 }
@@ -38,7 +56,7 @@
 // File-creation tools are not available — use generate_d365fo_xml() + manual save instead.
 {
   "servers": {
-    "d365fo-code-intelligence": {
+    "d365fo-mcp-tools": {
       "url": "https://your-app-name.azurewebsites.net/mcp/"
     },
     "context": {
@@ -59,27 +77,27 @@
     },
     "d365fo-local": {
       "command": "node",
-      "args": ["K:\\d365fo-mcp-server\\dist\\index.js", "--stdio"],
+      "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
       "env": {
-        "MCP_SERVER_MODE": "write-only"
+        "MCP_SERVER_MODE": "write-only",
+        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects"
       }
     },
     "context": {
       "workspacePath": "K:\\AOSService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
-      "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj",
       "devEnvironmentType": "auto"
     }
   }
 }
 
-// ─── UDE (Unified Developer Experience / Power Platform Tools) ───────────────
+// ─── Option 4: UDE (Unified Developer Experience / Power Platform Tools) ─────
 // Add these context properties instead of workspacePath when using
 // the UDE environment in Visual Studio 2022 with Power Platform Tools.
 // The server reads XPP config files from %LOCALAPPDATA%\Microsoft\Dynamics365\XPPConfig\
 // automatically — you usually do not need to set the paths manually.
 {
   "servers": {
-    "d365fo-code-intelligence": {
+    "d365fo-mcp-tools": {
       "url": "https://your-app-name.azurewebsites.net/mcp/"
     },
     "context": {
