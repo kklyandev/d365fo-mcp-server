@@ -156,17 +156,6 @@ resource appService 'Microsoft.Web/sites@2023-01-01' = {
   }
 }
 
-// Grant App Service managed identity access to Storage Account
-resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, appService.id, 'StorageBlobDataContributor')
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Blob Data Contributor
-    principalId: appService.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
 // Outputs
 output appServiceUrl string = 'https://${appService.properties.defaultHostName}'
 output mcpEndpoint string = 'https://${appService.properties.defaultHostName}/mcp'
