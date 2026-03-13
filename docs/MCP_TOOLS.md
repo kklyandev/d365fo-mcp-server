@@ -1,7 +1,7 @@
 # All Available Tools
 
 When you ask GitHub Copilot a question about D365FO code, it automatically calls one of these
-42 tools to look up the answer or generate code. You do not need to name the tools yourself —
+43 tools to look up the answer or generate code. You do not need to name the tools yourself —
 just ask in plain English.
 
 ---

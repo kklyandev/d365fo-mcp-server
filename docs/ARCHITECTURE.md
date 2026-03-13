@@ -377,7 +377,7 @@ graph TB
 ## Database Schema
 
 **Dual-Database Architecture** for performance optimization:
-- **Symbols Database** (`xpp-metadata.db`, ~1-1.5 GB) — Fast symbol searches
+- **Symbols Database** (`xpp-metadata.db`, ~3 GB) — Fast symbol searches
 - **Labels Database** (`xpp-metadata-labels.db`, ~500 MB for 4 languages, up to 8 GB for all 70 languages) — Isolated label storage
 
 ### Symbols Database
@@ -530,7 +530,7 @@ graph LR
     end
 
     INIT -.-> CAPS[Capabilities: tools, resources, prompts]
-    TOOLS_LIST -.-> TOOL_DEFS["40 tools: search, batch_search, search_extensions, get_class_info, get_table_info, code_completion, get_method_signature, find_references, get_form_info, get_query_info, get_view_info, get_enum_info, get_edt_info, get_report_info, generate_code, analyze_code_patterns, suggest_method_implementation, analyze_class_completeness, get_api_usage_patterns, generate_d365fo_xml, create_d365fo_file, modify_d365fo_file, search_labels, get_label_info, create_label, rename_label, get_table_patterns, get_form_patterns, generate_smart_table, generate_smart_form, suggest_edt, get_security_artifact_info, get_security_coverage_for_object, get_menu_item_info, find_coc_extensions, find_event_handlers, get_table_extension_info, get_data_entity_info, analyze_extension_points, validate_object_naming"]
+    TOOLS_LIST -.-> TOOL_DEFS["43 tools: search, batch_search, search_extensions, get_class_info, get_table_info, code_completion, get_method_signature, get_method_source, find_references, get_form_info, get_query_info, get_view_info, get_enum_info, get_edt_info, get_report_info, generate_code, analyze_code_patterns, suggest_method_implementation, analyze_class_completeness, get_api_usage_patterns, generate_d365fo_xml, create_d365fo_file, modify_d365fo_file, search_labels, get_label_info, create_label, rename_label, get_table_patterns, get_form_patterns, generate_smart_table, generate_smart_form, suggest_edt, get_security_artifact_info, get_security_coverage_for_object, get_menu_item_info, find_coc_extensions, find_event_handlers, get_table_extension_info, get_data_entity_info, analyze_extension_points, validate_object_naming, get_workspace_info, verify_d365fo_project"]
     TOOLS_CALL -.-> EXEC[Tool Execution: search DB, parse XML, return results]
     style INIT fill:#4CAF50,color:#fff
     style TOOLS_CALL fill:#2196F3,color:#fff
@@ -939,7 +939,7 @@ graph LR
 
 ### Current Capacity
 
-- **Storage:** ~1-1.5 GB symbols database + ~500 MB labels database (4 languages) = ~2 GB total
+- **Storage:** ~3 GB symbols database + ~500 MB labels database (4 languages) = ~3.5 GB total
 - **Memory:** 1.75GB (P0v3) - ~800MB used
 - **Throughput:** 100 req/15min per IP
 - **Latency:** 

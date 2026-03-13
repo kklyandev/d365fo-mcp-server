@@ -688,6 +688,7 @@ async function main() {
           { name: 'get_data_entity_info',         desc: 'Data entity: category, OData settings, data sources, keys' },
           { name: 'analyze_extension_points',     desc: 'CoC-eligible methods, delegates, events — what can be extended?' },
           { name: 'validate_object_naming',       desc: 'Validate proposed extensions and object names against D365FO conventions' },
+          { name: 'get_workspace_info',           desc: 'Detected workspace paths, model name, project file, and server mode' },
           { name: 'verify_d365fo_project',        desc: 'Verify objects exist on disk and are referenced in the .rnrproj project file' },
         ]},
       ];

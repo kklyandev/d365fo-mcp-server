@@ -1,6 +1,9 @@
 # Azure Pipeline for Custom D365FO Metadata Updates
 # This pipeline updates custom models from the Azure DevOps Git repository
 # Use this after any change to custom models
+#
+# Parameter skipExtraction=true: skip Git extraction (steps 3-4) and download
+# existing metadata from blob storage via azcopy, then rebuild DB only.
 
 trigger: none  # Manual execution only
 
@@ -17,6 +20,10 @@ parameters:
     displayName: 'Custom Models (comma-separated, or all)'
     type: string
     default: 'all'
+  - name: skipExtraction
+    displayName: 'Skip extraction (rebuild DB from existing blob metadata)'
+    type: boolean
+    default: false
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -75,29 +82,99 @@ stages:
             displayName: 'Install NPM dependencies'
             workingDirectory: '$(MCP_SERVER_PATH)'
 
-          # ========== Step 2: Download Existing Data ==========
+          # ========== Step 2a: Download Existing DB (custom mode, skipExtraction=false) ==========
+          # Preserves standard models already compiled into the DB
 
-          # Custom mode: download existing DB to preserve standard models
           - script: npm run blob-manager download-database
-            displayName: 'Download existing database'
-            condition: eq('${{ parameters.extractionMode }}', 'custom')
+            displayName: 'Download existing database (custom mode)'
+            condition: and(eq('${{ parameters.extractionMode }}', 'custom'), eq('${{ parameters.skipExtraction }}', false))
             workingDirectory: '$(MCP_SERVER_PATH)'
             env:
               AZURE_STORAGE_CONNECTION_STRING: $(AZURE_STORAGE_CONNECTION_STRING)
               BLOB_CONTAINER_NAME: $(BLOB_CONTAINER_NAME)
               DB_PATH: $(DB_PATH)
 
-          # Standard/all mode: download cached standard metadata from blob
-          - script: npm run blob-manager download-standard
-            displayName: 'Download standard metadata (cached)'
-            condition: ne('${{ parameters.extractionMode }}', 'custom')
-            workingDirectory: '$(MCP_SERVER_PATH)'
+          # ========== Step 2b: Download Standard Metadata via azcopy ==========
+          # standard/all mode (any skipExtraction) OR custom mode with skipExtraction=true
+          # Uses azcopy — massively parallel, much faster than Node.js SDK for many small XML files.
+
+          - script: |
+              ACCOUNT_NAME=$(echo "$AZURE_STORAGE_CONNECTION_STRING" | grep -oP 'AccountName=\K[^;]+')
+              ACCOUNT_KEY=$(echo "$AZURE_STORAGE_CONNECTION_STRING" | grep -oP 'AccountKey=\K[^;]+')
+              EXPIRY=$(date -u -d '+4 hours' '+%Y-%m-%dT%H:%MZ')
+              SAS_TOKEN=$(az storage container generate-sas \
+                --account-name "$ACCOUNT_NAME" \
+                --account-key "$ACCOUNT_KEY" \
+                --name "$(BLOB_CONTAINER_NAME)" \
+                --permissions rl \
+                --expiry "$EXPIRY" \
+                --output tsv)
+
+              TEMP_DIR="$(MCP_SERVER_PATH)/_azcopy_tmp_std"
+              DEST_DIR="$(MCP_SERVER_PATH)/metadata"
+              SOURCE_URL="https://${ACCOUNT_NAME}.blob.core.windows.net/$(BLOB_CONTAINER_NAME)/metadata/standard/?${SAS_TOKEN}"
+
+              echo "Downloading standard metadata via azcopy..."
+              mkdir -p "$TEMP_DIR" "$DEST_DIR"
+              AZCOPY_CONCURRENCY_VALUE=64 azcopy copy "$SOURCE_URL" "$TEMP_DIR/" \
+                --recursive \
+                --log-level WARNING
+
+              if [ -d "$TEMP_DIR/standard" ]; then
+                mv "$TEMP_DIR/standard/"* "$DEST_DIR/"
+              else
+                mv "$TEMP_DIR/"* "$DEST_DIR/" 2>/dev/null || true
+              fi
+              rm -rf "$TEMP_DIR"
+
+              echo "Standard metadata download complete. Files: $(find "$DEST_DIR" -type f | wc -l)"
+            displayName: 'Download standard metadata via azcopy'
+            condition: or(ne('${{ parameters.extractionMode }}', 'custom'), eq('${{ parameters.skipExtraction }}', true))
             env:
               AZURE_STORAGE_CONNECTION_STRING: $(AZURE_STORAGE_CONNECTION_STRING)
               BLOB_CONTAINER_NAME: $(BLOB_CONTAINER_NAME)
-              METADATA_PATH: $(METADATA_PATH)
+
+          # ========== Step 2c: Download Custom Metadata via azcopy (skipExtraction=true only) ==========
+          # When skipExtraction=true, download existing custom metadata from blob instead of Git extraction
+
+          - script: |
+              ACCOUNT_NAME=$(echo "$AZURE_STORAGE_CONNECTION_STRING" | grep -oP 'AccountName=\K[^;]+')
+              ACCOUNT_KEY=$(echo "$AZURE_STORAGE_CONNECTION_STRING" | grep -oP 'AccountKey=\K[^;]+')
+              EXPIRY=$(date -u -d '+4 hours' '+%Y-%m-%dT%H:%MZ')
+              SAS_TOKEN=$(az storage container generate-sas \
+                --account-name "$ACCOUNT_NAME" \
+                --account-key "$ACCOUNT_KEY" \
+                --name "$(BLOB_CONTAINER_NAME)" \
+                --permissions rl \
+                --expiry "$EXPIRY" \
+                --output tsv)
+
+              TEMP_DIR="$(MCP_SERVER_PATH)/_azcopy_tmp_cust"
+              DEST_DIR="$(MCP_SERVER_PATH)/metadata"
+              SOURCE_URL="https://${ACCOUNT_NAME}.blob.core.windows.net/$(BLOB_CONTAINER_NAME)/metadata/custom/?${SAS_TOKEN}"
+
+              echo "Downloading custom metadata via azcopy..."
+              mkdir -p "$TEMP_DIR" "$DEST_DIR"
+              AZCOPY_CONCURRENCY_VALUE=64 azcopy copy "$SOURCE_URL" "$TEMP_DIR/" \
+                --recursive \
+                --log-level WARNING
+
+              if [ -d "$TEMP_DIR/custom" ]; then
+                mv "$TEMP_DIR/custom/"* "$DEST_DIR/"
+              else
+                mv "$TEMP_DIR/"* "$DEST_DIR/" 2>/dev/null || true
+              fi
+              rm -rf "$TEMP_DIR"
+
+              echo "Custom metadata download complete. Files: $(find "$DEST_DIR" -type f | wc -l)"
+            displayName: 'Download custom metadata via azcopy (skipExtraction mode)'
+            condition: eq('${{ parameters.skipExtraction }}', true)
+            env:
+              AZURE_STORAGE_CONNECTION_STRING: $(AZURE_STORAGE_CONNECTION_STRING)
+              BLOB_CONTAINER_NAME: $(BLOB_CONTAINER_NAME)
 
           # ========== Step 3: Delete Old Custom Metadata ==========
+          # Skipped when skipExtraction=true (no new extraction → no need to clean blob)
 
           - script: |
               if [ -n "${{ parameters.customModels }}" ] && [ "${{ parameters.customModels }}" != "all" ]; then
@@ -106,13 +183,14 @@ stages:
                 npm run blob-manager delete-custom
               fi
             displayName: 'Delete old custom metadata from blob'
-            condition: eq('${{ parameters.extractionMode }}', 'custom')
+            condition: and(eq('${{ parameters.extractionMode }}', 'custom'), eq('${{ parameters.skipExtraction }}', false))
             workingDirectory: '$(MCP_SERVER_PATH)'
             env:
               AZURE_STORAGE_CONNECTION_STRING: $(AZURE_STORAGE_CONNECTION_STRING)
               BLOB_CONTAINER_NAME: $(BLOB_CONTAINER_NAME)
 
           # ========== Step 4: Extract Models from Git Source ==========
+          # Skipped when skipExtraction=true
 
           - script: |
               if [ "${{ parameters.customModels }}" != "all" ]; then
@@ -128,11 +206,25 @@ stages:
               fi
               npm run extract-metadata
             displayName: 'Extract models from Git source'
+            condition: eq('${{ parameters.skipExtraction }}', false)
             workingDirectory: '$(MCP_SERVER_PATH)'
             env:
               PACKAGES_PATH: $(PACKAGES_PATH)
               METADATA_PATH: $(METADATA_PATH)
               EXTENSION_PREFIX: $(EXTENSION_PREFIX)
+
+          # ========== Step 4b: Download Existing Labels DB (skipExtraction only) ==========
+          # When skipExtraction=true, PACKAGES_PATH (Git source) is not available so labels
+          # cannot be re-indexed. Download the previously built labels DB from blob instead.
+
+          - script: npm run blob-manager download-database
+            displayName: 'Download existing labels database (skipExtraction mode)'
+            condition: eq('${{ parameters.skipExtraction }}', true)
+            workingDirectory: '$(MCP_SERVER_PATH)'
+            env:
+              AZURE_STORAGE_CONNECTION_STRING: $(AZURE_STORAGE_CONNECTION_STRING)
+              BLOB_CONTAINER_NAME: $(BLOB_CONTAINER_NAME)
+              DB_PATH: $(LABELS_DB_PATH)
 
           # ========== Step 5: Build Database ==========
 
@@ -146,13 +238,17 @@ stages:
               LABELS_DB_PATH: $(LABELS_DB_PATH)
               PACKAGES_PATH: $(PACKAGES_PATH)
               EXTRACT_MODE: '${{ parameters.extractionMode }}'
-              INCLUDE_LABELS: 'true'
+              ${{ if parameters.skipExtraction }}:
+                INCLUDE_LABELS: 'false'
+              ${{ else }}:
+                INCLUDE_LABELS: 'true'
               LABEL_LANGUAGES: $(LABEL_LANGUAGES)
               COMPUTE_STATS: 'true'
               ENABLE_SEARCH_SUGGESTIONS: 'false'  # Disable suggestions in CI/CD to reduce memory usage
               NODE_OPTIONS: '--max-old-space-size=4096 --expose-gc'
 
           # ========== Step 6: Upload Custom Metadata ==========
+          # Skipped when skipExtraction=true (no new custom metadata was extracted)
 
           - script: |
               if [ "${{ parameters.customModels }}" != "all" ]; then
@@ -160,7 +256,7 @@ stages:
               fi
               npm run blob-manager upload-custom
             displayName: 'Upload custom metadata'
-            condition: eq('${{ parameters.extractionMode }}', 'custom')
+            condition: and(eq('${{ parameters.extractionMode }}', 'custom'), eq('${{ parameters.skipExtraction }}', false))
             workingDirectory: '$(MCP_SERVER_PATH)'
             env:
               AZURE_STORAGE_CONNECTION_STRING: $(AZURE_STORAGE_CONNECTION_STRING)
@@ -199,11 +295,19 @@ stages:
           - script: |
               echo ""
               echo "============================================"
-              echo "Custom metadata update completed!"
+              if [ "${{ parameters.skipExtraction }}" = "True" ]; then
+                echo "Database rebuild completed! (metadata from blob)"
+              else
+                echo "Custom metadata update completed!"
+              fi
               echo "============================================"
               echo ""
-              echo "✅ Custom metadata extracted"
-              echo "✅ Custom metadata uploaded to blob"
+              if [ "${{ parameters.skipExtraction }}" = "True" ]; then
+                echo "⏭️  Extraction skipped — used existing blob metadata"
+              else
+                echo "✅ Custom metadata extracted"
+                echo "✅ Custom metadata uploaded to blob"
+              fi
               echo "✅ Database built (incremental update)"
               echo "✅ Databases uploaded to Azure Blob"
               echo "✅ App Service restarted"
