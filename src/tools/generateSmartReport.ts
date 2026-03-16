@@ -2,12 +2,13 @@
  * Generate Smart Report Tool
  * AI-driven SSRS report generation using indexed metadata patterns.
  *
- * Generates up to 5 D365FO objects in a single call:
- *   1. TmpTable (AxTable, TableType=TempDB) — holds report rows
- *   2. Contract class (DataContractAttribute) — dialog parameters
- *   3. DP class (SrsReportDataProviderBase) — fills TmpTable
- *   4. Controller class (SrsReportRunController) — optional, for menu item
- *   5. Report (AxReport + RDL) — dataset + design bound to the DP/TmpTable
+ * Generates up to 7+ D365FO objects in a single call:
+ *   1. TmpTable(s) (AxTable, TableType=TempDB) — holds report rows; extras for additionalDatasets
+ *   2. Contract class (DataContractAttribute) — dialog parameters, optional validate()
+ *   3. DP class (SrsReportDataProviderBase/PreProcess) — fills TmpTable, query-based or manual
+ *   4. Controller class (SrsReportRunController/SrsPrintMgmtController) — optional
+ *   5. Output menu item (AxMenuItemOutput) — generated together with Controller
+ *   6. Report (AxReport + RDL) — multi-dataset, page header, optional GroupedWithTotals tablix
  *
  * Architecture follows generate_smart_table / generate_smart_form patterns:
  *   - Exported Tool definition + async handler
@@ -103,26 +104,33 @@ interface GenerateSmartReportArgs {
 export const generateSmartReportTool: Tool = {
   name: 'generate_smart_report',
   description:
-    `🎨 AI-driven SSRS report generation — creates up to 5 D365FO objects in one call.
+    `🎨 AI-driven SSRS report generation — creates up to 7 D365FO objects in one call.
 
 Generates:
-1. TmpTable (TempDB) — report data storage
-2. Contract class (DataContractAttribute) — dialog parameters
-3. DP class (SrsReportDataProviderBase) — data processing
-4. Controller class (SrsReportRunController) — menu item entry point (optional)
-5. AxReport XML + RDL design — dataset + tablix bound to DP/TmpTable
+1. TmpTable(s) (TempDB) — report data rows; extra tables for each additionalDatasets entry
+2. Contract class — dialog parameters with optional auto-generated validate()
+3. DP class (SrsReportDataProviderBase or PreProcess) — with query-based or manual processReport()
+4. Controller class (SrsReportRunController or SrsPrintMgmtController) — optional
+5. Output menu item (AxMenuItemOutput) — generated together with Controller
+6. AxReport XML + RDL — multi-dataset, page header (company/title/date), optional GroupedWithTotals tablix
 
 Strategies:
 - fieldsHint: comma-separated field names → auto-suggest EDTs, build TmpTable + report fields
 - fields: structured field specs with explicit EDTs and data types
-- contractParams: dialog parameters → Contract class with parm methods
+- contractParams: dialog parameters → Contract class with parm methods + validate()
 - copyFrom: copy field structure from existing report's TmpTable
-- designStyle: SimpleList (flat tablix) or GroupedWithTotals
+- designStyle: "SimpleList" (default) or "GroupedWithTotals" (row group + SUM aggregates)
+- aotQuery: query-based DP using this.parmQuery() instead of manual while-select
+- callerTableName: pre-fill contract from args.record() in prePromptModifyContract()
+- controllerType: "simple" (default) or "printMgmt" (SrsPrintMgmtController)
+- preProcess: true → SrsReportDataProviderPreProcess with preProcess() stub
+- additionalDatasets: extra TmpTables + DP getters for multi-dataset reports
 
 Examples:
 - generate_smart_report(name="InventByZones", fieldsHint="ItemId, ItemName, Qty, Zone", caption="Inventory by Zones")
-- generate_smart_report(name="CustBalance", fieldsHint="CustAccount, Name, Balance", contractParams=[{name: "FromDate", type: "TransDate"}])
-- generate_smart_report(name="SalesReport", copyFrom="SalesInvoice")`,
+- generate_smart_report(name="CustBalance", fieldsHint="CustAccount, Name, Balance", contractParams=[{name:"FromDate",type:"TransDate",mandatory:true},{name:"ToDate",type:"TransDate"}])
+- generate_smart_report(name="SalesReport", copyFrom="SalesInvoice", designStyle="GroupedWithTotals")
+- generate_smart_report(name="CustOpenItems", fieldsHint="CustAccount, Amount, DueDate", callerTableName="CustTable", aotQuery="CustOpenTrans")`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -535,6 +543,8 @@ export async function handleGenerateSmartReport(
     const methodName = `parm${p.name.charAt(0).toUpperCase()}${p.name.slice(1)}`;
     const labelAttr = p.label ? `,\n        SysOperationLabelAttribute('${p.label}')` : '';
     const mandatoryAttr = p.mandatory ? `,\n        SysOperationMandatoryAttribute(true)` : '';
+    // Use explicit defaultValue when provided, else fall back to the member variable (standard parm pattern)
+    const defaultExpr = p.defaultValue ? p.defaultValue : p.name;
     return [
       `    /// <summary>`,
       `    /// Gets or sets the ${p.name} parameter.`,
@@ -542,7 +552,7 @@ export async function handleGenerateSmartReport(
       `    /// <param name="_${p.name}">The ${p.name} value.</param>`,
       `    /// <returns>The current ${p.name} value.</returns>`,
       `    [DataMemberAttribute('${p.name}')${labelAttr}${mandatoryAttr}]`,
-      `    public ${p.type} ${methodName}(${p.type} _${p.name} = ${p.name})`,
+      `    public ${p.type} ${methodName}(${p.type} _${p.name} = ${defaultExpr})`,
       `    {`,
       `        ${p.name} = _${p.name};`,
       `        return ${p.name};`,
@@ -565,14 +575,14 @@ export async function handleGenerateSmartReport(
   const mandatoryChecks = mandatoryContractParams.map(p => [
     `        if (!${p.name})`,
     `        {`,
-    `            ret = checkFailed(strFmt("@SYS53419", fieldPName(${contractClassName}, ${p.name})));`,
+    `            ret = checkFailed(strFmt("@SYS53419", literalStr("${p.name}")));`,
     `        }`,
   ].join('\n')).join('\n');
 
   const dateRangeCheck = (fromDateParam && toDateParam) ? [
     `        if (${fromDateParam.name} && ${toDateParam.name} && ${fromDateParam.name} > ${toDateParam.name})`,
     `        {`,
-    `            ret = checkFailed(strFmt("@SYS300396", fieldPName(${contractClassName}, ${fromDateParam.name})));`,
+    `            ret = checkFailed(strFmt("@SYS300396", literalStr("${fromDateParam.name}")));`,
     `        }`,
   ].join('\n') : '';
 
@@ -1135,8 +1145,8 @@ function injectRdlPageHeader(axReportXml: string, caption: string): string {
     `        </ReportItems>`,
     `      </PageHeader>`,
   ].join('\n');
-  // Insert before </ReportSection> inside the embedded RDL string
-  return axReportXml.replace(/(<\/ReportSection>)/g, `${pageHeaderXml}\n    $1`);
+  // Inject before <Body> (correct per RDL 2016 schema: PageHeader must precede Body)
+  return axReportXml.replace(/(<ReportSection>)(\n\s*)(<Body>)/g, `$1$2${pageHeaderXml}$2$3`);
 }
 
 // ── Improvement 1: GroupedWithTotals tablix injection ────────────────────────
