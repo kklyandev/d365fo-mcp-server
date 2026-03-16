@@ -661,10 +661,21 @@ export async function handleGenerateSmartReport(
   const contractFetch = contractFetchLines.join('\n');
 
   // processReport body — query-based vs manual skeleton
+  // For aotQuery: try to resolve the first datasource table so we can generate
+  // tableNum()-based, type-safe code instead of the generic Common/getNo(1) fallback.
+  const querySourceTable = aotQuery
+    ? resolveAotQueryFirstTable(aotQuery, symbolIndex.db)
+    : undefined;
+  if (querySourceTable) log(`Resolved aotQuery "${aotQuery}" first datasource: ${querySourceTable}`);
+
   let processReportBody: string;
   if (aotQuery) {
+    // tableNum() validates the table exists at X++ compile time — much safer than getNo(1)
+    const tableDecl = querySourceTable
+      ? `${querySourceTable} sourceRecord = queryRun.get(tableNum(${querySourceTable}));`
+      : `Common sourceRecord = queryRun.getNo(1); // TODO: replace Common with the actual table type`;
     const queryAssignments = reportFields.map(f =>
-      `            ${tmpTableVarName}.${f.name} = sourceRecord.${f.name}; // TODO: map from query result`
+      `            ${tmpTableVarName}.${f.name} = sourceRecord.${f.name}; // TODO: map from ${querySourceTable ?? 'query result'}`
     ).join('\n');
     processReportBody = [
       contractFetch,
@@ -673,7 +684,7 @@ export async function handleGenerateSmartReport(
       `        QueryRun queryRun = new QueryRun(this.parmQuery());`,
       `        while (queryRun.next())`,
       `        {`,
-      `            Common sourceRecord = queryRun.getNo(1); // TODO: cast to correct table type`,
+      `            ${tableDecl}`,
       `            ${tmpTableVarName}.clear();`,
       queryAssignments,
       `            ${tmpTableVarName}.insert();`,
@@ -1388,6 +1399,42 @@ function resolveFieldType(edtName: string | undefined, db: any): string | undefi
     case 'Guid':
     case 'GUID':        return 'Guid';
     default:            return undefined; // String is default
+  }
+}
+
+/**
+ * Resolve the first datasource table name for an AOT query from the symbol index.
+ * When found the caller can generate `tableNum(TableName)` — a compile-time-validated
+ * table reference — instead of the generic `getNo(1)` / `Common` pattern.
+ * Returns undefined when the query is not in the index (non-Windows, or unknown query).
+ */
+function resolveAotQueryFirstTable(queryName: string, db: any): string | undefined {
+  try {
+    // Strategy 1: explicit query_datasource symbols (parent_name = query name)
+    const ds = db.prepare(
+      `SELECT name FROM symbols
+       WHERE type IN ('query_datasource','querydatasource','QueryDataSource')
+         AND parent_name = ?
+       ORDER BY rowid
+       LIMIT 1`
+    ).get(queryName) as { name: string } | undefined;
+    if (ds?.name) return ds.name;
+
+    // Strategy 2: query symbol's signature may contain comma-separated table names
+    const q = db.prepare(
+      `SELECT signature FROM symbols
+       WHERE type IN ('query','Query')
+         AND name = ?
+       LIMIT 1`
+    ).get(queryName) as { signature: string | null } | undefined;
+    if (q?.signature) {
+      const first = q.signature.split(/[,;|]/)[0].trim();
+      if (first) return first;
+    }
+
+    return undefined;
+  } catch {
+    return undefined;
   }
 }
 
