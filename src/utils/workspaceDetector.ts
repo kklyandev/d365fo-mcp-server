@@ -244,21 +244,28 @@ export async function autoDetectD365Project(
   // repo itself alongside D365FO projects, making the first-found result unpredictable.
   // Configure D365FO_SOLUTIONS_PATH instead for reliable detection.
   if (process.platform === 'win32') {
-    const userProfile = process.env.USERPROFILE || `C:\\Users\\${process.env.USERNAME}`;
+    const userProfile = process.env.USERPROFILE || (process.env.USERNAME ? `C:\\Users\\${process.env.USERNAME}` : undefined);
     const wellKnownPaths = [
-      `${userProfile}\\Documents\\Visual Studio 2022\\Projects`,
+      userProfile ? `${userProfile}\\Documents\\Visual Studio 2022\\Projects` : undefined,
       // Common D365FO VM layouts — K: is the data drive in most LCS-provisioned VMs
       `K:\\VSProjects`,
       `K:\\Projects`,
       `K:\\repos`,
       `C:\\VSProjects`,
       `C:\\Projects`,
-    ];
+    ].filter((p): p is string => !!p);
+    const sanitizePathForLog = (p: string): string => {
+      if (userProfile && p.startsWith(userProfile)) {
+        return p.replace(userProfile, '<UserProfile>');
+      }
+      return p;
+    };
     for (const searchRoot of wellKnownPaths) {
       try {
         const files = await findProjectFiles(searchRoot);
         if (files.length > 0) {
-          console.error(`[WorkspaceDetector] Found ${files.length} .rnrproj file(s) in ${searchRoot}`);
+          const loggedSearchRoot = sanitizePathForLog(searchRoot);
+          console.error(`[WorkspaceDetector] Found ${files.length} .rnrproj file(s) in ${loggedSearchRoot}`);
           const projectPath = files[0]; // take first (most likely the user's project)
           const modelName = await extractModelNameFromProject(projectPath);
           if (modelName) {
