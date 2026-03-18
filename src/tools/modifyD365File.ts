@@ -15,6 +15,25 @@ import { getConfigManager } from '../utils/configManager.js';
 import { PackageResolver } from '../utils/packageResolver.js';
 
 /**
+ * Decode the standard XML entities (&lt;, &gt;, &apos;, &quot;, &amp;) and normalise
+ * line endings by stripping xml2js's &#xD; representation of carriage return.
+ *
+ * IMPORTANT: &amp; is decoded LAST so that sequences like `&amp;quot;` are first
+ * turned into `&quot;` and can then, if desired, be decoded to `"`, avoiding
+ * incorrect double-unescaping.
+ */
+function decodeStandardXmlEntities(source: string): string {
+  return source
+    // xml2js Builder escapes \r as &#xD; — strip it to normalise to LF-only line endings
+    .replace(/&#xD;/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
+}
+
+/**
  * Decode XML entities from X++ source code.
  *
  * X++ source should never contain entity-encoded characters — `/// <summary>`
@@ -27,13 +46,7 @@ import { PackageResolver } from '../utils/packageResolver.js';
  * contains proper characters before it is stored in the XML object.
  */
 export function decodeXmlEntitiesFromXppSource(source: string): string {
-  return source
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&apos;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&#xD;/g, '');
+  return decodeStandardXmlEntities(source);
 }
 
 /**
@@ -56,14 +69,7 @@ export function rewrapXmlTagAsCdata(tag: string, xml: string): string {
         return _match;
       }
       // Decode XML entities introduced by the xml2js Builder
-      const decoded = innerRaw
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        .replace(/&apos;/g, "'")
-        .replace(/&quot;/g, '"')
-        // xml2js Builder escapes \r as &#xD; — strip it to normalise to LF-only line endings
-        .replace(/&#xD;/g, '');
+      const decoded = decodeStandardXmlEntities(innerRaw);
       // Normalise: strip leading/trailing newlines
       const content = decoded.replace(/^\n+/, '').replace(/\n+$/, '');
       // D365FO convention: <![CDATA[\n...content...\n\n]]>
