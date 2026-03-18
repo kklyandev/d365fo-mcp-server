@@ -589,7 +589,7 @@ c) Save to disk:                     create_d365fo_file(objectType="report", obj
 | `build_d365fo_project(projectPath)` | Run MSBuild compilation locally to capture errors. |
 | `trigger_db_sync(modelName, tableName?)` | Run a database sync for the current model. |
 | `run_bp_check(projectPath, targetFilter?)` | Run Microsoft Best Practices (xppbp.exe) analysis. |
-| `run_systest(className, modelName)` | Execute unit testing using SysTestRunner.exe |
+| `run_systest_class(className, modelName?)` | Execute unit testing using SysTestRunner.exe |
 
 ### Code Review & Source Control
 | Tool | Use for |

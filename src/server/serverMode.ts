@@ -44,6 +44,8 @@ export const LOCAL_TOOLS = new Set([
   'trigger_db_sync',
   'run_bp_check',
   'run_systest_class',
+  'review_workspace_changes',
+  'undo_last_modification',
   'get_workspace_info',
 ]);
 

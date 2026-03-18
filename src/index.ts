@@ -568,13 +568,13 @@ async function main() {
     });
 
     // Log tool count immediately (transport is already connected)
-    const totalTools = 43;
+    const totalTools = 51;
     const localToolCount = LOCAL_TOOLS.size;
     const toolCount = SERVER_MODE === 'write-only' ? localToolCount :
                      SERVER_MODE === 'read-only' ? totalTools - localToolCount : totalTools;
     const toolDesc = SERVER_MODE === 'write-only' ? `(${Array.from(LOCAL_TOOLS).join(', ')})` :
                     SERVER_MODE === 'read-only' ? '(all except local tools)' :
-                    '(1 workspace-config + 8 discovery + 4 labels + 7 object-info + 4 intelligent + 3 smart-generation + 4 file-ops + 3 pattern-analysis + 9 security-extensions)';
+                    '(8 discovery + 4 labels + 7 object-info + 4 intelligent + 4 smart-gen + 3 file-ops + 3 pattern-analysis + 11 security-ext + 5 sdlc-build + 2 code-review)';
     console.log(`🎯 Registered ${toolCount} X++ MCP tools ${toolDesc}`);
     serverState.isReady = true;
     serverState.isHealthy = true;
@@ -691,6 +691,17 @@ async function main() {
           { name: 'validate_object_naming',       desc: 'Validate proposed extensions and object names against D365FO conventions' },
           { name: 'get_workspace_info',           desc: 'Detected workspace paths, model name, project file, and server mode' },
           { name: 'verify_d365fo_project',        desc: 'Verify objects exist on disk and are referenced in the .rnrproj project file' },
+        ]},
+        { icon: '🏗️ ', category: 'SDLC & Build Tools', tools: [
+          { name: 'update_symbol_index',          desc: 'Index a newly generated XML file immediately (no restart needed)' },
+          { name: 'build_d365fo_project',         desc: 'Run MSBuild compilation locally to capture errors' },
+          { name: 'trigger_db_sync',              desc: 'Run a database sync for the current model' },
+          { name: 'run_bp_check',                 desc: 'Run Microsoft Best Practices (xppbp.exe) analysis' },
+          { name: 'run_systest_class',            desc: 'Execute unit tests using SysTestRunner.exe' },
+        ]},
+        { icon: '🔄', category: 'Code Review & Source Control', tools: [
+          { name: 'review_workspace_changes',     desc: 'AI-based D365FO code review on uncommitted X++ changes (git diff)' },
+          { name: 'undo_last_modification',       desc: 'Safely revert last file change: checkout HEAD or delete untracked file' },
         ]},
       ];
 

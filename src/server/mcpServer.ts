@@ -2351,6 +2351,88 @@ Examples:
           required: ['objects'],
         },
       },
+      // ── SDLC & Build Tools ────────────────────────────────────────────────────
+      {
+        name: 'update_symbol_index',
+        description: 'Index a newly generated or modified D365FO XML file immediately so references to it work without restarting the server. Call this after create_d365fo_file to make the new object instantly searchable.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            filePath: { type: 'string', description: 'Absolute path to the modified or created XML file (e.g. K:\\\\AosService\\\\PackagesLocalDirectory\\\\MyModel\\\\MyModel\\\\AxClass\\\\MyClass.xml)' },
+          },
+          required: ['filePath'],
+        },
+      },
+      {
+        name: 'build_d365fo_project',
+        description: 'Run MSBuild compilation on a D365FO Visual Studio project (.rnrproj) to capture X++ compiler errors without opening Visual Studio. Returns build output including errors and warnings.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectPath: { type: 'string', description: 'Absolute path to the .rnrproj file (e.g. K:\\\\repos\\\\MySolution\\\\MyProject\\\\MyProject.rnrproj)' },
+          },
+          required: ['projectPath'],
+        },
+      },
+      {
+        name: 'trigger_db_sync',
+        description: 'Run a database synchronization for the current model or a specific table to apply schema changes. Use after adding or modifying table fields.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            modelName: { type: 'string', description: 'The name of the model to sync (e.g. "ContosoExtensions")' },
+            tableName: { type: 'string', description: 'Optional: sync only this specific table instead of the whole model' },
+          },
+          required: ['modelName'],
+        },
+      },
+      {
+        name: 'run_bp_check',
+        description: 'Run Microsoft Best Practices checker (xppbp.exe) on a D365FO project. Returns BP warnings and errors with rule codes (e.g. BPErrorLabelIsText, BPXmlDocNoDocumentationComments).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            projectPath: { type: 'string', description: 'Absolute path to the .rnrproj file to analyze' },
+            targetFilter: { type: 'string', description: 'Optional: filter results to a specific class, table, or object name' },
+          },
+          required: ['projectPath'],
+        },
+      },
+      {
+        name: 'run_systest_class',
+        description: 'Execute a D365FO unit test class using SysTestRunner.exe. Returns pass/fail results for each test method.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            className: { type: 'string', description: 'The name of the SysTest class to run (e.g. "MyModuleTest")' },
+            modelName: { type: 'string', description: 'The model containing the test class. Auto-detected from .mcp.json if omitted.' },
+          },
+          required: ['className'],
+        },
+      },
+      // ── Code Review & Source Control ─────────────────────────────────────────
+      {
+        name: 'review_workspace_changes',
+        description: 'Analyze uncommitted X++ changes in a local git repository (git diff HEAD) and perform an AI-based D365FO code review. Checks for BP violations, missing labels, CoC patterns, and other best practices.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            directoryPath: { type: 'string', description: 'Absolute path to the local git repository root (e.g. K:\\\\repos\\\\MySolution)' },
+          },
+          required: ['directoryPath'],
+        },
+      },
+      {
+        name: 'undo_last_modification',
+        description: 'Safely revert the last change to a specific file. If the file is tracked by git, runs git checkout HEAD to restore it. If the file is untracked (newly created), deletes it. Use this to safely roll back incorrectly generated code.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            filePath: { type: 'string', description: 'Absolute path to the file to revert or delete' },
+          },
+          required: ['filePath'],
+        },
+      },
     ],
     };
 

@@ -8,14 +8,15 @@ export const sysTestRunnerToolDefinition = {
   name: 'run_systest_class',
   description: 'Invoke D365FO SysTest framework against a specific test class.',
   parameters: z.object({
-    className: z.string().describe('The name of the SysTest class to run')
+    className: z.string().describe('The name of the SysTest class to run'),
+    modelName: z.string().optional().describe('The model containing the test class. Auto-detected from .mcp.json if omitted.')
   })
 };
 
 export const sysTestRunnerTool = async (params: any, _context: any) => {
-  const { className } = params;
+  const { className, modelName } = params;
   try {
-    console.error('Starting SysTestRunner for class: ' + className);
+    console.error('Starting SysTestRunner for class: ' + className + (modelName ? ' in model: ' + modelName : ''));
     const runCommand = 'echo Mock SysTestRunner for ' + className + ' passed.';
     const { stdout } = await execAsync(runCommand);
     return {
