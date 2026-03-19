@@ -602,12 +602,18 @@ export async function modifyD365FileTool(request: CallToolRequest, context: XppS
     const xmlBuffer = Buffer.concat([utf8BOM, Buffer.from(newXml, 'utf-8')]);
     await fs.writeFile(actualFilePath, xmlBuffer);
 
-    // 6b. Return success
+    // 6b. Return success — include diff so user can see what was actually written
+    const appliedDiff = generateUnifiedDiff(xmlContent, newXml);
     return {
       content: [
         {
           type: 'text',
-          text: `✅ ${message}\n\n**File:** ${actualFilePath}\n\n**Next steps:**\n- Review changes in Visual Studio\n- Build the model to validate\n- Commit changes to source control`,
+          text:
+            `✅ ${message}\n\n` +
+            `**File:** ${actualFilePath}\n\n` +
+            `### Aplikované změny\n\n` +
+            `\`\`\`diff\n${appliedDiff}\n\`\`\`\n\n` +
+            `**Next steps:**\n- Review changes in Visual Studio\n- Build the model to validate\n- Commit changes to source control`,
         },
       ],
     };
