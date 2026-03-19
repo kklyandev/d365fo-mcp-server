@@ -399,6 +399,8 @@ function normalizeDocBlockIndent(source: string): string {
  * D365FO convention: no gap between doc block and the declaration it documents.
  */
 function stripDocCommentGap(source: string): string {
-  // Match a /// line followed by one or more blank lines, then a non-blank line
-  return source.replace(/(\/\/\/[^\n]*\n)\s*\n(?:\s*\n)+(?=\s*\S)/g, '$1');
+  // Match a /// line followed by two or more blank lines, then a non-blank line.
+  // Uses [ \t]*\n per blank line to avoid ambiguous overlapping quantifiers that
+  // cause exponential backtracking on long runs of newlines (ReDoS).
+  return source.replace(/(\/\/\/[^\n]*\n)(?:[ \t]*\n){2,}(?=\s*\S)/g, '$1');
 }
