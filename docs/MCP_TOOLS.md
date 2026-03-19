@@ -1,7 +1,7 @@
 # All Available Tools
 
 When you ask GitHub Copilot a question about D365FO code, it automatically calls one of these
-44 tools to look up the answer or generate code. You do not need to name the tools yourself —
+51 tools to look up the answer or generate code. You do not need to name the tools yourself —
 just ask in plain English.
 
 ---
@@ -70,7 +70,7 @@ just ask in plain English.
 | **get_form_patterns** | Analyze datasource/control patterns for forms | "Find forms using CustTable" |
 | **generate_code** | Generate X++ boilerplate (class, batch job, CoC, etc.) | "Generate a batch job class for order processing" |
 
-### SDLC & Build Tools — LOCAL_TOOLS (6 tools - NEW)
+### SDLC & Build Tools — LOCAL_TOOLS (7 tools)
 
 The following tools empower Copilot to trigger X++ compilation, testing, and db syncing:
 
@@ -81,6 +81,7 @@ The following tools empower Copilot to trigger X++ compilation, testing, and db 
 | **trigger_db_sync** | Runs a database sync for the given table or the whole model | "Sync the database to reflect my table changes" |
 | **run_bp_check** | Runs the best practice linter on the code | "Run best practice checks on my latest changes" |
 | **run_systest_class** | Invokes D365FO SysTest framework against a specific test class | "Run the unit tests in MyTestClass" |
+| **review_workspace_changes** | Fetches uncommitted X++ git diff and formats it for AI code review | "Review my uncommitted changes against D365 best practices" |
 | **undo_last_modification** | Undoes the last uncommitted modification or file creation via git | "Undo the changes I just made to CustTable.xml" |
 
 ### File Operations — LOCAL_TOOLS (4 tools)
@@ -847,6 +848,30 @@ Verifies that D365FO objects exist on disk at the correct AOT path and are refer
 ### Summary
 - Checked: 3   On disk ✅: 2   Missing from disk ❌: 1
 - In project ✅: 3   Missing from project ❌: 0
+```
+
+---
+
+### review_workspace_changes
+
+Fetches all uncommitted X++ changes via `git diff HEAD` from a local repository and formats
+them as a clean diff for AI-based code review against D365FO best practices.
+
+> ⚠️ **LOCAL_TOOLS only** — requires a local Windows machine with the repository checked out.
+> This tool is NOT a substitute for `run_bp_check` — it performs AI-driven diff analysis,
+> while `run_bp_check` runs the real Microsoft xppbp.exe linter.
+
+**Parameters:**
+- `directoryPath` — absolute path to the local git repository (required)
+
+**Returns:**
+- Formatted git diff of uncommitted changes ready for AI code review
+- Empty message if there are no uncommitted changes
+
+**Examples:**
+```
+Review my uncommitted changes against D365 best practices
+Check the git diff in K:\repos\MyProject for code quality issues
 ```
 
 ---
