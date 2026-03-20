@@ -160,6 +160,7 @@ graph LR
             SUGGEST[suggestImplementation.ts - suggest_method_implementation]
             COMPLETE[analyzeCompleteness.ts - analyze_class_completeness]
             API[apiUsagePatterns.ts - get_api_usage_patterns]
+            KNOWLEDGE[xppKnowledge.ts - get_xpp_knowledge]
             TPAT[getTablePatterns.ts - get_table_patterns]
             FPAT[getFormPatterns.ts - get_form_patterns]
             SEDT[suggestEdt.ts - suggest_edt]
@@ -593,7 +594,7 @@ graph LR
     end
 
     INIT -.-> CAPS[Capabilities: tools, resources, prompts]
-    TOOLS_LIST -.-> TOOL_DEFS["51 tools: search, batch_search, search_extensions, get_class_info, get_table_info, code_completion, get_method_signature, get_method_source, find_references, get_form_info, get_query_info, get_view_info, get_enum_info, get_edt_info, get_report_info, generate_code, analyze_code_patterns, suggest_method_implementation, analyze_class_completeness, get_api_usage_patterns, generate_d365fo_xml, create_d365fo_file, modify_d365fo_file, search_labels, get_label_info, create_label, rename_label, get_table_patterns, get_form_patterns, generate_smart_table, generate_smart_form, generate_smart_report, suggest_edt, get_security_artifact_info, get_security_coverage_for_object, get_menu_item_info, find_coc_extensions, find_event_handlers, get_table_extension_info, get_data_entity_info, analyze_extension_points, validate_object_naming, get_workspace_info, verify_d365fo_project"]
+    TOOLS_LIST -.-> TOOL_DEFS["52 tools: search, batch_search, search_extensions, get_class_info, get_table_info, code_completion, get_method_signature, get_method_source, find_references, get_form_info, get_query_info, get_view_info, get_enum_info, get_edt_info, get_report_info, generate_code, analyze_code_patterns, suggest_method_implementation, analyze_class_completeness, get_api_usage_patterns, get_xpp_knowledge, generate_d365fo_xml, create_d365fo_file, modify_d365fo_file, search_labels, get_label_info, create_label, rename_label, get_table_patterns, get_form_patterns, generate_smart_table, generate_smart_form, generate_smart_report, suggest_edt, get_security_artifact_info, get_security_coverage_for_object, get_menu_item_info, find_coc_extensions, find_event_handlers, get_table_extension_info, get_data_entity_info, analyze_extension_points, validate_object_naming, get_workspace_info, verify_d365fo_project"]
     TOOLS_CALL -.-> EXEC[Tool Execution: search DB, parse XML, return results]
     style INIT fill:#4CAF50,color:#fff
     style TOOLS_CALL fill:#2196F3,color:#fff
@@ -719,6 +720,17 @@ Found 5 matches:
 ```
 
 **Output:** Common usage patterns with initialization, method sequences, and error handling examples
+
+#### 10b. get_xpp_knowledge
+**Input:**
+```json
+{
+  "topic": "batch job",
+  "format": "detailed"
+}
+```
+
+**Output:** Distilled D365FO knowledge: patterns, best practices, AX2012→D365FO migration guidance, and code examples. Topics include: batch jobs, transactions, CoC, queries, set-based operations, security, data entities, temp tables, SSRS reports, number sequences, labels, form patterns, error handling, and testing.
 
 #### 11. batch_search
 **Input:**

@@ -15,6 +15,7 @@ import { getViewInfoToolDefinition } from './viewInfo.js';
 import { getEnumInfoToolDefinition } from './enumInfo.js';
 import { getEdtInfoToolDefinition } from './edtInfo.js';
 import { verifyD365ProjectToolDefinition } from './verifyD365Project.js';
+import { xppKnowledgeToolDefinition } from './xppKnowledge.js';
 
 // ============================================
 // Tool Input Schemas
@@ -826,4 +827,5 @@ export const toolDefinitions: ToolDefinition[] = [
   getEnumInfoToolDefinition,
   getEdtInfoToolDefinition,
   verifyD365ProjectToolDefinition,
+  xppKnowledgeToolDefinition,
 ];

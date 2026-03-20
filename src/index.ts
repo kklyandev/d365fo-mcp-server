@@ -663,6 +663,7 @@ async function main() {
           { name: 'find_references',              desc: 'Where-used analysis across the entire codebase' },
         ]},
         { icon: '🧠', category: 'Intelligent Code Generation', tools: [
+          { name: 'get_xpp_knowledge',            desc: 'X++ knowledge base: D365FO patterns, best practices, AX2012→D365FO migration' },
           { name: 'analyze_code_patterns',        desc: 'Find common patterns used in a scenario' },
           { name: 'suggest_method_implementation',desc: 'Real examples of similar method implementations' },
           { name: 'analyze_class_completeness',   desc: 'Find missing standard methods on a class' },

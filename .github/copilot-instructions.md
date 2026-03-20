@@ -79,6 +79,48 @@ This workspace contains D365FO code. **Always use the specialized MCP tools** �
 >   - Any object: `modify-property`
 > - `create_d365fo_file()` — create new objects
 >
+> **⛔ NEVER use `create_d365fo_file` with `overwrite=true` to add fields, field groups, indexes, or any incremental change to an existing object.**
+> This is always wrong — it replaces the entire file and will silently drop all other existing content.
+> The ONLY legitimate use of `overwrite=true` is when deliberately replacing the complete XML of an object (e.g. after a bulk field rewrite via `replace-all-fields`).
+>
+> Common triggers of this wrong reasoning — and the correct fix:
+> ```
+> "The file is too large/complex to overwrite"   → ❌ NEVER overwrite for incremental changes
+>                                                  ✅ Use modify_d365fo_file with the correct operation
+>
+> "I need to add a field group"                  → ❌ NOT create_d365fo_file overwrite=true
+>                                                  ✅ modify_d365fo_file operation="add-field-group"
+>
+> "I'll read the file with PowerShell first"     → ❌ PowerShell is FORBIDDEN
+>                                                  ✅ get_table_info() to read, modify_d365fo_file() to write
+>
+> "The parameter fieldGroupName seems missing"   → ❌ Do NOT fall back to PowerShell or overwrite
+>                                                  ✅ Re-read the schema — fieldGroupName IS present
+> ```
+>
+> **⛔ NEVER enter the "escalating workarounds" spiral. Stop at step 1:**
+> When a modify/add operation is needed on an existing D365FO object, the ONE correct action is:
+> `modify_d365fo_file(operation="add-field-group" | "add-field" | "add-method" | …)`
+>
+> If you find yourself thinking any of the following, you are wrong — STOP and call `modify_d365fo_file` instead:
+> ```
+> WRONG SPIRAL (each step is MORE wrong than the last):
+>
+>  Step 1 (wrong):  "I'll use replace_string_in_file to patch the XML"
+>  Step 2 (worse):  "replace failed / file length decreased — I'll try a different approach"
+>  Step 3 (worse):  "I'll read the file with PowerShell first, then overwrite"
+>  Step 4 (worse):  "Terminal returns no output — I'll add Write-Output explicitly"
+>  Step 5 (worst):  "I'll use create_d365fo_file with overwrite=true"
+>
+> CORRECT (always, immediately, at step 0):
+>   modify_d365fo_file(objectType="table", objectName="MyTable",
+>     operation="add-field-group",
+>     fieldGroupName="MyGroup",
+>     fields=["Field1", "Field2"])
+> ```
+> The existence of a workaround does NOT make it acceptable. Every step of the spiral above is forbidden.
+> If `modify_d365fo_file` itself returns an error, STOP and report it to the user — do NOT try PowerShell.
+>
 > **modify-property covers ALL table/EDT/class-level properties — NEVER use PowerShell for these:**
 > ```
 > TableGroup     → modify-property  propertyPath="TableGroup"    propertyValue="Group"
@@ -197,6 +239,7 @@ For any D365FO request, **start with MCP tools — never** `code_search`, `grep_
 | Optimize query | `get_table_info` → `analyze_code_patterns` |
 | Where is X used? | `find_references(targetName)` |
 | How does X work? | `get_class_info` / `get_table_info` / `get_form_info` / `get_report_info` |
+| How to implement X? (pattern) | `get_xpp_knowledge("batch job")` → `analyze_code_patterns` |
 | What can I extend on X? | `analyze_extension_points(objectName)` |
 | Who already extends method X via CoC? | `find_coc_extensions(className, methodName)` |
 | Who handles events for table X? | `find_event_handlers(targetTable)` |
@@ -630,6 +673,7 @@ c) Save to disk:                     create_d365fo_file(objectType="report", obj
 ### Code Generation & Analysis
 | Tool | Use for |
 |------|---------|
+| `get_xpp_knowledge(topic, format?)` | **Queryable X++ knowledge base** — D365FO patterns, best practices, AX2012→D365FO migration. Call BEFORE generating code to avoid deprecated APIs. Topics: batch jobs, transactions, CoC, queries, set-based ops, security, data entities, temp tables, SSRS reports, number sequences, labels, form patterns, error handling, testing. `format="detailed"` includes code examples. |
 | `analyze_code_patterns(scenario)` | Find patterns before generating code |
 | `suggest_method_implementation(className, methodName)` | Real implementation examples |
 | `analyze_class_completeness(className)` | Missing standard methods |

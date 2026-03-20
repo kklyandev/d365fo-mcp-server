@@ -44,12 +44,13 @@ just ask in plain English.
 | **get_method_source** | Full X++ source code of a method | "Show me the full implementation of SalesTable.validateWrite()" |
 | **find_references** | Where is this class/method/field used? | "Where is DimensionAttributeValueSet used?" |
 
-### Intelligent Code Generation (4 tools)
+### Intelligent Code Generation (5 tools)
 
 | Tool | What it does | Example prompt |
 |------|-------------|---------------|
+| **get_xpp_knowledge** | Queryable X++ knowledge base — D365FO patterns, best practices, AX2012→D365FO migration | "How to create a batch job in D365FO?" |
 | **analyze_code_patterns** | Learn real patterns from your codebase | "Show me patterns for ledger journal creation" |
-| **suggest_method_implementation** | Real examples of how similar methods are written | "How do others implement validateWrite()?" |
+| **suggest_method_implementation** | Real examples of how similar methods are written | "How do others implement validateWrite()" |
 | **analyze_class_completeness** | Which standard methods is my class missing? | "Is MyHelper class complete?" |
 | **get_api_usage_patterns** | How is a specific API typically initialized and used? | "How do I use LedgerJournalEngine?" |
 
@@ -364,6 +365,33 @@ Find the exact name of the General tab in CustTable form
 What controls are inside the LineView tab of SalesTable?
 List all buttons on the CustTable form
 What methods does the SalesCreateOrder form have?
+```
+
+---
+
+### get_xpp_knowledge
+
+Queryable knowledge base of D365FO X++ patterns, best practices, and AX2012→D365FO migration
+guidance. Returns distilled, verified patterns with code examples. Call BEFORE generating code
+to avoid deprecated APIs and AX2012 anti-patterns.
+
+**Parameters:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `topic` | Yes | Topic to query — e.g. "batch job", "ttsbegin", "RunBase vs SysOperation", "CoC", "temp tables" |
+| `format` | No | `concise` (default) = quick reference, `detailed` = full explanation with code examples |
+
+**Topics covered:** batch jobs, transactions, queries, CoC/extensions, event handlers, security,
+data entities, temp tables, number sequences, form patterns, set-based operations, error handling,
+labels, SSRS reports, deprecated APIs, performance, testing.
+
+**Examples:**
+```
+How to create a batch job in D365FO?
+What replaced RunBase in D365FO?
+Show me transaction handling patterns (detailed)
+Is today() deprecated? What should I use instead?
+How does CoC work? Show code examples
 ```
 
 ---

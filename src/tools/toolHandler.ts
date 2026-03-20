@@ -55,6 +55,7 @@ import { runBpCheckTool } from './runBpCheck.js';
 import { sysTestRunnerTool } from './sysTestRunner.js';
 import { reviewWorkspaceChangesTool } from './reviewWorkspaceChanges.js';
 import { undoLastModificationTool } from './undoLastModification.js';
+import { xppKnowledgeTool } from './xppKnowledge.js';
 
 
 
@@ -320,6 +321,8 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         return await reviewWorkspaceChangesTool(request.params.arguments as any, context);
       case 'undo_last_modification':
         return await undoLastModificationTool(request.params.arguments as any, context);
+      case 'get_xpp_knowledge':
+        return xppKnowledgeTool(request);
       case 'get_workspace_info': {
         const args = (request as any).params?.arguments || {};
         const configManager = getConfigManager();
