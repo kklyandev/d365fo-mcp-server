@@ -14,6 +14,32 @@ import { PackageResolver } from '../utils/packageResolver.js';
 import { ensureXppDocComment, ensureBlankLineBeforeClosingBrace } from '../utils/xppDocGen.js';
 import { decodeXmlEntitiesFromXppSource } from './modifyD365File.js';
 
+/**
+ * Per-project-file mutex to serialise concurrent addToProject calls.
+ * Key = normalised absolute project path, Value = tail of the promise chain.
+ * Prevents race conditions when the AI calls create_d365fo_file in parallel
+ * for multiple objects that share the same .rnrproj file.
+ */
+const projectFileLocks = new Map<string, Promise<unknown>>();
+
+async function withProjectFileLock<T>(projectPath: string, fn: () => Promise<T>): Promise<T> {
+  const key = path.resolve(projectPath).toLowerCase();
+  const prev = projectFileLocks.get(key) ?? Promise.resolve();
+  let resolve!: () => void;
+  const next = new Promise<void>(r => { resolve = r; });
+  projectFileLocks.set(key, next);
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    resolve();
+    // Clean up the map entry only if it still points to this chain slot
+    if (projectFileLocks.get(key) === next) {
+      projectFileLocks.delete(key);
+    }
+  }
+}
+
 const CreateD365FileArgsSchema = z.object({
   objectType: z
     .enum([
@@ -2823,8 +2849,32 @@ export class ProjectFileManager {
     objectName: string,
     _absoluteXmlPath: string  // kept for API compatibility
   ): Promise<boolean> {
-    // Read project file
-    const projectXml = await fs.readFile(projectPath, 'utf-8');
+    return withProjectFileLock(projectPath, () => this._addToProjectLocked(projectPath, objectType, objectName));
+  }
+
+  private async _addToProjectLocked(
+    projectPath: string,
+    objectType: string,
+    objectName: string
+  ): Promise<boolean> {
+    // Read project file (with retry for transient VS file locks)
+    let projectXml = '';
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        projectXml = await fs.readFile(projectPath, 'utf-8');
+        break;
+      } catch (err: any) {
+        if ((err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') && attempt < 4) {
+          await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+    }
+    // Strip UTF-8 BOM if present (VS writes BOM; Node fs.readFile keeps it)
+    if (projectXml.charCodeAt(0) === 0xFEFF) {
+      projectXml = projectXml.slice(1);
+    }
     const project = await this.parser.parseStringPromise(projectXml);
 
     // Ensure project structure exists
@@ -2914,9 +2964,20 @@ export class ProjectFileManager {
       `[ProjectFileManager] Added file reference to project, Content items: ${contentGroup.Content.length}`
     );
 
-    // Write back to project file
+    // Write back to project file (with retry for transient VS file locks)
     const updatedXml = this.builder.buildObject(project);
-    await fs.writeFile(projectPath, updatedXml, 'utf-8');
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await fs.writeFile(projectPath, updatedXml, 'utf-8');
+        break;
+      } catch (err: any) {
+        if ((err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') && attempt < 4) {
+          await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+    }
 
     console.error(`[ProjectFileManager] Project file saved successfully`);
     return true; // File successfully added
