@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
 import { getConfigManager } from '../utils/configManager.js';
+import { withOperationLock } from '../utils/operationLocks.js';
 
 const execFileAsync = util.promisify(execFile);
 
@@ -102,38 +103,48 @@ export const runBpCheckTool = async (params: any, _context: any) => {
 
     // --- First attempt: modern -metadata: flag ---
     const args = buildArgs('-metadata:');
-    console.error(`[run_bp_check] Attempt 1: "${xppbpPath}" ${args.join(' ')}`);
-    try {
-      ({ stdout, stderr } = await tryXppbp(xppbpPath, args));
-    } catch (e: any) {
-      stdout = e.stdout ?? '';
-      stderr = e.stderr ?? '';
-    }
+    const { combined, lastStdout, lastStderr } = await withOperationLock(
+      `bp:${resolvedProjectPath}`,
+      async () => {
+        console.error(`[run_bp_check] Attempt 1: "${xppbpPath}" ${args.join(' ')}`);
+        try {
+          ({ stdout, stderr } = await tryXppbp(xppbpPath, args));
+        } catch (e: any) {
+          stdout = e.stdout ?? '';
+          stderr = e.stderr ?? '';
+        }
 
-    let combined = [stdout, stderr].filter(Boolean).join('\n').trim();
+        let localCombined = [stdout, stderr].filter(Boolean).join('\n').trim();
 
-    // --- Fallback: legacy -packagesroot: flag ---
-    if (HELP_TEXT_PATTERN.test(combined) || combined === '') {
-      const fallbackArgs = buildArgs('-packagesroot:');
-      console.error(`[run_bp_check] Attempt 2 (legacy flag): "${xppbpPath}" ${fallbackArgs.join(' ')}`);
-      try {
-        ({ stdout, stderr } = await tryXppbp(xppbpPath, fallbackArgs));
-      } catch (e: any) {
-        stdout = e.stdout ?? '';
-        stderr = e.stderr ?? '';
-      }
-      combined = [stdout, stderr].filter(Boolean).join('\n').trim();
+        // --- Fallback: legacy -packagesroot: flag ---
+        if (HELP_TEXT_PATTERN.test(localCombined) || localCombined === '') {
+          const fallbackArgs = buildArgs('-packagesroot:');
+          console.error(`[run_bp_check] Attempt 2 (legacy flag): "${xppbpPath}" ${fallbackArgs.join(' ')}`);
+          try {
+            ({ stdout, stderr } = await tryXppbp(xppbpPath, fallbackArgs));
+          } catch (e: any) {
+            stdout = e.stdout ?? '';
+            stderr = e.stderr ?? '';
+          }
+          localCombined = [stdout, stderr].filter(Boolean).join('\n').trim();
+        }
 
-      // If still showing help text, report a useful diagnostic
-      if (HELP_TEXT_PATTERN.test(combined)) {
-        return {
-          content: [{
-            type: 'text',
-            text: `❌ xppbp.exe returned its help text for both -metadata: and -packagesroot: flags.\n\nThis usually means the installed xppbp.exe version uses a different CLI.\n\nRaw output:\n\n${combined}`
-          }],
-          isError: true
-        };
-      }
+        return { combined: localCombined, lastStdout: stdout, lastStderr: stderr };
+      },
+    );
+
+    stdout = lastStdout;
+    stderr = lastStderr;
+
+    // If still showing help text, report a useful diagnostic
+    if (HELP_TEXT_PATTERN.test(combined)) {
+      return {
+        content: [{
+          type: 'text',
+          text: `❌ xppbp.exe returned its help text for both -metadata: and -packagesroot: flags.\n\nThis usually means the installed xppbp.exe version uses a different CLI.\n\nRaw output:\n\n${combined}`
+        }],
+        isError: true
+      };
     }
 
     // --- Read XML log file if xppbp wrote one ---

@@ -63,7 +63,7 @@ export const apiRateLimiter = rateLimit({
     keyGeneratorIpFallback: false,
   },
   message: {
-    error: 'Too many requests from this IP, please try again later.',
+    error: 'Too many requests for this user or IP, please try again later.',
     retryAfter: 'Please check the Retry-After header.',
   },
   standardHeaders: true, // Return rate limit info in `RateLimit-*` headers

@@ -4,6 +4,7 @@ import util from 'util';
 import path from 'path';
 import fs from 'fs/promises';
 import { getConfigManager } from '../utils/configManager.js';
+import { withOperationLock } from '../utils/operationLocks.js';
 
 const execFileAsync = util.promisify(execFile);
 
@@ -79,10 +80,14 @@ export const sysTestRunnerTool = async (params: any, _context: any) => {
 
     console.error(`[run_systest_class] Running: "${runnerPath}" ${args.join(' ')}`);
 
-    const { stdout, stderr } = await execFileAsync(runnerPath, args, {
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 300_000 // 5 minutes
-    });
+    const { stdout, stderr } = await withOperationLock(
+      `systest:${resolvedModelName}:${className}`,
+      () => execFileAsync(runnerPath, args, {
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 300_000, // 5 minutes
+        windowsHide: true,
+      }),
+    );
 
     const output = [stdout, stderr].filter(Boolean).join('\n').trim();
     const hasFailed = /failed|error|exception/i.test(output);

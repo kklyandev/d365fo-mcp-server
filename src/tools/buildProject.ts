@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import util from 'util';
 import { access } from 'fs/promises';
 import { getConfigManager } from '../utils/configManager.js';
+import { withOperationLock } from '../utils/operationLocks.js';
 
-const execAsync = util.promisify(exec);
+const execFileAsync = util.promisify(execFile);
 
 // Known MSBuild locations on D365FO development VMs (in order of preference)
 const MSBUILD_CANDIDATES = [
@@ -52,13 +53,24 @@ export const buildProjectTool = async (params: any, _context: any) => {
       msbuildExe = 'msbuild';
     }
 
-    const buildCommand = `"${msbuildExe}" "${resolvedProjectPath}" /p:Configuration=Debug /p:Platform=AnyCPU /m /v:minimal /nologo`;
-    console.error(`[build_d365fo_project] Running: ${buildCommand}`);
+    const buildArgs = [
+      resolvedProjectPath,
+      '/p:Configuration=Debug',
+      '/p:Platform=AnyCPU',
+      '/m',
+      '/v:minimal',
+      '/nologo',
+    ];
+    console.error(`[build_d365fo_project] Running: ${msbuildExe} ${buildArgs.join(' ')}`);
 
-    const { stdout, stderr } = await execAsync(buildCommand, {
-      maxBuffer: 20 * 1024 * 1024,
-      timeout: 600_000 // 10 minutes
-    });
+    const { stdout, stderr } = await withOperationLock(
+      `build:${resolvedProjectPath}`,
+      () => execFileAsync(msbuildExe, buildArgs, {
+        maxBuffer: 20 * 1024 * 1024,
+        timeout: 600_000, // 10 minutes
+        windowsHide: true,
+      }),
+    );
 
     const output = [stdout, stderr].filter(Boolean).join('\n').trim();
     const hasErrors = /\b(error|Error)\s+(CS|AX|X\+\+|MSB)\d+|Build FAILED/i.test(output);

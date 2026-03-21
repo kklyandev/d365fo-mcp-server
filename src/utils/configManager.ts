@@ -627,6 +627,15 @@ class ConfigManager {
   }
 
   /**
+   * Returns true when the current async call stack runs inside a request-scoped
+   * AsyncLocalStorage context. HTTP transport uses this for per-request
+   * isolation, so callers should avoid mutating the shared runtimeContext.
+   */
+  hasRequestContext(): boolean {
+    return this.requestContextStorage.getStore() !== undefined;
+  }
+
+  /**
    * Get workspace path from configuration
    * Returns the base PackagesLocalDirectory path if workspacePath contains it
    */

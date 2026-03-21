@@ -4,6 +4,7 @@ import util from 'util';
 import path from 'path';
 import fs from 'fs/promises';
 import { getConfigManager } from '../utils/configManager.js';
+import { withOperationLock } from '../utils/operationLocks.js';
 
 const execFileAsync = util.promisify(execFile);
 
@@ -102,10 +103,14 @@ export const dbSyncTool = async (params: any, _context: any) => {
 
     console.error(`[trigger_db_sync] Running: "${syncEnginePath}" ${args.join(' ')}`);
 
-    const { stdout, stderr } = await execFileAsync(syncEnginePath, args, {
-      maxBuffer: 20 * 1024 * 1024,
-      timeout: 600_000 // 10 minutes
-    });
+    const { stdout, stderr } = await withOperationLock(
+      `dbsync:${modelName}`,
+      () => execFileAsync(syncEnginePath, args, {
+        maxBuffer: 20 * 1024 * 1024,
+        timeout: 600_000, // 10 minutes
+        windowsHide: true,
+      }),
+    );
 
     const output = [stdout, stderr].filter(Boolean).join('\n').trim();
     const hasErrors = /error|failed|exception/i.test(output);

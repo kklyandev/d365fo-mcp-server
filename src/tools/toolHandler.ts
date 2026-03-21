@@ -61,11 +61,14 @@ import { recordToolStart, startMetricsLogging } from '../utils/toolMetrics.js';
 import { buildProgressMessage } from '../utils/toolProgressMessage.js';
 
 /**
- * Extract workspace path from GitHub Copilot _meta and apply it to ConfigManager.
- * Called before every tool dispatch so workspace is always up-to-date.
+ * Extract workspace path from GitHub Copilot _meta.
+ * Stdio requests use this to seed the shared runtime context.
+ * HTTP requests already run inside AsyncLocalStorage request scope and must not
+ * overwrite the shared runtime context, otherwise concurrent users can bleed
+ * workspace state into each other.
  */
-function extractAndApplyWorkspaceFromMeta(meta: any): void {
-  if (!meta) return;
+function extractWorkspaceFromMeta(meta: any): string | null {
+  if (!meta) return null;
 
   let rawUri: string | undefined;
 
@@ -88,7 +91,7 @@ function extractAndApplyWorkspaceFromMeta(meta: any): void {
     }
   }
 
-  if (!rawUri) return;
+  if (!rawUri) return null;
 
   // Convert file:// URI → local path
   let localPath = rawUri;
@@ -98,8 +101,7 @@ function extractAndApplyWorkspaceFromMeta(meta: any): void {
     localPath = decodeURIComponent(rawUri.slice('file://'.length)).replace(/\//g, '\\');
   }
 
-  // Apply workspace context (debug logging removed for performance)
-  getConfigManager().setRuntimeContext({ workspacePath: localPath });
+  return localPath;
 }
 
 /**
@@ -155,12 +157,19 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const toolName = request.params.name;
+    const configManager = getConfigManager();
 
     // Extract workspace path from _meta (GitHub Copilot injects workspace context here)
     // This is a secondary extraction path — transport.ts does the primary one from HTTP headers.
-    // Having it here ensures it also works when transport-level extraction missed it.
-    extractAndApplyWorkspaceFromMeta((request as any).params?._meta);
-    extractAndApplyWorkspaceFromMeta((request.params as any)._meta);
+    // In stdio mode there is no transport-level request context, so we persist the detected
+    // workspace on the shared runtimeContext. In HTTP mode we intentionally avoid mutating
+    // runtimeContext because the transport already isolates workspace per request.
+    const workspacePath =
+      extractWorkspaceFromMeta((request as any).params?._meta) ??
+      extractWorkspaceFromMeta((request.params as any)._meta);
+    if (workspacePath && !configManager.hasRequestContext()) {
+      configManager.setRuntimeContext({ workspacePath });
+    }
 
     // In stdio mode the DB loads asynchronously after transport connect.
     // ctx.dbReady resolves once the real 1.5 GB symbol database is open and
@@ -373,7 +382,6 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         return xppKnowledgeTool(request);
       case 'get_workspace_info': {
         const args = (request as any).params?.arguments || {};
-        const configManager = getConfigManager();
 
         // projectName: resolve by name from known projects list (user-friendly switch)
         if (args.projectName && !args.projectPath) {

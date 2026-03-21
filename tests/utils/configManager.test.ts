@@ -193,6 +193,30 @@ describe('setRuntimeContext', () => {
     expect(ctx?.workspacePath).toContain('MyModel');
     expect(ctx?.projectPath).toContain('Proj.rnrproj');
   });
+
+  it('keeps request-scoped workspace isolated from shared runtime context', async () => {
+    const mgr = makeManager({
+      workspacePath: 'K:\\PackagesLocalDirectory\\FilePackage\\FileModel',
+    });
+
+    mgr.setRuntimeContext({
+      workspacePath: 'K:\\AosService\\PackagesLocalDirectory\\RuntimePackage\\RuntimeModel',
+    });
+
+    expect((mgr as any).hasRequestContext()).toBe(false);
+    expect(mgr.getModelName()).toBe('RuntimeModel');
+
+    await (mgr as any).runWithRequestContext(
+      { workspacePath: 'K:\\AosService\\PackagesLocalDirectory\\RequestPackage\\RequestModel' },
+      async () => {
+        expect((mgr as any).hasRequestContext()).toBe(true);
+        expect(mgr.getModelName()).toBe('RequestModel');
+      },
+    );
+
+    expect((mgr as any).hasRequestContext()).toBe(false);
+    expect(mgr.getModelName()).toBe('RuntimeModel');
+  });
 });
 
 // ─── UDE context ─────────────────────────────────────────────────────────────

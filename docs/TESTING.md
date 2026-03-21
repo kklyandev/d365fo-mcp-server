@@ -27,7 +27,7 @@ file system, cache, configManager) are mocked with Vitest's `vi.fn()` / `vi.mock
 
 ## Test Suite Overview
 
-**7 test files · 157 tests · all passing**
+**Vitest unit test suites covering tools and utilities**
 
 ```
 tests/

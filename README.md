@@ -20,7 +20,7 @@ GitHub Copilot excels at C#, Python, and JavaScript — languages with rich publ
 
 The result is AI that confidently generates code that doesn't compile: wrong method signatures, missing parameters, fields that don't exist on the table, CoC chains broken because Copilot didn't know an extension already wrapped the method.
 
-This MCP server solves that by pre-indexing your entire D365FO installation — 584,799+ symbols across standard and custom models — and exposing it to Copilot as 52 specialized tools. Before generating any X++ code, Copilot can look up exact method signatures, check what CoC extensions already exist, trace security hierarchies, find label translations, and understand the full shape of your data model. The result is code that compiles on the first try and integrates correctly with your existing customizations.
+This MCP server solves that by pre-indexing your entire D365FO installation — 584,799+ symbols across standard and custom models — and exposing it to Copilot as 53 specialized tools. Before generating any X++ code, Copilot can look up exact method signatures, check what CoC extensions already exist, trace security hierarchies, find label translations, and understand the full shape of your data model. The result is code that compiles on the first try and integrates correctly with your existing customizations.
 
 ![Solution Architecture](docs/img/solution-architecture-diagram.png)
 
