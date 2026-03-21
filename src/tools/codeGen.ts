@@ -38,6 +38,12 @@ const CodeGenArgsSchema = z.object({
     ),
   targetObject: z.string().optional()
     .describe('For menu-item pattern: target form/class/report name'),
+  serviceMethod: z.string().optional()
+    .describe(
+      'For sysoperation pattern: the name of the method on the Service class that the Controller will call. ' +
+      'Defaults to "process" when omitted. ' +
+      'Example: serviceMethod="processOrders" → generates processOrders() on the Service class.'
+    ),
 });
 
 // Templates for NEW elements: (name already includes prefix)
@@ -161,7 +167,7 @@ class ${name}Service extends SysOperationServiceBase
         info(strFmt("${name} completed successfully"));
     }
 }`,
-  sysoperation: sysOperationTemplate,
+  // sysoperation handled specially in codeGenTool (needs serviceMethod param)
   'ssrs-report-full': ssrsReportFullTemplate,
   'lookup-form': lookupFormTemplate,
   'dialog-box': dialogBoxTemplate,
@@ -451,7 +457,7 @@ const extensionTemplates: Record<string, (baseName: string, prefix: string) => s
 };
 
 // ── SysOperation pattern (3 classes: DataContract + Controller + Service) ──
-function sysOperationTemplate(name: string): string {
+function sysOperationTemplate(name: string, serviceMethod = 'process'): string {
   return `
 // ── 1. DataContract ─────────────────────────────────────────────────────
 [DataContractAttribute]
@@ -469,8 +475,24 @@ public final class ${name}DataContract
 }
 
 // ── 2. Controller ────────────────────────────────────────────────────────
+/// <summary>
+/// Controller for ${name} — wires service class and method via new() override.
+/// This is the standard D365FO pattern (used in ApplicationSuite).
+/// </summary>
 class ${name}Controller extends SysOperationServiceController
 {
+    /// <summary>
+    /// Wires up the service class and method. The parent class SysOperationServiceController
+    /// handles dialog building, pack/unpack, and execution mode automatically.
+    /// </summary>
+    protected void new()
+    {
+        super();
+        this.parmClassName(classStr(${name}Service));
+        this.parmMethodName(methodStr(${name}Service, ${serviceMethod}));
+        this.parmExecutionMode(SysOperationExecutionMode::Synchronous);
+    }
+
     protected ClassDescription defaultCaption()
     {
         return "${name}";
@@ -478,19 +500,23 @@ class ${name}Controller extends SysOperationServiceController
 
     public static void main(Args _args)
     {
-        ${name}Controller controller = new ${name}Controller(
-            classStr(${name}Service),
-            methodStr(${name}Service, process${name}),
-            SysOperationExecutionMode::Synchronous);
+        ${name}Controller controller = new ${name}Controller();
+        controller.parmArgs(_args);
         controller.startOperation();
     }
 }
 
 // ── 3. Service ───────────────────────────────────────────────────────────
+/// <summary>
+/// Service class for ${name}.
+/// </summary>
 class ${name}Service extends SysOperationServiceBase
 {
+    /// <summary>
+    /// Business logic entry point called by the controller.
+    /// </summary>
     [SysEntryPointAttribute(true)]
-    public void process${name}(${name}DataContract _contract)
+    public void ${serviceMethod}(${name}DataContract _contract)
     {
         TransDate transDate = _contract.parmTransDate();
 
@@ -1341,6 +1367,17 @@ export async function codeGenTool(request: CallToolRequest) {
             : `⚠️ **No prefix resolved** — set \`EXTENSION_PREFIX\` env var or pass \`modelName\` argument.\n  Generated bare name without prefix infix (e.g. \`${baseName}_Extension\`) which is **not MS-compliant**.`;
         }
       }
+    } else if (args.pattern === 'sysoperation') {
+      // sysoperation is handled separately so we can pass the optional serviceMethod param
+      const finalName = applyObjectPrefix(args.name, prefix);
+      const serviceMethod = args.serviceMethod?.trim() || 'process';
+      code = sysOperationTemplate(finalName, serviceMethod);
+      displayName = finalName;
+      namingNote = prefix
+        ? `📌 **Naming (MS guidelines):** Object prefix: \`${prefix}\` → generates \`${finalName}DataContract\`, \`${finalName}Controller\`, \`${finalName}Service\`\n` +
+          `   Service method: \`${serviceMethod}(${finalName}DataContract _contract)\``
+        : `⚠️ **No prefix resolved** — set \`EXTENSION_PREFIX\` env var or pass \`modelName\`.\n` +
+          `   Service method: \`${serviceMethod}(${finalName}DataContract _contract)\``;
     } else {
       // New element pattern — apply prefix to the name
       const newTemplate = newElementTemplates[args.pattern];

@@ -100,6 +100,7 @@ export function createXppMcpServer(context: XppServerContext): Server {
         tools: {},
         resources: {},
         prompts: {},
+        logging: {},
       },
     }
   );
@@ -474,6 +475,8 @@ PATTERNS (X++ code):
 - "data-entity" → Data entity with staging table
 - "table-extension" → Table extension [ExtensionOf(tableStr(TableName))]
 - "sysoperation" → Full SysOperation: DataContract + Controller + Service (3 classes)
+  Controller uses new() override with parmClassName/parmMethodName (standard D365FO pattern)
+  Optional: serviceMethod param to name the Service method (default: "process")
 - "event-handler" → Class with [SubscribesTo] handlers for table/class events
 
 PATTERNS (XML output — use for AOT XML files):
@@ -483,6 +486,8 @@ PATTERNS (XML output — use for AOT XML files):
 EXAMPLES:
 - "Create SysOperation for processing orders"
   → generate_code(pattern="sysoperation", name="ProcessOrders")
+- "Create SysOperation for processing orders with custom method name"
+  → generate_code(pattern="sysoperation", name="ProcessOrders", serviceMethod="processOrders")
 - "Create event handler for CustTable"
   → generate_code(pattern="event-handler", name="CustTable")
 - "Create security privilege for CustTable form"
@@ -534,6 +539,12 @@ EXAMPLES:
               targetObject: {
                 type: 'string',
                 description: 'For menu-item and security-privilege patterns: target form/class/report name',
+              },
+              serviceMethod: {
+                type: 'string',
+                description: 'For sysoperation pattern: name of the method on the Service class the Controller will call. ' +
+                  'Defaults to "process" when omitted. ' +
+                  'Example: serviceMethod="processOrders" → generates processOrders(Contract _contract) on Service class.',
               },
             },
             required: ['pattern', 'name'],
