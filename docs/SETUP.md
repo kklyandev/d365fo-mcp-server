@@ -32,6 +32,7 @@ If you are responsible for deploying the server infrastructure to Azure, see [SE
 | GitHub Copilot extension | Latest | Requires an active Copilot subscription |
 | Node.js | 24.x LTS | Required for hybrid setup only |
 | Python | 3.x | Required for hybrid setup only — used by `node-gyp` to compile native SQLite addon |
+| .NET Framework 4.8 Developer Pack | 4.8 | Optional — enables the C# metadata bridge on Windows D365FO VMs. See [BRIDGE.md](BRIDGE.md) |
 | Git | Any | Required for hybrid setup only |
 
 ---
@@ -443,6 +444,7 @@ fallback to LIKE search. If you still see this error, update to the latest versi
 ## Next Steps
 
 - [MCP_CONFIG.md](MCP_CONFIG.md) — full reference for all `.mcp.json` options
+- [BRIDGE.md](BRIDGE.md) — C# metadata bridge for live D365FO metadata on Windows VMs
 - [SETUP_AZURE.md](SETUP_AZURE.md) — deploy the server to Azure (admins only)
 - [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) — example Copilot prompts
 - [CUSTOM_EXTENSIONS.md](CUSTOM_EXTENSIONS.md) — ISV and multi-model setups

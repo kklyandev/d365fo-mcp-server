@@ -4,6 +4,13 @@ When you ask GitHub Copilot a question about D365FO code, it automatically calls
 54 tools to look up the answer or generate code. You do not need to name the tools yourself —
 just ask in plain English.
 
+> **C# Metadata Bridge (Windows D365FO VMs only):** On a Windows VM with D365FO installed,
+> 12 read-only tools automatically try the C# metadata bridge first — providing always-fresh,
+> runtime-resolved metadata via `IMetadataProvider`. If the bridge is unavailable (Azure, Linux,
+> CI) or the object is not found, the tools transparently fall back to the SQLite database.
+> Bridge-sourced results include a `_Source: C# bridge (IMetadataProvider)_` marker.
+> See [BRIDGE.md](BRIDGE.md) for details.
+
 ---
 
 ## Quick Reference
@@ -21,28 +28,30 @@ just ask in plain English.
 
 ### Search and Discovery (8 tools)
 
+> 🔌 Tools marked with **†** use the C# bridge as primary data source on Windows D365FO VMs.
+
 | Tool | What it does | Example prompt |
 |------|-------------|---------------|
-| **search** | Find any X++ symbol by name or keyword | "Find classes related to dimension posting" |
+| **search** † | Find any X++ symbol by name or keyword | "Find classes related to dimension posting" |
 | **batch_search** | Search multiple things at once (3× faster) | "Find SalesTable, CustTable, and InventTable" |
 | **search_extensions** | Search only in your custom/ISV code | "Find my custom extensions for CustTable" |
-| **get_class_info** | Full class details: methods, source code, inheritance | "Show me everything about SalesFormLetter" |
-| **get_table_info** | Full table schema: fields, indexes, relations | "Show me fields and relations on CustTable" |
-| **get_enum_info** | All enum values with integer values and labels | "What values does SalesStatus have?" |
-| **get_edt_info** | Extended Data Type definition: base type, labels, properties | "Show me EDT properties for CustAccount" |
+| **get_class_info** † | Full class details: methods, source code, inheritance | "Show me everything about SalesFormLetter" |
+| **get_table_info** † | Full table schema: fields, indexes, relations | "Show me fields and relations on CustTable" |
+| **get_enum_info** † | All enum values with integer values and labels | "What values does SalesStatus have?" |
+| **get_edt_info** † | Extended Data Type definition: base type, labels, properties | "Show me EDT properties for CustAccount" |
 | **code_completion** | List methods/fields on a class or table | "What methods start with 'calc' on SalesTable?" |
 
 ### Advanced Object Info (7 tools)
 
 | Tool | What it does | Example prompt |
 |------|-------------|---------------|
-| **get_form_info** | Form structure: datasources, controls, methods | "Show me the datasources in SalesTable form" |
-| **get_query_info** | Query structure: datasources, joins, ranges | "Analyze CustTransOpenQuery" |
-| **get_view_info** | View/data entity: fields, relations, methods | "Show me GeneralJournalAccountEntryView" |
-| **get_report_info** | AxReport structure: datasets, fields, designs, RDL summary | "Show me the dataset fields of InventValue report" |
+| **get_form_info** † | Form structure: datasources, controls, methods | "Show me the datasources in SalesTable form" |
+| **get_query_info** † | Query structure: datasources, joins, ranges | "Analyze CustTransOpenQuery" |
+| **get_view_info** † | View/data entity: fields, relations, methods | "Show me GeneralJournalAccountEntryView" |
+| **get_report_info** † | AxReport structure: datasets, fields, designs, RDL summary | "Show me the dataset fields of InventValue report" |
 | **get_method_signature** | Exact signature for CoC extensions | "Get signature of CustTable.validateWrite()" |
-| **get_method_source** | Full X++ source code of a method | "Show me the full implementation of SalesTable.validateWrite()" |
-| **find_references** | Where is this class/method/field used? | "Where is DimensionAttributeValueSet used?" |
+| **get_method_source** † | Full X++ source code of a method | "Show me the full implementation of SalesTable.validateWrite()" |
+| **find_references** † | Where is this class/method/field used? | "Where is DimensionAttributeValueSet used?" |
 
 ### Intelligent Code Generation (6 tools)
 
@@ -110,7 +119,7 @@ The following tools empower Copilot to trigger X++ compilation, testing, and db 
 | **find_coc_extensions** | Which classes wrap a method with CoC | "Does CustTable.validateWrite have any CoC wrappers?" |
 | **find_event_handlers** | All [SubscribesTo] handlers for table or class events | "Who handles the onInserted event of SalesLine?" |
 | **get_table_extension_info** | All extensions of a table: added fields, indexes, methods | "What fields did ISV packages add to CustTable?" |
-| **get_data_entity_info** | Data entity category, OData name, data sources, keys | "Show me CustCustomerV3Entity details" |
+| **get_data_entity_info** † | Data entity category, OData name, data sources, keys | "Show me CustCustomerV3Entity details" |
 | **analyze_extension_points** | CoC-eligible methods, delegates, events — what can be extended | "What can I extend on SalesLine?" |
 | **recommend_extension_strategy** | Recommends the best extensibility mechanism for a scenario — prevents wrong choices (CoC vs event vs Business Event vs data entity) | "Should I use CoC or Business Event to notify an external system?" |
 | **validate_object_naming** | Validate proposed extension/object names against D365FO conventions | "Is SalesTableExtension a valid extension class name?" |

@@ -13,6 +13,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { parseStringPromise } from 'xml2js';
 import { getConfigManager } from '../utils/configManager.js';
+import { tryBridgeReport } from '../bridge/bridgeAdapter.js';
 
 const GetReportInfoArgsSchema = z.object({
   reportName: z.string().describe('Name of the AxReport object (without .xml extension)'),
@@ -78,6 +79,10 @@ export async function getReportInfoTool(request: CallToolRequest, context: XppSe
     const found = await findReportOnDisk(reportName, modelName);
 
     if (!found) {
+      // Try bridge as fallback (provides basic metadata even without XML on disk)
+      const bridgeResult = await tryBridgeReport(context.bridge, reportName);
+      if (bridgeResult) return bridgeResult;
+
       console.error(`[reportInfo] Report "${reportName}" not found in any package under packagePath.`);
       return {
         content: [{

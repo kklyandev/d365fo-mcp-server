@@ -341,3 +341,11 @@ MCP_SERVER_MODE=read-only
 ```
 
 This ensures write tools are never advertised over the public URL, even if someone calls them directly.
+
+---
+
+## See Also
+
+- [BRIDGE.md](BRIDGE.md) — C# metadata bridge configuration and architecture (Windows D365FO VMs only)
+- [SETUP.md](SETUP.md) — Client setup guide
+- [SETUP_AZURE.md](SETUP_AZURE.md) — Azure deployment guide

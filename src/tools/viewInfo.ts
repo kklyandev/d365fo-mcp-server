@@ -10,6 +10,7 @@ import type { XppServerContext } from '../types/context.js';
 import { promises as fs } from 'fs';
 import { parseStringPromise } from 'xml2js';
 import { buildXmlNotAvailableMessage, readViewMetadata } from '../utils/metadataResolver.js';
+import { tryBridgeView } from '../bridge/bridgeAdapter.js';
 
 const GetViewInfoArgsSchema = z.object({
   viewName: z.string().describe('Name of the view or data entity'),
@@ -91,6 +92,12 @@ export async function getViewInfoTool(request: CallToolRequest, context: XppServ
       }
     }
     
+    // Try C# bridge (IMetadataProvider — live D365FO metadata)
+    if (!viewRow) {
+      const bridgeResult = await tryBridgeView(context.bridge, viewName);
+      if (bridgeResult) return bridgeResult;
+    }
+
     // Fallback to database if not found in workspace
     if (!viewRow) {
       let stmt;

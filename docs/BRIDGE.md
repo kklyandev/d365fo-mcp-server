@@ -175,10 +175,14 @@ In all of these cases, the existing logic runs as if the bridge didn't exist.
 | `get_form_info` | `tryBridgeForm()` | `IMetadataProvider.Forms` |
 | `get_enum_info` | `tryBridgeEnum()` | `IMetadataProvider.Enums` |
 | `get_edt_info` | `tryBridgeEdt()` | `IMetadataProvider.Edts` |
+| `get_query_info` | `tryBridgeQuery()` | `IMetadataProvider.Queries` |
+| `get_view_info` | `tryBridgeView()` | `IMetadataProvider.Views` |
+| `get_data_entity_info` | `tryBridgeDataEntity()` | `IMetadataProvider.DataEntityViews` |
+| `get_report_info` | `tryBridgeReport()` | `IMetadataProvider.Reports` (fallback only) |
 | `find_references` | `tryBridgeReferences()` | `DYNAMICSXREFDB` |
 | `search` | `tryBridgeSearch()` | `IMetadataProvider` (multi-type) |
 
-### Tools NOT Using the Bridge (Phase 2 — future)
+### Tools NOT Using the Bridge
 
 These tools perform write operations or use specialized logic that doesn't benefit from the bridge:
 
@@ -186,7 +190,6 @@ These tools perform write operations or use specialized logic that doesn't benef
 - `generate_smart_table`, `generate_smart_form`, `generate_smart_report` — code generation
 - `analyze_extension_points`, `recommend_extension_strategy` — analysis heuristics
 - `find_coc_extensions`, `find_event_handlers` — SQLite FTS pattern matching
-- `get_query_info`, `get_view_info`, `get_data_entity_info`, `get_report_info` — not yet wired
 
 ---
 
@@ -384,7 +387,7 @@ src/bridge/
 ├── index.ts              Barrel exports for all bridge types and functions
 ├── bridgeClient.ts       BridgeClient class — spawn, JSON-RPC, typed methods
 ├── bridgeTypes.ts        ~35 TypeScript interfaces matching C# models
-└── bridgeAdapter.ts      8 tryBridge*() adapter functions for tool handlers
+└── bridgeAdapter.ts      12 tryBridge*() adapter functions for tool handlers
 ```
 
 ### BridgeClient (`bridgeClient.ts`)
@@ -421,7 +424,7 @@ interface BridgeTableInfo {
 
 ### Bridge Adapter (`bridgeAdapter.ts`)
 
-Eight `tryBridge*()` functions, one per tool handler. Each:
+Twelve `tryBridge*()` functions, one per tool handler. Each:
 
 1. Checks `bridge?.isReady` (and `bridge.metadataAvailable` or `bridge.xrefAvailable`)
 2. Calls the appropriate bridge method
@@ -501,7 +504,7 @@ MCP Server (stdio) ─── D365MetadataBridge.exe ─── IMetadataProvider
 ```
 
 - Bridge auto-starts at server launch
-- All 8 tool handlers use bridge as primary source
+- All 12 tool handlers use bridge as primary source
 - SQLite serves as fallback (bridge process crash, specific object not found)
 
 ### Scenario 2: Azure App Service / Linux (no bridge)

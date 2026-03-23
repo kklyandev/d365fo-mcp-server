@@ -37,10 +37,20 @@ tests/
 │   ├── extensions-security.test.ts (26 tests)
 │   ├── file-ops.test.ts          (20 tests)
 │   ├── labels.test.ts            (15 tests)
-│   └── object-info.test.ts       (28 tests)
-└── utils/
-    └── configManager.test.ts     (21 tests)
+│   ├── local-ops.test.ts
+│   ├── object-info.test.ts       (28 tests)
+│   └── xpp-knowledge.test.ts
+├── utils/
+│   ├── configManager.test.ts     (21 tests)
+│   ├── forceProject.test.ts
+│   ├── operationLocks.test.ts
+│   └── toolInventory.test.ts
+└── bridge-e2e.ts                 (manual E2E — npx tsx tests/bridge-e2e.ts)
 ```
+
+> **Bridge E2E test:** `tests/bridge-e2e.ts` is a manual end-to-end test that exercises the
+> C# bridge child process. It requires a Windows D365FO VM with `IMetadataProvider` DLLs
+> available and is NOT included in `npm test`. Run it with `npx tsx tests/bridge-e2e.ts`.
 
 ---
 
@@ -226,6 +236,7 @@ Tests run automatically in GitHub Actions on:
 | `configManager` | `vi.mock('../../src/utils/configManager', ...)` returning fixed paths |
 | `packageResolver` | `vi.mock('../../src/utils/packageResolver', ...)` returning fixed `K:\PackagesLocalDirectory` |
 | `modelClassifier` | `vi.mock('../../src/utils/modelClassifier', ...)` with no-op prefix application |
+| `BridgeClient` | `context.bridge` set to `undefined` in `buildContext()` — bridge is absent, all `tryBridge*()` calls return `null` instantly |
 | Cache | `{ get, getFuzzy, set, generateSearchKey, generateExtensionSearchKey }` as `vi.fn()` |
 | Parser / WorkspaceScanner | Empty object `{} as any` when not exercised by the test |
 

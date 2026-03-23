@@ -41,6 +41,12 @@ graph TB
         CACHE[Redis Cache - Optional]
     end
 
+    subgraph "C# Metadata Bridge — Windows only"
+        BRIDGE_EXE[D365MetadataBridge.exe - .NET 4.8 child process]
+        IMETA[IMetadataProvider - Live D365FO metadata]
+        XREF[(DYNAMICSXREFDB - Cross-reference database)]
+    end
+
     VS -->|"Streamable HTTP, OAuth 2.0"| MCP
     VS2026 -->|"Streamable HTTP, OAuth 2.0"| MCP
     MCP -->|"Download on startup"| BLOB
@@ -50,6 +56,9 @@ graph TB
     TOOLS --> DB
     TOOLS --> LDB
     TOOLS -.->|"Optional"| CACHE
+    TOOLS -.->|"Try first on Windows"| BRIDGE_EXE
+    BRIDGE_EXE --> IMETA
+    BRIDGE_EXE --> XREF
     
     style VS fill:#68217A,color:#fff
     style VS2026 fill:#0078D4,color:#fff
@@ -58,6 +67,8 @@ graph TB
     style DB fill:#4CAF50,color:#fff
     style LDB fill:#4CAF50,color:#fff
     style CACHE fill:#DC382D,color:#fff
+    style BRIDGE_EXE fill:#512BD4,color:#fff
+    style IMETA fill:#512BD4,color:#fff
 ```
 
 ---
@@ -71,6 +82,7 @@ sequenceDiagram
     participant MCP as MCP Protocol
     participant Handler as Tool Handler
     participant Tool as Tool Implementation
+    participant Bridge as C# Bridge (Windows)
     participant Cache as Redis Cache
     participant DB as SQLite DB
 
@@ -86,13 +98,18 @@ sequenceDiagram
     else Tool Call
         MCP->>Handler: Route to Handler
         Handler->>Tool: Execute Tool
-        Tool->>Cache: Check Cache
-        alt Cache Hit
-            Cache-->>Tool: Cached Result
-        else Cache Miss
-            Tool->>DB: FTS5 Query
-            DB-->>Tool: Symbol Results
-            Tool->>Cache: Store Result
+        Tool->>Bridge: tryBridge*() — try live metadata first
+        alt Bridge Available & Object Found
+            Bridge-->>Tool: Live Metadata Result
+        else Bridge Unavailable or Miss
+            Tool->>Cache: Check Cache
+            alt Cache Hit
+                Cache-->>Tool: Cached Result
+            else Cache Miss
+                Tool->>DB: FTS5 Query
+                DB-->>Tool: Symbol Results
+                Tool->>Cache: Store Result
+            end
         end
         Tool-->>Handler: Tool Result
         Handler-->>MCP: Formatted Response
@@ -190,12 +207,19 @@ graph LR
         DOWNLOAD[download.ts - Azure Blob DL]
     end
 
+    subgraph "C# Metadata Bridge — Windows only"
+        BCLIENT[bridgeClient.ts - JSON-RPC child process]
+        BADAPT[bridgeAdapter.ts - 12 tryBridge* formatters]
+        BTYPES[bridgeTypes.ts - Response types]
+    end
+
     INDEX --> SERVER
     INDEX --> TRANSPORT
     INDEX --> SYMBOL
     INDEX --> PARSER
     INDEX --> CACHE_SVC
     INDEX --> DOWNLOAD
+    INDEX --> BCLIENT
 
     SERVER --> HANDLER
     HANDLER --> SEARCH
@@ -242,6 +266,21 @@ graph LR
     HANDLER --> WSINFO
     HANDLER --> VERIFYD
     HANDLER --> VALNAME
+
+    CLASS -.-> BADAPT
+    TABLE -.-> BADAPT
+    ENUM -.-> BADAPT
+    EDT -.-> BADAPT
+    FORM -.-> BADAPT
+    QUERY -.-> BADAPT
+    VIEW -.-> BADAPT
+    REPORT -.-> BADAPT
+    ENTITY -.-> BADAPT
+    SEARCH -.-> BADAPT
+    REFS -.-> BADAPT
+    MSRC -.-> BADAPT
+    BADAPT --> BCLIENT
+    BCLIENT --> BTYPES
 
     SEARCH --> SYMBOL
     BATCH --> SYMBOL
@@ -334,7 +373,13 @@ graph TD
     
     DB_LOAD --> FTS_INIT[Initialize FTS5 Index]
     FTS_INIT --> COUNT[Count Symbols - 584K+]
-    COUNT --> MCP_INIT[Initialize MCP Server]
+    COUNT --> BRIDGE_CHECK{Windows + D365FO DLLs?}
+    
+    BRIDGE_CHECK -->|Yes| BRIDGE_START[Start D365MetadataBridge.exe child process]
+    BRIDGE_CHECK -->|No| MCP_INIT
+    
+    BRIDGE_START --> BRIDGE_PING[Ping bridge — wait for 'pong']
+    BRIDGE_PING --> MCP_INIT[Initialize MCP Server]
     MCP_INIT --> HTTP_START[Start HTTP Server - Port 8080]
     HTTP_START --> READY([Server Ready])
     
@@ -342,6 +387,7 @@ graph TD
     style READY fill:#4CAF50,color:#fff
     style DOWNLOAD fill:#FF6C00,color:#fff
     style DB_LOAD fill:#2196F3,color:#fff
+    style BRIDGE_START fill:#512BD4,color:#fff
 ```
 
 ### 2. Search Query Flow
@@ -370,7 +416,15 @@ graph TD
 
 ````mermaid
 graph TD
-    CLASS_REQ([Get Class Info]) --> DB_LOOKUP[Symbol Index Lookup]
+    CLASS_REQ([Get Class Info]) --> BRIDGE_TRY{Bridge Available?}
+    
+    BRIDGE_TRY -->|Yes| BRIDGE_CALL[tryBridgeClass — IMetadataProvider]
+    BRIDGE_TRY -->|No| DB_LOOKUP
+    
+    BRIDGE_CALL --> BRIDGE_OK{Object Found?}
+    BRIDGE_OK -->|Yes| RESPONSE
+    BRIDGE_OK -->|No| DB_LOOKUP[Symbol Index Lookup]
+    
     DB_LOOKUP --> FOUND{Symbol Found?}
     
     FOUND -->|No| ERROR_404[Return Not Found]
@@ -391,6 +445,7 @@ graph TD
     ERROR_404 --> RESPONSE
     
     style CLASS_REQ fill:#4CAF50,color:#fff
+    style BRIDGE_CALL fill:#512BD4,color:#fff
     style XML_PARSE fill:#FF9800,color:#fff
     style FALLBACK fill:#DC382D,color:#fff
     style RESPONSE fill:#4CAF50,color:#fff
@@ -1124,6 +1179,7 @@ graph TB
     subgraph "Runtime"
         NODE[Node.js 24 LTS]
         TS[TypeScript 5.9]
+        DOTNET[.NET Framework 4.8 — Bridge, Windows only]
     end
 
     subgraph "Web Framework"
@@ -1162,6 +1218,7 @@ graph TB
     end
 
     style NODE fill:#68A063,color:#fff
+    style DOTNET fill:#512BD4,color:#fff
     style SQLITE fill:#003B57,color:#fff
     style REDIS fill:#DC382D,color:#fff
     style VIT fill:#6E9F18,color:#fff
@@ -1204,6 +1261,7 @@ graph LR
 This architecture provides:
 
 ✅ **High Performance** - FTS5 full-text search with Redis caching  
+✅ **Live Metadata** - C# bridge provides always-fresh data on Windows D365FO VMs (see [BRIDGE.md](BRIDGE.md))  
 ✅ **Scalability** - Stateless design, horizontal scaling ready  
 ✅ **Reliability** - Error handling, rate limiting, health checks  
 ✅ **Security** - OAuth 2.0, HTTPS, Managed Identity  

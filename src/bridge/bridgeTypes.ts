@@ -191,7 +191,7 @@ export interface BridgeQueryDataSource {
   name: string;
   table: string;
   joinMode?: string;
-  children?: BridgeQueryDataSource[];
+  childDataSources?: BridgeQueryDataSource[];
 }
 
 // ===========================
@@ -224,8 +224,9 @@ export interface BridgeDataEntityInfo {
   isPublic: boolean;
   model?: string;
   dataSources: BridgeDataEntityDataSource[];
-  keys: BridgeDataEntityKey[];
-  fieldMappings: BridgeDataEntityFieldMapping[];
+  fields: BridgeFieldInfo[];
+  keys?: BridgeDataEntityKey[];
+  fieldMappings?: BridgeDataEntityFieldMapping[];
 }
 
 export interface BridgeDataEntityDataSource {
@@ -252,7 +253,7 @@ export interface BridgeReportInfo {
   name: string;
   model?: string;
   dataSets: string[];
-  designs: string[];
+  designs?: string[];
 }
 
 // ===========================

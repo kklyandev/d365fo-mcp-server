@@ -15,6 +15,11 @@ import type { BridgeClient } from './bridgeClient.js';
 import type {
   BridgeTableInfo,
   BridgeClassInfo,
+  BridgeQueryInfo,
+  BridgeQueryDataSource,
+  BridgeViewInfo,
+  BridgeDataEntityInfo,
+  BridgeReportInfo,
 } from './bridgeTypes.js';
 
 /** Standard MCP tool response shape */
@@ -392,4 +397,169 @@ export async function tryBridgeSearch(
     console.error(`[BridgeAdapter] searchObjects(${query}) failed: ${e}`);
     return null;
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// QUERY
+// ════════════════════════════════════════════════════════════════════════
+
+export async function tryBridgeQuery(
+  bridge: BridgeClient | undefined,
+  queryName: string,
+): Promise<ToolResult | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const q = await bridge.readQuery(queryName);
+    if (!q) return null;
+    return { content: [{ type: 'text', text: formatQuery(q) }] };
+  } catch (e) {
+    console.error(`[BridgeAdapter] readQuery(${queryName}) failed: ${e}`);
+    return null;
+  }
+}
+
+function formatQuery(q: BridgeQueryInfo): string {
+  let out = `# Query: ${q.name}\n\n`;
+  if (q.model) out += `**Model:** ${q.model}\n`;
+  out += `_Source: C# bridge (IMetadataProvider)_\n\n`;
+
+  if (q.dataSources.length > 0) {
+    out += `## Data Sources (${q.dataSources.length})\n\n`;
+    for (const ds of q.dataSources) {
+      out += formatQueryDataSource(ds, 0);
+    }
+  }
+
+  return out;
+}
+
+function formatQueryDataSource(ds: BridgeQueryDataSource, depth: number): string {
+  const indent = '  '.repeat(depth);
+  const join = ds.joinMode ? ` (${ds.joinMode})` : '';
+  let out = `${indent}- **${ds.name}** → ${ds.table}${join}\n`;
+  if (ds.childDataSources?.length) {
+    for (const child of ds.childDataSources) {
+      out += formatQueryDataSource(child, depth + 1);
+    }
+  }
+  return out;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// VIEW
+// ════════════════════════════════════════════════════════════════════════
+
+export async function tryBridgeView(
+  bridge: BridgeClient | undefined,
+  viewName: string,
+): Promise<ToolResult | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const v = await bridge.readView(viewName);
+    if (!v) return null;
+    return { content: [{ type: 'text', text: formatView(v) }] };
+  } catch (e) {
+    console.error(`[BridgeAdapter] readView(${viewName}) failed: ${e}`);
+    return null;
+  }
+}
+
+function formatView(v: BridgeViewInfo): string {
+  let out = `# View: ${v.name}\n\n`;
+  if (v.label) out += `**Label:** ${v.label}\n`;
+  if (v.model) out += `**Model:** ${v.model}\n`;
+  if (v.query) out += `**Query:** ${v.query}\n`;
+  out += `_Source: C# bridge (IMetadataProvider)_\n\n`;
+
+  if (v.fields.length > 0) {
+    out += `## Fields (${v.fields.length})\n\n`;
+    for (const f of v.fields) {
+      out += `- **${f.name}**: ${f.fieldType}\n`;
+    }
+  }
+
+  return out;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// DATA ENTITY
+// ════════════════════════════════════════════════════════════════════════
+
+export async function tryBridgeDataEntity(
+  bridge: BridgeClient | undefined,
+  entityName: string,
+): Promise<ToolResult | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const e = await bridge.readDataEntity(entityName);
+    if (!e) return null;
+    return { content: [{ type: 'text', text: formatDataEntity(e) }] };
+  } catch (err) {
+    console.error(`[BridgeAdapter] readDataEntity(${entityName}) failed: ${err}`);
+    return null;
+  }
+}
+
+function formatDataEntity(e: BridgeDataEntityInfo): string {
+  let out = `DataEntity: ${e.name}\n`;
+  if (e.model) out += `Model: ${e.model}\n`;
+  if (e.label) out += `Label: ${e.label}\n`;
+  out += `Type: Data Entity (AxDataEntityView)\n`;
+  if (e.publicEntityName) out += `Public Name: ${e.publicEntityName} (OData resource name)\n`;
+  if (e.publicCollectionName) out += `Collection: ${e.publicCollectionName}\n`;
+  out += `OData Enabled: ${e.isPublic ? 'Yes' : 'No'}\n`;
+  out += `_Source: C# bridge (IMetadataProvider)_\n`;
+
+  if (e.dataSources.length > 0) {
+    out += `\nData Sources (${e.dataSources.length}): ${e.dataSources.map(ds => ds.table || ds.name).join(', ')}\n`;
+  }
+
+  if (e.fields && e.fields.length > 0) {
+    out += `\nFields (${e.fields.length}): `;
+    const fieldNames = e.fields.slice(0, 8).map(f => f.name);
+    out += fieldNames.join(', ');
+    if (e.fields.length > 8) out += ` ... (+${e.fields.length - 8} more)`;
+    out += '\n';
+  }
+
+  return out;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// REPORT (fallback only — used when XML file is not found on disk)
+// ════════════════════════════════════════════════════════════════════════
+
+export async function tryBridgeReport(
+  bridge: BridgeClient | undefined,
+  reportName: string,
+): Promise<ToolResult | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const r = await bridge.readReport(reportName);
+    if (!r) return null;
+    return { content: [{ type: 'text', text: formatReport(r) }] };
+  } catch (e) {
+    console.error(`[BridgeAdapter] readReport(${reportName}) failed: ${e}`);
+    return null;
+  }
+}
+
+function formatReport(r: BridgeReportInfo): string {
+  let out = `# Report: ${r.name}\n\n`;
+  if (r.model) out += `**Model:** ${r.model}\n`;
+  out += `_Source: C# bridge (IMetadataProvider) — summary only_\n\n`;
+
+  if (r.dataSets.length > 0) {
+    out += `## Data Sets (${r.dataSets.length})\n\n`;
+    for (const ds of r.dataSets) {
+      out += `- ${ds}\n`;
+    }
+  } else {
+    out += `_No data set information available from the metadata API._\n`;
+  }
+
+  out += `\n> 💡 The bridge provides a metadata summary. For full details (fields, designs, RDL), ` +
+    `ensure the report XML file is accessible on disk.\n`;
+
+  return out;
 }
