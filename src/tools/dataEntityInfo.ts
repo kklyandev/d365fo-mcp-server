@@ -6,6 +6,7 @@
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { XppServerContext } from '../types/context.js';
+import { tryBridgeDataEntity } from '../bridge/bridgeAdapter.js';
 
 const DataEntityInfoArgsSchema = z.object({
   entityName: z.string().describe('Name of the data entity (AxDataEntityView)'),
@@ -15,6 +16,10 @@ export async function dataEntityInfoTool(request: CallToolRequest, context: XppS
   try {
     const args = DataEntityInfoArgsSchema.parse(request.params.arguments);
     const db = context.symbolIndex.db;
+
+    // Try C# bridge first (IMetadataProvider — live D365FO metadata)
+    const bridgeResult = await tryBridgeDataEntity(context.bridge, args.entityName);
+    if (bridgeResult) return bridgeResult;
 
     // Data entities are indexed under type='view' (they derive from AxDataEntityView)
     // Also check data-entity-extension as those are indexed separately

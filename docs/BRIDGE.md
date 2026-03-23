@@ -175,10 +175,14 @@ In all of these cases, the existing logic runs as if the bridge didn't exist.
 | `get_form_info` | `tryBridgeForm()` | `IMetadataProvider.Forms` |
 | `get_enum_info` | `tryBridgeEnum()` | `IMetadataProvider.Enums` |
 | `get_edt_info` | `tryBridgeEdt()` | `IMetadataProvider.Edts` |
+| `get_query_info` | `tryBridgeQuery()` | `IMetadataProvider.Queries` |
+| `get_view_info` | `tryBridgeView()` | `IMetadataProvider.Views` |
+| `get_data_entity_info` | `tryBridgeDataEntity()` | `IMetadataProvider.DataEntityViews` |
+| `get_report_info` | `tryBridgeReport()` | `IMetadataProvider.Reports` (fallback only) |
 | `find_references` | `tryBridgeReferences()` | `DYNAMICSXREFDB` |
 | `search` | `tryBridgeSearch()` | `IMetadataProvider` (multi-type) |
 
-### Tools NOT Using the Bridge (Phase 2 — future)
+### Tools NOT Using the Bridge
 
 These tools perform write operations or use specialized logic that doesn't benefit from the bridge:
 
@@ -186,7 +190,6 @@ These tools perform write operations or use specialized logic that doesn't benef
 - `generate_smart_table`, `generate_smart_form`, `generate_smart_report` — code generation
 - `analyze_extension_points`, `recommend_extension_strategy` — analysis heuristics
 - `find_coc_extensions`, `find_event_handlers` — SQLite FTS pattern matching
-- `get_query_info`, `get_view_info`, `get_data_entity_info`, `get_report_info` — not yet wired
 
 ---
 
@@ -384,7 +387,7 @@ src/bridge/
 ├── index.ts              Barrel exports for all bridge types and functions
 ├── bridgeClient.ts       BridgeClient class — spawn, JSON-RPC, typed methods
 ├── bridgeTypes.ts        ~35 TypeScript interfaces matching C# models
-└── bridgeAdapter.ts      8 tryBridge*() adapter functions for tool handlers
+└── bridgeAdapter.ts      12 tryBridge*() adapter functions for tool handlers
 ```
 
 ### BridgeClient (`bridgeClient.ts`)

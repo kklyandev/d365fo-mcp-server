@@ -10,6 +10,7 @@ import type { XppServerContext } from '../types/context.js';
 import { promises as fs } from 'fs';
 import { parseStringPromise } from 'xml2js';
 import { buildXmlNotAvailableMessage, resolveDbPathLocally } from '../utils/metadataResolver.js';
+import { tryBridgeQuery } from '../bridge/bridgeAdapter.js';
 
 const GetQueryInfoArgsSchema = z.object({
   queryName: z.string().describe('Name of the query'),
@@ -78,6 +79,12 @@ export async function getQueryInfoTool(request: CallToolRequest, context: XppSer
       }
     }
     
+    // Try C# bridge (IMetadataProvider — live D365FO metadata)
+    if (!queryRow) {
+      const bridgeResult = await tryBridgeQuery(context.bridge, queryName);
+      if (bridgeResult) return bridgeResult;
+    }
+
     // Fallback to database if not found in workspace
     if (!queryRow) {
       let stmt;

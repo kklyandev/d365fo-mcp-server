@@ -295,6 +295,7 @@ namespace D365MetadataBridge.Services
             if (q == null) return null;
             var result = new QueryInfoModel { Name = q.Name };
             try { var mi = _provider.Queries.GetModelInfo(queryName); if (mi?.Count > 0) result.Model = mi.First().Name; } catch { }
+            try { if (q.DataSources != null) foreach (dynamic ds in q.DataSources) result.DataSources.Add(MapQueryDataSource(ds)); } catch (Exception ex) { Warn("dataSources", queryName, ex); }
             return result;
         }
 
@@ -317,6 +318,7 @@ namespace D365MetadataBridge.Services
             var result = new DataEntityInfoModel { Name = e.Name, Label = Safe(() => e.Label), PublicEntityName = Safe(() => e.PublicEntityName), PublicCollectionName = Safe(() => e.PublicCollectionName), IsPublic = IsYes(() => e.IsPublic) };
             try { var mi = _provider.DataEntityViews.GetModelInfo(entityName); if (mi?.Count > 0) result.Model = mi.First().Name; } catch { }
             try { if (e.Fields != null) foreach (var f in e.Fields) result.Fields.Add(new FieldInfoModel { Name = f.Name, FieldType = f.GetType().Name }); } catch { }
+            try { if (e.DataSources != null) foreach (dynamic ds in e.DataSources) result.DataSources.Add(new FormDataSourceModel { Name = Safe(() => (string)ds.Name) ?? "", Table = Safe(() => (string)ds.Table) ?? "" }); } catch (Exception ex) { Warn("dataSources", entityName, ex); }
             return result;
         }
 
@@ -326,9 +328,30 @@ namespace D365MetadataBridge.Services
             {
                 if (!_provider.Reports.Exists(reportName)) return null;
                 var r = _provider.Reports.Read(reportName);
-                return r == null ? null : new ReportInfoModel { Name = r.Name };
+                if (r == null) return null;
+                var result = new ReportInfoModel { Name = r.Name };
+                try { var mi = _provider.Reports.GetModelInfo(reportName); if (mi?.Count > 0) result.Model = mi.First().Name; } catch { }
+                try { if (r.DataSets != null) foreach (dynamic ds in r.DataSets) result.DataSets.Add(Safe(() => (string)ds.Name) ?? "Unknown"); } catch { }
+                return result;
             }
             catch { return null; }
+        }
+
+        private QueryDataSourceModel MapQueryDataSource(dynamic ds)
+        {
+            var model = new QueryDataSourceModel { Name = Safe(() => (string)ds.Name) ?? "", Table = Safe(() => (string)ds.Table) ?? "" };
+            try { model.JoinMode = Safe(() => ds.JoinMode?.ToString()); } catch { }
+            try
+            {
+                if (ds.DataSources != null)
+                {
+                    model.ChildDataSources = new List<QueryDataSourceModel>();
+                    foreach (dynamic child in ds.DataSources) model.ChildDataSources.Add(MapQueryDataSource(child));
+                    if (model.ChildDataSources.Count == 0) model.ChildDataSources = null;
+                }
+            }
+            catch { }
+            return model;
         }
 
         // ========================

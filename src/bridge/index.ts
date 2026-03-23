@@ -27,4 +27,8 @@ export {
   tryBridgeForm,
   tryBridgeReferences,
   tryBridgeSearch,
+  tryBridgeQuery,
+  tryBridgeView,
+  tryBridgeDataEntity,
+  tryBridgeReport,
 } from './bridgeAdapter.js';
