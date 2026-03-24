@@ -50,6 +50,7 @@ const buildContext = (dbOverride?: ReturnType<typeof createMockDb>): XppServerCo
       searchLabels: vi.fn(() => []),
       getCustomModels: vi.fn(() => []),
       db,
+      getReadDb: vi.fn(() => db),
     } as any,
     parser: {
       parseTableFile: vi.fn(async () => ({ success: false })),

@@ -31,7 +31,7 @@ export async function tableExtensionInfoTool(request: CallToolRequest, context: 
     if (bridgeResult) return bridgeResult;
 
     // ── Fallback: SQLite index + filesystem ──
-    const db = context.symbolIndex.db;
+    const db = context.symbolIndex.getReadDb();
     const tableName = args.tableName;
 
     // Verify the base table exists

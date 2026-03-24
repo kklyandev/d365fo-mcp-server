@@ -821,8 +821,9 @@ async function findD365File(
   // Query database when a symbol type mapping exists
   if (symbolType) {
     let dbResult: string | null = null;
+    const rdb = symbolIndex.getReadDb();
     if (modelName) {
-      const stmt = symbolIndex.db.prepare(`
+      const stmt = rdb.prepare(`
         SELECT file_path
         FROM symbols
         WHERE type = ? AND name = ? AND model = ?
@@ -831,7 +832,7 @@ async function findD365File(
       const row = stmt.get(symbolType, objectName, modelName);
       dbResult = row ? row.file_path : null;
     } else {
-      const stmt = symbolIndex.db.prepare(`
+      const stmt = rdb.prepare(`
         SELECT file_path
         FROM symbols
         WHERE type = ? AND name = ?
@@ -1096,7 +1097,8 @@ async function findBaseFormXml(baseFormName: string, symbolIndex: any): Promise<
   // 1. Symbol DB lookup
   let dbFilePath: string | null = null;
   try {
-    const row = symbolIndex.db.prepare(
+    const rdb = symbolIndex.getReadDb();
+    const row = rdb.prepare(
       `SELECT file_path FROM symbols WHERE type = 'form' AND name = ? LIMIT 1`
     ).get(baseFormName) as any;
     if (row?.file_path) dbFilePath = row.file_path;

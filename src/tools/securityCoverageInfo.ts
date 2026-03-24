@@ -17,7 +17,7 @@ const SecurityCoverageInfoArgsSchema = z.object({
 export async function securityCoverageInfoTool(request: CallToolRequest, context: XppServerContext) {
   try {
     const args = SecurityCoverageInfoArgsSchema.parse(request.params.arguments);
-    const db = context.symbolIndex.db;
+    const db = context.symbolIndex.getReadDb();
     const objName = args.objectName;
 
     // ── Step 1: Detect object type ──

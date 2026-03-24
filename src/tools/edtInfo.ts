@@ -28,7 +28,7 @@ export async function getEdtInfoTool(request: CallToolRequest, context: XppServe
 
     // ── Hierarchy mode: ancestor chain + children + field usages (SQLite only) ──
     if (args.mode === 'hierarchy') {
-      return getEdtHierarchy(symbolIndex.db, edtName, modelName);
+      return getEdtHierarchy(symbolIndex.getReadDb(), edtName, modelName);
     }
 
     // ── Standard mode: C# bridge (IMetadataProvider — live D365FO metadata) ──

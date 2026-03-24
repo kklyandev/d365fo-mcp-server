@@ -81,6 +81,7 @@ const buildContext = (overrides: Partial<XppServerContext> = {}): XppServerConte
     insertOrUpdateLabel: vi.fn(),
     searchSymbols: vi.fn(() => []),
     db: { prepare: vi.fn(() => ({ all: vi.fn(() => []), get: vi.fn(() => undefined), run: vi.fn() })) },
+    getReadDb: vi.fn(function(this: any) { return this.db; }),
   } as any,
   parser: {} as any,
   cache: {

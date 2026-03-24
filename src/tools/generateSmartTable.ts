@@ -224,7 +224,7 @@ export async function handleGenerateSmartTable(
   if (copyFrom) {
     console.log(`[generateSmartTable] Copying structure from: ${copyFrom}`);
     try {
-      const db = symbolIndex.db;
+      const db = symbolIndex.getReadDb();
 
       // Copy fields directly from the symbols DB
       const dbFields = db.prepare(`
@@ -265,7 +265,7 @@ export async function handleGenerateSmartTable(
   if (generateCommonFields && !copyFrom) {
     console.log(`[generateSmartTable] Analyzing patterns for table group: ${tableGroup}`);
     try {
-      const db = symbolIndex.db;
+      const db = symbolIndex.getReadDb();
 
       // Use heuristic name patterns (matching analyzeTableGroup logic)
       const namePatterns: Record<string, string> = {
@@ -387,7 +387,7 @@ export async function handleGenerateSmartTable(
   // Also validate that every EDT actually exists in the indexed metadata.
   const edtWarnings: string[] = [];
   {
-    const db = symbolIndex.db;
+    const db = symbolIndex.getReadDb();
     for (const f of fields) {
       if (f.edt && !f.type) {
         f.type = resolveEdtBaseType(f.edt, db);
@@ -409,7 +409,7 @@ export async function handleGenerateSmartTable(
   //   BPUpgradeMetadataEDTRelation: EDT relation found in field X. It should be migrated.
   // Auto-detect from edt_metadata.reference_table and generate matching relations.
   {
-    const db = symbolIndex.db;
+    const db = symbolIndex.getReadDb();
     for (const f of fields) {
       if (!f.edt) continue;
       // Skip if a relation for this field already exists

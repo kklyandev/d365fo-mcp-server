@@ -86,8 +86,9 @@ export async function getFormPatternsTool(request: CallToolRequest, context: Xpp
 }
 
 async function analyzeSimilarForm(symbolIndex: any, formName: string, limit: number): Promise<string> {
+  const rdb = symbolIndex.getReadDb();
   // Get form info
-  const formRow = symbolIndex.db.prepare(`
+  const formRow = rdb.prepare(`
     SELECT * FROM symbols WHERE type = 'form' AND name = ? LIMIT 1
   `).get(formName);
 
@@ -96,7 +97,7 @@ async function analyzeSimilarForm(symbolIndex: any, formName: string, limit: num
   }
 
   // Get datasources
-  const datasources = symbolIndex.db.prepare(`
+  const datasources = rdb.prepare(`
     SELECT datasource_name, table_name, allow_edit, allow_create, allow_delete
     FROM form_datasources
     WHERE form_name = ?
@@ -130,7 +131,7 @@ async function analyzeSimilarForm(symbolIndex: any, formName: string, limit: num
   if (datasources.length > 0) {
     output += `\n### Similar Forms (Using Same Tables)\n\n`;
     const tables = datasources.map(ds => ds.table_name);
-    const similarForms = symbolIndex.db.prepare(`
+    const similarForms = rdb.prepare(`
       SELECT DISTINCT form_name, COUNT(DISTINCT table_name) as match_count
       FROM form_datasources
       WHERE table_name IN (${tables.map(() => '?').join(',')})
@@ -149,8 +150,9 @@ async function analyzeSimilarForm(symbolIndex: any, formName: string, limit: num
 }
 
 async function analyzeFormsUsingTable(symbolIndex: any, tableName: string, limit: number): Promise<string> {
+  const rdb = symbolIndex.getReadDb();
   // Find forms using this table
-  const forms = symbolIndex.db.prepare(`
+  const forms = rdb.prepare(`
     SELECT DISTINCT form_name, datasource_name, allow_edit, allow_create, allow_delete
     FROM form_datasources
     WHERE table_name = ?
@@ -198,11 +200,10 @@ async function analyzeFormsUsingTable(symbolIndex: any, tableName: string, limit
 }
 
 async function analyzeFormPattern(symbolIndex: any, formPattern: string, limit: number): Promise<string> {
+  const rdb = symbolIndex.getReadDb();
   let output = `**Pattern:** ${formPattern}\n\n`;
 
   // Get sample forms (heuristic based on naming conventions)
-  // DetailsTransaction forms often end with simple table names
-  // ListPage forms often end with "ListPage"
   let namePattern = '';
   if (formPattern === 'ListPage') {
     namePattern = '%ListPage';
@@ -212,7 +213,7 @@ async function analyzeFormPattern(symbolIndex: any, formPattern: string, limit: 
     namePattern = '%Lookup';
   }
 
-  const sampleForms = symbolIndex.db.prepare(`
+  const sampleForms = rdb.prepare(`
     SELECT DISTINCT name, model 
     FROM symbols 
     WHERE type = 'form'
@@ -230,38 +231,40 @@ async function analyzeFormPattern(symbolIndex: any, formPattern: string, limit: 
 
   output += `**Sample Forms Found:** ${sampleForms.length}\n\n`;
 
+  // ── BATCHED datasource query: fetch all datasources for all sample forms in ONE query ──
+  const formNames = sampleForms.map(f => f.name);
+  const placeholders = formNames.map(() => '?').join(',');
+  const allDatasources = rdb.prepare(`
+    SELECT form_name, table_name, allow_edit, allow_create, allow_delete
+    FROM form_datasources
+    WHERE form_name IN (${placeholders})
+  `).all(...formNames) as Array<{
+    form_name: string;
+    table_name: string;
+    allow_edit: number;
+    allow_create: number;
+    allow_delete: number;
+  }>;
+
   // Analyze datasource patterns
   const dsPatternMap = new Map<string, { count: number; permissions: { edit: number; create: number; delete: number } }>();
 
-  for (const form of sampleForms) {
-    const datasources = symbolIndex.db.prepare(`
-      SELECT table_name, allow_edit, allow_create, allow_delete
-      FROM form_datasources
-      WHERE form_name = ?
-    `).all(form.name) as Array<{
-      table_name: string;
-      allow_edit: number;
-      allow_create: number;
-      allow_delete: number;
-    }>;
-
-    for (const ds of datasources) {
-      const existing = dsPatternMap.get(ds.table_name);
-      if (existing) {
-        existing.count++;
-        existing.permissions.edit += ds.allow_edit;
-        existing.permissions.create += ds.allow_create;
-        existing.permissions.delete += ds.allow_delete;
-      } else {
-        dsPatternMap.set(ds.table_name, {
-          count: 1,
-          permissions: {
-            edit: ds.allow_edit,
-            create: ds.allow_create,
-            delete: ds.allow_delete,
-          },
-        });
-      }
+  for (const ds of allDatasources) {
+    const existing = dsPatternMap.get(ds.table_name);
+    if (existing) {
+      existing.count++;
+      existing.permissions.edit += ds.allow_edit;
+      existing.permissions.create += ds.allow_create;
+      existing.permissions.delete += ds.allow_delete;
+    } else {
+      dsPatternMap.set(ds.table_name, {
+        count: 1,
+        permissions: {
+          edit: ds.allow_edit,
+          create: ds.allow_create,
+          delete: ds.allow_delete,
+        },
+      });
     }
   }
 

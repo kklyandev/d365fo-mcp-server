@@ -106,7 +106,7 @@ export async function handleGenerateSmartForm(
   if (copyFrom) {
     console.log(`[generateSmartForm] Copying structure from: ${copyFrom}`);
     try {
-      const db = symbolIndex.db;
+      const db = symbolIndex.getReadDb();
 
       // Copy datasources directly from form_datasources DB
       const dbDataSources = db.prepare(`
@@ -180,7 +180,7 @@ export async function handleGenerateSmartForm(
   let gridFields: string[] = [];
   if (dataSource && dataSources.length > 0) {
     try {
-      const db = symbolIndex.db;
+      const db = symbolIndex.getReadDb();
 
       // Query fields directly from symbols DB
       const dbFields = db.prepare(`

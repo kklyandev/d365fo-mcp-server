@@ -23,7 +23,7 @@ export async function menuItemInfoTool(request: CallToolRequest, context: XppSer
     if (bridgeResult) return bridgeResult;
 
     // ── Fallback: SQLite index ──
-    const db = context.symbolIndex.db;
+    const db = context.symbolIndex.getReadDb();
 
     // Build type filter
     const typeMap: Record<string, string> = {

@@ -82,6 +82,7 @@ const buildContext = (): XppServerContext => ({
     getSymbolByName: vi.fn(() => undefined),
     getCustomModels: vi.fn(() => ['MyModel']),
     db: createMockDb(),
+    getReadDb: vi.fn(function(this: any) { return this.db; }),
   } as any,
   parser: {} as any,
   cache: {

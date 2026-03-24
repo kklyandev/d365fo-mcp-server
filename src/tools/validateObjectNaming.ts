@@ -32,7 +32,7 @@ const EXTENSION_TYPES = new Set([
 export async function validateObjectNamingTool(request: CallToolRequest, context: XppServerContext) {
   try {
     const args = ValidateObjectNamingArgsSchema.parse(request.params.arguments);
-    const db = context.symbolIndex.db;
+    const db = context.symbolIndex.getReadDb();
 
     const errors: string[] = [];
     const warnings: string[] = [];

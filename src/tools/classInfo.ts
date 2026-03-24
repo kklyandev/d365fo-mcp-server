@@ -101,7 +101,7 @@ export async function classInfoTool(request: CallToolRequest, context: XppServer
     const classSymbol = symbolIndex.getSymbolByName(args.className, 'class');
 
     if (!classSymbol) {
-      const typeMismatch = buildObjectTypeMismatchMessage(symbolIndex.db, args.className);
+      const typeMismatch = buildObjectTypeMismatchMessage(symbolIndex.getReadDb(), args.className);
       return {
         content: [
           {

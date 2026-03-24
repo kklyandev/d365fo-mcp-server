@@ -41,6 +41,7 @@ const buildContext = (overrides: Partial<XppServerContext> = {}): XppServerConte
     getSymbolsByTerm: vi.fn(() => new Map()),
     searchCustomExtensions: vi.fn(() => []),
     db: { prepare: vi.fn(() => ({ all: vi.fn(() => []), get: vi.fn(() => undefined) })) },
+    getReadDb: vi.fn(function(this: any) { return this.db; }),
   } as any,
   cache: {
     get: vi.fn(async () => null),

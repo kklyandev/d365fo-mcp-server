@@ -26,7 +26,7 @@ export async function dataEntityInfoTool(request: CallToolRequest, context: XppS
     // Bridge returned nothing — try fuzzy name suggestions from DB
     let text = `Data entity not found: ${args.entityName}\n`;
     try {
-      const db = context.symbolIndex.db;
+      const db = context.symbolIndex.getReadDb();
       const suggestions = db.prepare(
         `SELECT name, model FROM symbols WHERE type = 'view' AND name LIKE ? ORDER BY name LIMIT 10`
       ).all(`%${args.entityName}%`) as any[];

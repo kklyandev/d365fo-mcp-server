@@ -127,8 +127,11 @@ export class XppSymbolIndex {
    * Returns the next read-only connection from the pool (round-robin).
    * Falls back to the main writer connection when the pool is empty
    * (e.g. :memory: databases used in write-only mode).
+   *
+   * Tool handlers should use this instead of accessing `db` directly
+   * to benefit from read-pool parallelism and per-connection stmt caching.
    */
-  private getReadDb(): Database.Database {
+  getReadDb(): Database.Database {
     if (this.readPool.length === 0) return this.db;
     return this.readPool[this.readPoolRR++ % this.readPool.length];
   }
@@ -155,8 +158,11 @@ export class XppSymbolIndex {
    * Get (or lazily prepare) a statement on a specific connection.
    * Uses the per-connection WeakMap cache so statements are never shared
    * across connections.
+   *
+   * Tool handlers should use `getReadStmt(index.getReadDb(), key, () => sql)`
+   * for repeated queries — avoids re-preparing the same SQL on every call.
    */
-  private getReadStmt(
+  getReadStmt(
     db: Database.Database,
     key: string,
     buildSql: () => string
@@ -349,6 +355,10 @@ export class XppSymbolIndex {
       CREATE INDEX IF NOT EXISTS idx_type_name ON symbols(type, name);
       CREATE INDEX IF NOT EXISTS idx_parent_type ON symbols(parent_name, type) WHERE parent_name IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_name_type ON symbols(name, type);
+      -- Covering index for field/method lookups by parent (avoids table access)
+      CREATE INDEX IF NOT EXISTS idx_parent_type_name ON symbols(parent_name, type, name) WHERE parent_name IS NOT NULL;
+      -- Index for extends_class lookups (CoC extension discovery)
+      CREATE INDEX IF NOT EXISTS idx_extends_class ON symbols(extends_class) WHERE extends_class IS NOT NULL;
     `);
 
     // Create code_patterns table for pattern analysis

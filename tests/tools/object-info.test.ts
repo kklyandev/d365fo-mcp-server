@@ -143,6 +143,7 @@ const buildContext = (overrides: Partial<XppServerContext> = {}): XppServerConte
     searchLabels: vi.fn(() => []),
     getCustomModels: vi.fn(() => []),
     db: { prepare: vi.fn(() => makeStmt()) },
+    getReadDb: vi.fn(function(this: any) { return this.db; }),
   } as any,
   parser: {
     parseClassFile: vi.fn(async () => ({ success: false })),
