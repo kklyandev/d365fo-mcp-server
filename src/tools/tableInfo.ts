@@ -50,7 +50,11 @@ export async function tableInfoTool(request: CallToolRequest, context: XppServer
 
     // Try C# bridge first (IMetadataProvider — live D365FO metadata)
     const bridgeResult = await tryBridgeTable(context.bridge, args.tableName, args.methodOffset);
-    if (bridgeResult) return bridgeResult;
+    if (bridgeResult) {
+      // Cache bridge result to avoid repeated IPC for the same table
+      await cache.setClassInfo(cacheKey, bridgeResult).catch(() => {});
+      return bridgeResult;
+    }
 
     // Query database and parse
     const tableSymbol = symbolIndex.getSymbolByName(args.tableName, 'table');

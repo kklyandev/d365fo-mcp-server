@@ -206,10 +206,21 @@ export async function tryBridgeMethodSource(
   try {
     const ms = await bridge.getMethodSource(className, methodName);
     if (!ms.found || !ms.source) return null;
+
+    // Detect [SysObsolete] / [Obsolete] — same logic as fallback path.
+    // Without this, bridge-returned source silently omits the deprecation warning
+    // and AI may generate calls to obsolete methods (violates system rule 26).
+    const obsoleteMatch = ms.source.match(/\[\s*SysObsolete\s*\(\s*['"]([^'"]*)['"]/i)
+      ?? ms.source.match(/\[\s*Obsolete\s*\(\s*['"]([^'"]*)['"]/i);
+    const obsoleteWarning = obsoleteMatch
+      ? `\n\n> ⚠️ **This method is marked obsolete.** Do NOT generate calls to it.\n> Replacement hint from the attribute: _"${obsoleteMatch[1]}"_\n> Read the hint above and use the stated replacement instead.`
+      : '';
+
     const text =
-      `# ${ms.className}.${ms.methodName}\n\n` +
-      `_Source: C# bridge (IMetadataProvider)_\n\n` +
-      `\`\`\`xpp\n${ms.source}\n\`\`\``;
+      `## ${ms.className}.${ms.methodName}\n\n` +
+      `_Source: C# bridge (IMetadataProvider)_\n` +
+      obsoleteWarning +
+      `\n\`\`\`xpp\n${ms.source}\n\`\`\``;
     return { content: [{ type: 'text', text }] };
   } catch (e) {
     console.error(`[BridgeAdapter] getMethodSource(${className}, ${methodName}) failed: ${e}`);

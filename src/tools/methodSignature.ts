@@ -10,6 +10,7 @@ import type { XppServerContext } from '../types/context.js';
 import { promises as fs } from 'fs';
 import { parseStringPromise } from 'xml2js';
 import { readMethodMetadata, buildObjectTypeMismatchMessage, type ExtractedMethod } from '../utils/metadataResolver.js';
+import type { BridgeClient } from '../bridge/bridgeClient.js';
 
 
 const GetMethodSignatureArgsSchema = z.object({
@@ -97,9 +98,17 @@ export async function getMethodSignatureTool(request: CallToolRequest, context: 
       throw new Error(`Method "${methodName}" not found in ${classRow.type} "${className}".`);
     }
 
-    // 3a. PRIMARY: extracted-metadata JSON (always available, no file path issues)
-    const extractedMethod = await readMethodMetadata(classRow.model, className, methodName);
+    // 3. Try C# bridge first (IMetadataProvider — live source, always current)
+    // Bridge returns full source → parse signature locally + detect obsolete.
+    // Eliminates JSON file I/O and XML parsing — one IPC call gets everything.
     const includeCoc = args.includeCocTemplate ?? false;
+    const bridgeSignature = await tryBridgeMethodSignature(
+      context.bridge, className, methodName, classRow.model, includeCoc, cache, cacheKey,
+    );
+    if (bridgeSignature) return bridgeSignature;
+
+    // 4a. PRIMARY: extracted-metadata JSON (always available, no file path issues)
+    const extractedMethod = await readMethodMetadata(classRow.model, className, methodName);
 
     if (extractedMethod) {
       const jsonSignature = buildSignatureFromExtractedMethod(extractedMethod);
@@ -109,7 +118,7 @@ export async function getMethodSignatureTool(request: CallToolRequest, context: 
       return result;
     }
 
-    // 3b. SECONDARY: XML file (only works when running on D365FO VM with correct paths)
+    // 4b. SECONDARY: XML file (only works when running on D365FO VM with correct paths)
     let methodSignature: MethodSignature | null = null;
     let xmlSource = '';
     try {
@@ -132,7 +141,7 @@ export async function getMethodSignatureTool(request: CallToolRequest, context: 
       return result;
     }
 
-    // 3c. FALLBACK: reconstruct from DB signature column
+    // 4c. FALLBACK: reconstruct from DB signature column
     const fallbackSignature = buildFallbackSignature(methodRow as any);
     const result = formatOutput(className, methodName, fallbackSignature, classRow.model, includeCoc);
     await cache.setClassInfo(cacheKey, result);
@@ -148,6 +157,40 @@ export async function getMethodSignatureTool(request: CallToolRequest, context: 
       ],
       isError: true,
     };
+  }
+}
+
+/**
+ * Try C# bridge for method signature.
+ * Bridge returns full source → parse signature locally + detect obsolete.
+ * This is the fastest path on Windows VMs (one IPC call, no JSON/XML file I/O).
+ * Returns null to signal fallback when bridge is unavailable.
+ */
+async function tryBridgeMethodSignature(
+  bridge: BridgeClient | undefined,
+  className: string,
+  methodName: string,
+  modelName: string,
+  includeCoc: boolean,
+  cache: any,
+  cacheKey: string,
+): Promise<any | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const ms = await bridge.getMethodSource(className, methodName);
+    if (!ms.found || !ms.source) return null;
+
+    // Parse signature from full source — same function used by the XML path
+    const signature = parseMethodSignature(ms.source, methodName);
+    if (!signature) return null;
+
+    const obsoleteWarning = detectObsolete(ms.source);
+    const result = formatOutput(className, methodName, signature, modelName, includeCoc, obsoleteWarning);
+    await cache.setClassInfo(cacheKey, result);
+    return result;
+  } catch (e) {
+    console.error(`[methodSignature] Bridge getMethodSource(${className}, ${methodName}) failed: ${e}`);
+    return null;
   }
 }
 
