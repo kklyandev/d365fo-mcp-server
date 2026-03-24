@@ -38,6 +38,7 @@ import type {
   BridgeValidateResult,
   BridgeResolveResult,
   BridgeRefreshResult,
+  BridgeWriteResult,
 } from './bridgeTypes.js';
 
 // Re-export types for convenience
@@ -360,6 +361,47 @@ export class BridgeClient extends EventEmitter {
   /** Check if an object exists in IMetadataProvider and return its model. */
   async resolveObjectInfo(objectType: string, objectName: string): Promise<BridgeResolveResult | null> {
     return this.call<BridgeResolveResult | null>('resolveObjectInfo', { objectType, objectName });
+  }
+
+  // ========================================
+  // Write operations (Phase 4)
+  // ========================================
+
+  /** Create a D365FO object via IMetadataProvider.Create() */
+  async createObject(params: {
+    objectType: string;
+    objectName: string;
+    modelName: string;
+    declaration?: string;
+    methods?: { name: string; source?: string }[];
+    fields?: Record<string, unknown>[];
+    fieldGroups?: Record<string, unknown>[];
+    indexes?: Record<string, unknown>[];
+    relations?: Record<string, unknown>[];
+    values?: Record<string, unknown>[];
+    properties?: Record<string, string>;
+  }): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('createObject', params);
+  }
+
+  /** Add or replace a method on a class or table via IMetadataProvider.Update() */
+  async addMethod(objectType: string, objectName: string, methodName: string, sourceCode: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('addMethod', { objectType, objectName, methodName, sourceCode });
+  }
+
+  /** Add a field to a table via IMetadataProvider.Update() */
+  async addField(objectName: string, fieldName: string, fieldType: string, edt?: string, mandatory?: boolean, label?: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('addField', { objectName, fieldName, fieldType, edt, mandatory, label });
+  }
+
+  /** Set a property on any object via IMetadataProvider.Update() */
+  async setProperty(objectType: string, objectName: string, propertyPath: string, propertyValue: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('setProperty', { objectType, objectName, propertyPath, propertyValue });
+  }
+
+  /** Replace code within a method via IMetadataProvider.Update() */
+  async replaceCode(objectType: string, objectName: string, methodName: string | undefined, oldCode: string, newCode: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('replaceCode', { objectType, objectName, methodName, oldCode, newCode });
   }
 
   // ========================================

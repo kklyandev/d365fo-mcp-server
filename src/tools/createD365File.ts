@@ -13,7 +13,7 @@ import { registerCustomModel, resolveObjectPrefix, applyObjectPrefix } from '../
 import { PackageResolver } from '../utils/packageResolver.js';
 import { ensureXppDocComment, ensureBlankLineBeforeClosingBrace } from '../utils/xppDocGen.js';
 import { decodeXmlEntitiesFromXppSource } from './modifyD365File.js';
-import { bridgeValidateAfterWrite } from '../bridge/index.js';
+import { bridgeValidateAfterWrite, canBridgeCreate, bridgeCreateObject } from '../bridge/index.js';
 
 /**
  * Per-project-file mutex to serialise concurrent addToProject calls.
@@ -480,6 +480,28 @@ export class XmlTemplateGenerator {
     return {
       declaration: classHeader + memberVarsXpp + '}',
       methods,
+    };
+  }
+
+  /**
+   * Parse X++ sourceCode into declaration + methods for the C# bridge.
+   *
+   * Used by the bridge-first creation path in create_d365fo_file — the C# side
+   * expects declaration (class header + member vars) and an array of method
+   * objects {name, source} which it sets on the AxClass via IMetadataProvider.
+   *
+   * Delegates to splitXppClassSource after decoding any XML entities.
+   */
+  static parseSourceForBridge(sourceCode: string): {
+    declaration: string;
+    methods: { name: string; source?: string }[];
+  } {
+    // Same entity-decoding as generateAxClassXml to handle AI-generated &lt; etc.
+    const cleaned = decodeXmlEntitiesFromXppSource(sourceCode);
+    const result = XmlTemplateGenerator.splitXppClassSource(cleaned);
+    return {
+      declaration: result.declaration,
+      methods: result.methods,
     };
   }
 
@@ -3481,6 +3503,81 @@ export async function handleCreateD365File(
             },
           ],
         };
+      }
+    }
+
+    // ── Phase 4: Bridge-first creation via IMetadataProvider.Create() ──
+    // For class/table/enum/edt: try C# bridge first (correct XML guaranteed by API).
+    // Falls back to TypeScript XML generation if bridge unavailable or unsupported type.
+    if (!args.xmlContent && context?.bridge && actualModelName && canBridgeCreate(args.objectType)) {
+      try {
+        // Prepare parameters for the bridge
+        const bridgeParams: Parameters<typeof bridgeCreateObject>[1] = {
+          objectType: args.objectType,
+          objectName: finalObjectName,
+          modelName: actualModelName,
+          properties: (args.properties as Record<string, string>) ?? undefined,
+        };
+
+        // For classes: parse sourceCode into declaration + methods
+        if ((args.objectType === 'class' || args.objectType === 'class-extension') && args.sourceCode) {
+          const parsed = XmlTemplateGenerator.parseSourceForBridge(args.sourceCode);
+          bridgeParams.declaration = parsed.declaration;
+          bridgeParams.methods = parsed.methods;
+        }
+
+        // For tables: pass fields, fieldGroups, indexes, relations from properties
+        if (args.objectType === 'table' && args.properties) {
+          const props = args.properties as Record<string, unknown>;
+          if (props.fields) bridgeParams.fields = props.fields as Record<string, unknown>[];
+          if (props.fieldGroups) bridgeParams.fieldGroups = props.fieldGroups as Record<string, unknown>[];
+          if (props.indexes) bridgeParams.indexes = props.indexes as Record<string, unknown>[];
+          if (props.relations) bridgeParams.relations = props.relations as Record<string, unknown>[];
+          if (props.methods) bridgeParams.methods = props.methods as { name: string; source?: string }[];
+        }
+
+        // For enums: pass values from properties
+        if (args.objectType === 'enum' && args.properties) {
+          const props = args.properties as Record<string, unknown>;
+          if (props.values) bridgeParams.values = props.values as Record<string, unknown>[];
+        }
+
+        const bridgeResult = await bridgeCreateObject(context.bridge, bridgeParams);
+        if (bridgeResult?.success && bridgeResult.filePath) {
+          console.error(`[create_d365fo_file] ✅ Created via C# bridge: ${bridgeResult.filePath}`);
+
+          // Add to .rnrproj if requested
+          let projectMsg = '';
+          if (args.addToProject !== false && projectPathToUse) {
+            try {
+              const projectManager = new ProjectFileManager();
+              await projectManager.addToProject(
+                projectPathToUse,
+                args.objectType,
+                finalObjectName,
+                bridgeResult.filePath,
+              );
+              projectMsg = `\n✅ Added to project: ${path.basename(projectPathToUse)}`;
+            } catch (projErr) {
+              projectMsg = `\n⚠️ Could not add to project: ${projErr}`;
+            }
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `✅ Created ${args.objectType} '${finalObjectName}' via IMetadataProvider.Create()\n` +
+                  `📁 ${bridgeResult.filePath}${projectMsg}\n` +
+                  `🔧 API: ${bridgeResult.message}`,
+              },
+            ],
+          };
+        }
+        // If bridge returned null or success=false, fall through to XML generation
+        console.error(`[create_d365fo_file] Bridge returned ${JSON.stringify(bridgeResult)} — falling back to XML generation`);
+      } catch (bridgeErr) {
+        console.error(`[create_d365fo_file] Bridge create failed, falling back to XML: ${bridgeErr}`);
       }
     }
 

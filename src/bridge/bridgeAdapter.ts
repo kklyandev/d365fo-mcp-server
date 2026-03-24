@@ -635,3 +635,190 @@ export async function bridgeResolveObject(
     return null;
   }
 }
+
+// ========================================
+// Write operations (Phase 4)
+// ========================================
+
+/**
+ * Supported object types for bridge-based creation.
+ * Other types (forms, queries, reports, security, menu items, extensions)
+ * continue using the TypeScript XML generation.
+ */
+const BRIDGE_CREATE_TYPES = new Set(['class', 'table', 'enum', 'edt']);
+
+/**
+ * Supported operations for bridge-based modification.
+ * Other operations (add-index, add-relation, add-control, add-data-source, etc.)
+ * continue using the TypeScript xml2js approach.
+ */
+const BRIDGE_MODIFY_OPS = new Set(['add-method', 'add-field', 'modify-property', 'replace-code']);
+
+/**
+ * Supported object types for bridge-based modification.
+ */
+const BRIDGE_MODIFY_TYPES = new Set(['class', 'table', 'enum', 'edt']);
+
+/**
+ * Checks if bridge can handle this create operation.
+ */
+export function canBridgeCreate(objectType: string): boolean {
+  return BRIDGE_CREATE_TYPES.has(objectType.toLowerCase());
+}
+
+/**
+ * Checks if bridge can handle this modify operation.
+ */
+export function canBridgeModify(objectType: string, operation: string): boolean {
+  return BRIDGE_MODIFY_TYPES.has(objectType.toLowerCase()) && BRIDGE_MODIFY_OPS.has(operation.toLowerCase());
+}
+
+/**
+ * Creates a D365FO object via the C# bridge (IMetadataProvider.Create()).
+ * Returns { success, filePath, api } or null if bridge unavailable.
+ */
+export async function bridgeCreateObject(
+  bridge: BridgeClient | undefined,
+  params: {
+    objectType: string;
+    objectName: string;
+    modelName: string;
+    declaration?: string;
+    methods?: { name: string; source?: string }[];
+    fields?: Record<string, unknown>[];
+    fieldGroups?: Record<string, unknown>[];
+    indexes?: Record<string, unknown>[];
+    relations?: Record<string, unknown>[];
+    values?: Record<string, unknown>[];
+    properties?: Record<string, string>;
+  },
+): Promise<{ success: boolean; filePath?: string; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  if (!canBridgeCreate(params.objectType)) return null;
+
+  try {
+    const result = await bridge.createObject(params);
+    if (result.success) {
+      return {
+        success: true,
+        filePath: result.filePath,
+        message: `✅ Created via ${result.api ?? 'IMetadataProvider'} — file: ${result.filePath}`,
+      };
+    } else {
+      return { success: false, message: `Bridge createObject returned success=false` };
+    }
+  } catch (e) {
+    console.error(`[BridgeAdapter] createObject(${params.objectType}, ${params.objectName}) failed: ${e}`);
+    return null; // Signal to caller: fall back to XML generation
+  }
+}
+
+/**
+ * Adds/replaces a method via the C# bridge (IMetadataProvider.Update()).
+ */
+export async function bridgeAddMethod(
+  bridge: BridgeClient | undefined,
+  objectType: string,
+  objectName: string,
+  methodName: string,
+  sourceCode: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  if (!BRIDGE_MODIFY_TYPES.has(objectType.toLowerCase())) return null;
+
+  try {
+    const result = await bridge.addMethod(objectType, objectName, methodName, sourceCode);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Method '${methodName}' added via ${result.api}`
+        : `Bridge addMethod returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] addMethod(${objectType}, ${objectName}, ${methodName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Adds a field to a table via the C# bridge (IMetadataProvider.Update()).
+ */
+export async function bridgeAddField(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  fieldName: string,
+  fieldType: string,
+  edt?: string,
+  mandatory?: boolean,
+  label?: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+
+  try {
+    const result = await bridge.addField(tableName, fieldName, fieldType, edt, mandatory, label);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Field '${fieldName}' added via ${result.api}`
+        : `Bridge addField returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] addField(${tableName}, ${fieldName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Sets a property via the C# bridge (IMetadataProvider.Update()).
+ */
+export async function bridgeSetProperty(
+  bridge: BridgeClient | undefined,
+  objectType: string,
+  objectName: string,
+  propertyPath: string,
+  propertyValue: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  if (!BRIDGE_MODIFY_TYPES.has(objectType.toLowerCase())) return null;
+
+  try {
+    const result = await bridge.setProperty(objectType, objectName, propertyPath, propertyValue);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Property '${propertyPath}'='${propertyValue}' set via ${result.api}`
+        : `Bridge setProperty returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] setProperty(${objectType}, ${objectName}, ${propertyPath}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Replaces code in a method via the C# bridge (IMetadataProvider.Update()).
+ */
+export async function bridgeReplaceCode(
+  bridge: BridgeClient | undefined,
+  objectType: string,
+  objectName: string,
+  methodName: string | undefined,
+  oldCode: string,
+  newCode: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  if (!BRIDGE_MODIFY_TYPES.has(objectType.toLowerCase())) return null;
+
+  try {
+    const result = await bridge.replaceCode(objectType, objectName, methodName, oldCode, newCode);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Code replaced via ${result.api}`
+        : `Bridge replaceCode returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] replaceCode(${objectType}, ${objectName}) failed: ${e}`);
+    return null;
+  }
+}

@@ -17,6 +17,16 @@ namespace D365MetadataBridge.Services
         private IMetadataProvider _provider;
         private readonly string _packagesPath;
 
+        /// <summary>
+        /// Exposes the current provider for MetadataWriteService initialization.
+        /// </summary>
+        public IMetadataProvider Provider => _provider;
+
+        /// <summary>
+        /// Optional callback invoked after RefreshProvider() so the write service can stay in sync.
+        /// </summary>
+        public Action<IMetadataProvider>? OnProviderRefreshed { get; set; }
+
         public MetadataReadService(string packagesPath)
         {
             _packagesPath = packagesPath;
@@ -32,13 +42,14 @@ namespace D365MetadataBridge.Services
 
         /// <summary>
         /// Re-creates the DiskProvider so newly written files are picked up.
-        /// Call after create_d365fo_file or modify_d365fo_file writes to disk.
+        /// Notifies the write service via OnProviderRefreshed callback.
         /// </summary>
         public object RefreshProvider()
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var factory = new MetadataProviderFactory();
             _provider = factory.CreateDiskProvider(_packagesPath);
+            OnProviderRefreshed?.Invoke(_provider);
             sw.Stop();
             Console.Error.WriteLine($"[MetadataService] Provider refreshed in {sw.ElapsedMilliseconds}ms");
             return new { refreshed = true, elapsedMs = sw.ElapsedMilliseconds };
@@ -576,6 +587,10 @@ namespace D365MetadataBridge.Services
         private static bool IsYes(Func<object> f) { try { return f()?.ToString() == "Yes"; } catch { return false; } }
         private static int SafeInt(Func<int> f, int d) { try { return f(); } catch { return d; } }
         private static void Warn(string section, string obj, Exception ex) => Console.Error.WriteLine($"[WARN] Error reading {section} for {obj}: {ex.Message}");
+
+        // ========================
+        // DIAGNOSTIC: Probe IMetadataProvider write capability
+        // ========================
 
         private FieldInfoModel MapField(AxTableField field)
         {

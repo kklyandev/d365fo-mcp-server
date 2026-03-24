@@ -335,3 +335,70 @@ export interface BridgeRefreshResult {
   refreshed: boolean;
   elapsedMs: number;
 }
+
+// ===========================
+// Write operation types (Phase 4)
+// ===========================
+
+/** Result from createObject / addMethod / addField / setProperty / replaceCode */
+export interface BridgeWriteResult {
+  success: boolean;
+  objectType?: string;
+  objectName?: string;
+  modelName?: string;
+  filePath?: string;
+  operation?: string;
+  methodName?: string;
+  fieldName?: string;
+  fieldType?: string;
+  propertyPath?: string;
+  propertyValue?: string;
+  api?: string;
+}
+
+/** Method parameter for createObject */
+export interface BridgeMethodParam {
+  name: string;
+  source?: string;
+}
+
+/** Field parameter for createObject (table) */
+export interface BridgeFieldParam {
+  name: string;
+  fieldType?: string;
+  edt?: string;
+  enumType?: string;
+  mandatory?: boolean;
+  label?: string;
+  helpText?: string;
+  stringSize?: number;
+}
+
+/** Field group parameter for createObject (table) */
+export interface BridgeFieldGroupParam {
+  name: string;
+  label?: string;
+  fields?: string[];
+}
+
+/** Index parameter for createObject (table) */
+export interface BridgeIndexParam {
+  name: string;
+  allowDuplicates?: boolean;
+  alternateKey?: boolean;
+  fields?: string[];
+}
+
+/** Relation parameter for createObject (table) */
+export interface BridgeRelationParam {
+  name: string;
+  relatedTable?: string;
+  constraints?: { field?: string; relatedField?: string }[];
+}
+
+/** Enum value parameter for createObject (enum) */
+export interface BridgeEnumValueParam {
+  name: string;
+  value: number;
+  label?: string;
+}

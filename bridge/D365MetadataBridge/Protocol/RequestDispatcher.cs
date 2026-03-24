@@ -10,11 +10,13 @@ namespace D365MetadataBridge.Protocol
     public class RequestDispatcher
     {
         private readonly MetadataReadService? _metadataService;
+        private readonly MetadataWriteService? _writeService;
         private readonly CrossReferenceService? _xrefService;
 
-        public RequestDispatcher(MetadataReadService? metadataService, CrossReferenceService? xrefService)
+        public RequestDispatcher(MetadataReadService? metadataService, MetadataWriteService? writeService, CrossReferenceService? xrefService)
         {
             _metadataService = metadataService;
+            _writeService = writeService;
             _xrefService = xrefService;
         }
 
@@ -160,13 +162,16 @@ namespace D365MetadataBridge.Protocol
                             version = "1.0.0",
                             metadataAvailable = _metadataService != null,
                             xrefAvailable = _xrefService != null,
+                            writeAvailable = _writeService != null,
                             capabilities = new[]
                             {
                                 "ping", "readTable", "readClass", "readEnum", "readEdt",
                                 "readForm", "readQuery", "readView", "readDataEntity",
                                 "readReport", "getMethodSource", "searchObjects",
                                 "listObjects", "findReferences", "getInfo",
-                                "validateObject", "resolveObjectInfo", "refreshProvider"
+                                "validateObject", "resolveObjectInfo", "refreshProvider",
+                                "createObject", "addMethod", "addField",
+                                "setProperty", "replaceCode"
                             }
                         }));
 
@@ -197,6 +202,106 @@ namespace D365MetadataBridge.Protocol
                             return _metadataService!.RefreshProvider();
                         });
 
+                    // === Write Operations (via MetadataWriteService) ===
+                    case "createobject":
+                        return HandleWrite(request, () =>
+                        {
+                            var objectType = request.GetStringParam("objectType")
+                                ?? throw new ArgumentException("Missing: objectType");
+                            var objectName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var modelName = request.GetStringParam("modelName")
+                                ?? throw new ArgumentException("Missing: modelName");
+
+                            switch (objectType.ToLowerInvariant())
+                            {
+                                case "class":
+                                case "class-extension":
+                                    return _writeService!.CreateClass(objectName, modelName,
+                                        request.GetStringParam("declaration"),
+                                        request.GetParam<System.Collections.Generic.List<WriteMethodParam>>("methods"),
+                                        request.GetDictParam("properties"));
+
+                                case "table":
+                                    return _writeService!.CreateTable(objectName, modelName,
+                                        request.GetParam<System.Collections.Generic.List<WriteFieldParam>>("fields"),
+                                        request.GetParam<System.Collections.Generic.List<WriteFieldGroupParam>>("fieldGroups"),
+                                        request.GetParam<System.Collections.Generic.List<WriteIndexParam>>("indexes"),
+                                        request.GetParam<System.Collections.Generic.List<WriteRelationParam>>("relations"),
+                                        request.GetParam<System.Collections.Generic.List<WriteMethodParam>>("methods"),
+                                        request.GetDictParam("properties"));
+
+                                case "enum":
+                                    return _writeService!.CreateEnum(objectName, modelName,
+                                        request.GetParam<System.Collections.Generic.List<WriteEnumValueParam>>("values"),
+                                        request.GetDictParam("properties"));
+
+                                case "edt":
+                                    return _writeService!.CreateEdt(objectName, modelName,
+                                        request.GetDictParam("properties"));
+
+                                default:
+                                    throw new ArgumentException($"createObject not supported for '{objectType}' via bridge — use XML fallback");
+                            }
+                        });
+
+                    case "addmethod":
+                        return HandleWrite(request, () =>
+                        {
+                            var objectType = request.GetStringParam("objectType")
+                                ?? throw new ArgumentException("Missing: objectType");
+                            var objectName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var methodName = request.GetStringParam("methodName")
+                                ?? throw new ArgumentException("Missing: methodName");
+                            var source = request.GetStringParam("sourceCode")
+                                ?? throw new ArgumentException("Missing: sourceCode");
+                            return _writeService!.AddMethod(objectType, objectName, methodName, source);
+                        });
+
+                    case "addfield":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var fieldName = request.GetStringParam("fieldName")
+                                ?? throw new ArgumentException("Missing: fieldName");
+                            return _writeService!.AddField(tableName, fieldName,
+                                request.GetStringParam("fieldType") ?? "String",
+                                request.GetStringParam("edt"),
+                                request.GetBoolParam("mandatory") ?? false,
+                                request.GetStringParam("label"));
+                        });
+
+                    case "setproperty":
+                        return HandleWrite(request, () =>
+                        {
+                            var objectType = request.GetStringParam("objectType")
+                                ?? throw new ArgumentException("Missing: objectType");
+                            var objectName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var propertyPath = request.GetStringParam("propertyPath")
+                                ?? throw new ArgumentException("Missing: propertyPath");
+                            var propertyValue = request.GetStringParam("propertyValue")
+                                ?? throw new ArgumentException("Missing: propertyValue");
+                            return _writeService!.SetProperty(objectType, objectName, propertyPath, propertyValue);
+                        });
+
+                    case "replacecode":
+                        return HandleWrite(request, () =>
+                        {
+                            var objectType = request.GetStringParam("objectType")
+                                ?? throw new ArgumentException("Missing: objectType");
+                            var objectName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var oldCode = request.GetStringParam("oldCode")
+                                ?? throw new ArgumentException("Missing: oldCode");
+                            var newCode = request.GetStringParam("newCode")
+                                ?? throw new ArgumentException("Missing: newCode");
+                            return _writeService!.ReplaceCode(objectType, objectName,
+                                request.GetStringParam("methodName"), oldCode, newCode);
+                        });
+
                     default:
                         return Task.FromResult(
                             BridgeResponse.CreateError(request.Id, -32601, $"Unknown method: {request.Method}"));
@@ -221,6 +326,34 @@ namespace D365MetadataBridge.Protocol
                 if (result == null)
                     return Task.FromResult(
                         BridgeResponse.CreateError(request.Id, -32001, "Object not found"));
+
+                return Task.FromResult(BridgeResponse.CreateSuccess(request.Id, result));
+            }
+            catch (ArgumentException ex)
+            {
+                return Task.FromResult(
+                    BridgeResponse.CreateError(request.Id, -32602, ex.Message));
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[ERROR] {request.Method}: {ex.Message}\n{ex.StackTrace}");
+                return Task.FromResult(
+                    BridgeResponse.CreateError(request.Id, -32603, $"Error in {request.Method}: {ex.Message}"));
+            }
+        }
+
+        private Task<BridgeResponse> HandleWrite(BridgeRequest request, Func<object?> handler)
+        {
+            if (_writeService == null)
+                return Task.FromResult(
+                    BridgeResponse.CreateError(request.Id, -32000, "Write service not available"));
+
+            try
+            {
+                var result = handler();
+                if (result == null)
+                    return Task.FromResult(
+                        BridgeResponse.CreateError(request.Id, -32001, "Write operation returned null"));
 
                 return Task.FromResult(BridgeResponse.CreateSuccess(request.Id, result));
             }

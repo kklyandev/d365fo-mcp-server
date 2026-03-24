@@ -34,4 +34,11 @@ export {
   bridgeRefreshProvider,
   bridgeValidateAfterWrite,
   bridgeResolveObject,
+  canBridgeCreate,
+  canBridgeModify,
+  bridgeCreateObject,
+  bridgeAddMethod,
+  bridgeAddField,
+  bridgeSetProperty,
+  bridgeReplaceCode,
 } from './bridgeAdapter.js';
