@@ -556,6 +556,230 @@ namespace D365MetadataBridge.Services
         }
 
         // ========================
+        // CREATE EXTENSION OBJECTS
+        // ========================
+
+        /// <summary>
+        /// Creates a new AxTableExtension via DiskProvider.
+        /// Extension name format: "BaseTable.ModelExtension"
+        /// </summary>
+        public object CreateTableExtension(string name, string modelName,
+            List<WriteFieldParam>? fields, List<WriteFieldGroupParam>? fieldGroups,
+            List<WriteIndexParam>? indexes, List<WriteRelationParam>? relations,
+            List<WriteMethodParam>? methods, Dictionary<string, string>? properties)
+        {
+            var msi = ResolveModelSaveInfo(modelName)
+                ?? throw new ArgumentException($"Model '{modelName}' not found in {_packagesPath}");
+
+            var axExt = new AxTableExtension { Name = name };
+
+            // Add fields
+            if (fields != null)
+            {
+                foreach (var f in fields)
+                {
+                    var axField = CreateTableField(f);
+                    axExt.Fields.Add(axField);
+                }
+            }
+
+            // Add field groups
+            if (fieldGroups != null)
+            {
+                foreach (var fg in fieldGroups)
+                {
+                    var axFg = new AxTableFieldGroup { Name = fg.Name, Label = fg.Label };
+                    if (fg.Fields != null)
+                    {
+                        foreach (var fieldRef in fg.Fields)
+                            axFg.AddField(new AxTableFieldGroupField { DataField = fieldRef });
+                    }
+                    axExt.FieldGroups.Add(axFg);
+                }
+            }
+
+            // Add indexes
+            if (indexes != null)
+            {
+                foreach (var ix in indexes)
+                {
+                    var axIdx = new AxTableIndex { Name = ix.Name };
+                    axIdx.AllowDuplicates = ix.AllowDuplicates
+                        ? Microsoft.Dynamics.AX.Metadata.Core.MetaModel.NoYes.Yes
+                        : Microsoft.Dynamics.AX.Metadata.Core.MetaModel.NoYes.No;
+                    if (ix.AlternateKey)
+                        axIdx.AlternateKey = Microsoft.Dynamics.AX.Metadata.Core.MetaModel.NoYes.Yes;
+                    if (ix.Fields != null)
+                    {
+                        foreach (var ixf in ix.Fields)
+                            axIdx.AddField(new AxTableIndexField { DataField = ixf });
+                    }
+                    axExt.Indexes.Add(axIdx);
+                }
+            }
+
+            // Add relations
+            if (relations != null)
+            {
+                foreach (var rel in relations)
+                {
+                    var axRel = new AxTableRelation { Name = rel.Name, RelatedTable = rel.RelatedTable ?? "" };
+                    if (rel.Constraints != null)
+                    {
+                        foreach (var c in rel.Constraints)
+                        {
+                            axRel.AddConstraint(new AxTableRelationConstraintField
+                            {
+                                Name = c.Field ?? "",
+                                Field = c.Field ?? "",
+                                RelatedField = c.RelatedField ?? ""
+                            });
+                        }
+                    }
+                    axExt.Relations.Add(axRel);
+                }
+            }
+
+            // Add methods
+            if (methods != null)
+            {
+                foreach (var m in methods)
+                    axExt.Methods.Add(new AxMethod { Name = m.Name, Source = m.Source ?? "" });
+            }
+
+            var provider = _provider.TableExtensions as IMetaTableExtensionProvider
+                ?? throw new InvalidOperationException("DiskProvider.TableExtensions does not implement IMetaTableExtensionProvider");
+            provider.Create(axExt, msi);
+
+            var filePath = GetExpectedPath("AxTableExtension", name, modelName);
+            return new { success = true, objectType = "table-extension", objectName = name, modelName, filePath, api = "IMetaTableExtensionProvider.Create" };
+        }
+
+        /// <summary>
+        /// Creates a new AxFormExtension via DiskProvider.
+        /// Extension name format: "BaseForm.ModelExtension"
+        /// </summary>
+        public object CreateFormExtension(string name, string modelName,
+            List<WriteMethodParam>? methods, Dictionary<string, string>? properties)
+        {
+            var msi = ResolveModelSaveInfo(modelName)
+                ?? throw new ArgumentException($"Model '{modelName}' not found in {_packagesPath}");
+
+            var axExt = new AxFormExtension { Name = name };
+
+            if (methods != null)
+            {
+                foreach (var m in methods)
+                    axExt.Methods.Add(new AxMethod { Name = m.Name, Source = m.Source ?? "" });
+            }
+
+            var provider = _provider.FormExtensions as IMetaFormExtensionProvider
+                ?? throw new InvalidOperationException("DiskProvider.FormExtensions does not implement IMetaFormExtensionProvider");
+            provider.Create(axExt, msi);
+
+            var filePath = GetExpectedPath("AxFormExtension", name, modelName);
+            return new { success = true, objectType = "form-extension", objectName = name, modelName, filePath, api = "IMetaFormExtensionProvider.Create" };
+        }
+
+        /// <summary>
+        /// Creates a new AxEnumExtension via DiskProvider.
+        /// Extension name format: "BaseEnum.ModelExtension"
+        /// </summary>
+        public object CreateEnumExtension(string name, string modelName,
+            List<WriteEnumValueParam>? values, Dictionary<string, string>? properties)
+        {
+            var msi = ResolveModelSaveInfo(modelName)
+                ?? throw new ArgumentException($"Model '{modelName}' not found in {_packagesPath}");
+
+            var axExt = new AxEnumExtension { Name = name };
+
+            if (values != null)
+            {
+                foreach (var v in values)
+                {
+                    var axVal = new AxEnumExtensionValue { Name = v.Name, Value = v.Value };
+                    if (!string.IsNullOrEmpty(v.Label)) axVal.Label = v.Label;
+                    axExt.EnumValues.Add(axVal);
+                }
+            }
+
+            var provider = _provider.EnumExtensions as IMetaEnumExtensionProvider
+                ?? throw new InvalidOperationException("DiskProvider.EnumExtensions does not implement IMetaEnumExtensionProvider");
+            provider.Create(axExt, msi);
+
+            var filePath = GetExpectedPath("AxEnumExtension", name, modelName);
+            return new { success = true, objectType = "enum-extension", objectName = name, modelName, filePath, api = "IMetaEnumExtensionProvider.Create" };
+        }
+
+        /// <summary>
+        /// Creates a new AxForm via IMetaFormProvider.Create().
+        /// Note: Only basic structure (name, data sources, methods). Complex design trees should
+        /// use xmlContent fallback. Controls are not added during creation.
+        /// </summary>
+        public object CreateForm(string name, string modelName,
+            List<WriteMethodParam>? methods, Dictionary<string, string>? properties)
+        {
+            var msi = ResolveModelSaveInfo(modelName)
+                ?? throw new ArgumentException($"Model '{modelName}' not found in {_packagesPath}");
+
+            var axForm = new AxForm { Name = name };
+
+            if (properties != null)
+            {
+                foreach (var kv in properties)
+                {
+                    switch (kv.Key.ToLowerInvariant())
+                    {
+                        case "label": axForm.Design.Caption = kv.Value; break;
+                        case "caption": axForm.Design.Caption = kv.Value; break;
+                    }
+                }
+            }
+
+            if (methods != null)
+            {
+                foreach (var m in methods)
+                    axForm.AddMethod(new AxMethod { Name = m.Name, Source = m.Source ?? "" });
+            }
+
+            var provider = _provider.Forms as IMetaFormProvider
+                ?? throw new InvalidOperationException("DiskProvider.Forms does not implement IMetaFormProvider");
+            provider.Create(axForm, msi);
+
+            var filePath = GetExpectedPath("AxForm", name, modelName);
+            return new { success = true, objectType = "form", objectName = name, modelName, filePath, api = "IMetaFormProvider.Create" };
+        }
+
+        /// <summary>
+        /// Creates a new AxMenu via DiskProvider.
+        /// </summary>
+        public object CreateMenu(string name, string modelName, Dictionary<string, string>? properties)
+        {
+            var msi = ResolveModelSaveInfo(modelName)
+                ?? throw new ArgumentException($"Model '{modelName}' not found in {_packagesPath}");
+
+            var axMenu = new AxMenu { Name = name };
+
+            if (properties != null)
+            {
+                foreach (var kv in properties)
+                {
+                    switch (kv.Key.ToLowerInvariant())
+                    {
+                        case "label": axMenu.Label = kv.Value; break;
+                    }
+                }
+            }
+
+            var provider = _provider.Menus as IMetaMenuProvider
+                ?? throw new InvalidOperationException("DiskProvider.Menus does not implement IMetaMenuProvider");
+            provider.Create(axMenu, msi);
+
+            var filePath = GetExpectedPath("AxMenu", name, modelName);
+            return new { success = true, objectType = "menu", objectName = name, modelName, filePath, api = "IMetaMenuProvider.Create" };
+        }
+
+        // ========================
         // MODIFY OPERATIONS
         // ========================
 
@@ -850,6 +1074,490 @@ namespace D365MetadataBridge.Services
         }
 
         // ========================
+        // REMOVE METHOD
+        // ========================
+
+        /// <summary>
+        /// Removes a method from a class, table, form, query, or view.
+        /// Read → remove method → Update.
+        /// </summary>
+        public object RemoveMethod(string objectType, string objectName, string methodName)
+        {
+            switch (objectType.ToLowerInvariant())
+            {
+                case "class":
+                {
+                    var obj = _provider.Classes.Read(objectName)
+                        ?? throw new ArgumentException($"Class '{objectName}' not found");
+                    var msi = GetModelSaveInfoForObject(_provider.Classes, objectName);
+                    if (!RemoveMethodByName(obj, methodName))
+                        throw new InvalidOperationException($"Method '{methodName}' not found on class '{objectName}'");
+                    ((IMetaClassProvider)_provider.Classes).Update(obj, msi);
+                    return new { success = true, operation = "remove-method", objectType, objectName, methodName, api = "IMetaClassProvider.Update" };
+                }
+                case "table":
+                {
+                    var obj = _provider.Tables.Read(objectName)
+                        ?? throw new ArgumentException($"Table '{objectName}' not found");
+                    var msi = GetModelSaveInfoForObject(_provider.Tables, objectName);
+                    if (!RemoveMethodByName(obj, methodName))
+                        throw new InvalidOperationException($"Method '{methodName}' not found on table '{objectName}'");
+                    ((IMetaTableProvider)_provider.Tables).Update(obj, msi);
+                    return new { success = true, operation = "remove-method", objectType, objectName, methodName, api = "IMetaTableProvider.Update" };
+                }
+                case "form":
+                {
+                    var obj = _provider.Forms.Read(objectName)
+                        ?? throw new ArgumentException($"Form '{objectName}' not found");
+                    var msi = GetModelSaveInfoForObject(_provider.Forms, objectName);
+                    if (!RemoveMethodByName(obj, methodName))
+                        throw new InvalidOperationException($"Method '{methodName}' not found on form '{objectName}'");
+                    ((IMetaFormProvider)_provider.Forms).Update(obj, msi);
+                    return new { success = true, operation = "remove-method", objectType, objectName, methodName, api = "IMetaFormProvider.Update" };
+                }
+                case "query":
+                {
+                    var obj = _provider.Queries.Read(objectName)
+                        ?? throw new ArgumentException($"Query '{objectName}' not found");
+                    var msi = GetModelSaveInfoForObject(_provider.Queries, objectName);
+                    if (!RemoveMethodByName(obj, methodName))
+                        throw new InvalidOperationException($"Method '{methodName}' not found on query '{objectName}'");
+                    ((IMetaQueryProvider)_provider.Queries).Update(obj, msi);
+                    return new { success = true, operation = "remove-method", objectType, objectName, methodName, api = "IMetaQueryProvider.Update" };
+                }
+                case "view":
+                {
+                    var obj = _provider.Views.Read(objectName)
+                        ?? throw new ArgumentException($"View '{objectName}' not found");
+                    var msi = GetModelSaveInfoForObject(_provider.Views, objectName);
+                    if (!RemoveMethodByName(obj, methodName))
+                        throw new InvalidOperationException($"Method '{methodName}' not found on view '{objectName}'");
+                    ((IMetaViewProvider)_provider.Views).Update(obj, msi);
+                    return new { success = true, operation = "remove-method", objectType, objectName, methodName, api = "IMetaViewProvider.Update" };
+                }
+                default:
+                    throw new ArgumentException($"remove-method not supported for objectType '{objectType}' via bridge");
+            }
+        }
+
+        // ========================
+        // TABLE INDEX OPERATIONS
+        // ========================
+
+        /// <summary>Adds an index to a table.</summary>
+        public object AddIndex(string tableName, string indexName, List<string>? fields, bool allowDuplicates, bool alternateKey)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            var axIdx = new AxTableIndex { Name = indexName };
+            axIdx.AllowDuplicates = allowDuplicates ? Microsoft.Dynamics.AX.Metadata.Core.MetaModel.NoYes.Yes : Microsoft.Dynamics.AX.Metadata.Core.MetaModel.NoYes.No;
+            if (alternateKey)
+                axIdx.AlternateKey = Microsoft.Dynamics.AX.Metadata.Core.MetaModel.NoYes.Yes;
+            if (fields != null)
+            {
+                foreach (var f in fields)
+                    axIdx.AddField(new AxTableIndexField { DataField = f });
+            }
+            axTable.AddIndex(axIdx);
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "add-index", objectName = tableName, indexName, fieldCount = fields?.Count ?? 0, api = "IMetaTableProvider.Update" };
+        }
+
+        /// <summary>Removes an index from a table.</summary>
+        public object RemoveIndex(string tableName, string indexName)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            AxTableIndex? toRemove = null;
+            foreach (AxTableIndex idx in axTable.Indexes)
+            {
+                if (string.Equals(idx.Name, indexName, StringComparison.OrdinalIgnoreCase))
+                { toRemove = idx; break; }
+            }
+            if (toRemove == null)
+                throw new InvalidOperationException($"Index '{indexName}' not found on table '{tableName}'");
+            axTable.Indexes.Remove(toRemove);
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "remove-index", objectName = tableName, indexName, api = "IMetaTableProvider.Update" };
+        }
+
+        // ========================
+        // TABLE RELATION OPERATIONS
+        // ========================
+
+        /// <summary>Adds a relation to a table.</summary>
+        public object AddRelation(string tableName, string relationName, string relatedTable, List<WriteRelationConstraint>? constraints)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            var axRel = new AxTableRelation { Name = relationName, RelatedTable = relatedTable };
+            if (constraints != null)
+            {
+                foreach (var c in constraints)
+                {
+                    axRel.AddConstraint(new AxTableRelationConstraintField
+                    {
+                        Name = c.Field ?? "",
+                        Field = c.Field ?? "",
+                        RelatedField = c.RelatedField ?? ""
+                    });
+                }
+            }
+            axTable.AddRelation(axRel);
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "add-relation", objectName = tableName, relationName, relatedTable, api = "IMetaTableProvider.Update" };
+        }
+
+        /// <summary>Removes a relation from a table.</summary>
+        public object RemoveRelation(string tableName, string relationName)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            AxTableRelation? toRemove = null;
+            foreach (AxTableRelation rel in axTable.Relations)
+            {
+                if (string.Equals(rel.Name, relationName, StringComparison.OrdinalIgnoreCase))
+                { toRemove = rel; break; }
+            }
+            if (toRemove == null)
+                throw new InvalidOperationException($"Relation '{relationName}' not found on table '{tableName}'");
+            axTable.Relations.Remove(toRemove);
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "remove-relation", objectName = tableName, relationName, api = "IMetaTableProvider.Update" };
+        }
+
+        // ========================
+        // TABLE FIELD GROUP OPERATIONS
+        // ========================
+
+        /// <summary>Adds a field group to a table.</summary>
+        public object AddFieldGroup(string tableName, string groupName, string? label, List<string>? fields)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            var axFg = new AxTableFieldGroup { Name = groupName };
+            if (!string.IsNullOrEmpty(label)) axFg.Label = label;
+            if (fields != null)
+            {
+                foreach (var fieldRef in fields)
+                    axFg.AddField(new AxTableFieldGroupField { DataField = fieldRef });
+            }
+            axTable.AddFieldGroup(axFg);
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "add-field-group", objectName = tableName, groupName, fieldCount = fields?.Count ?? 0, api = "IMetaTableProvider.Update" };
+        }
+
+        /// <summary>Removes a field group from a table.</summary>
+        public object RemoveFieldGroup(string tableName, string groupName)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            AxTableFieldGroup? toRemove = null;
+            foreach (AxTableFieldGroup fg in axTable.FieldGroups)
+            {
+                if (string.Equals(fg.Name, groupName, StringComparison.OrdinalIgnoreCase))
+                { toRemove = fg; break; }
+            }
+            if (toRemove == null)
+                throw new InvalidOperationException($"Field group '{groupName}' not found on table '{tableName}'");
+            axTable.FieldGroups.Remove(toRemove);
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "remove-field-group", objectName = tableName, groupName, api = "IMetaTableProvider.Update" };
+        }
+
+        /// <summary>Adds a field reference to an existing field group on a table.</summary>
+        public object AddFieldToFieldGroup(string tableName, string groupName, string fieldName)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            AxTableFieldGroup? targetFg = null;
+            foreach (AxTableFieldGroup fg in axTable.FieldGroups)
+            {
+                if (string.Equals(fg.Name, groupName, StringComparison.OrdinalIgnoreCase))
+                { targetFg = fg; break; }
+            }
+            if (targetFg == null)
+                throw new InvalidOperationException($"Field group '{groupName}' not found on table '{tableName}'");
+
+            targetFg.AddField(new AxTableFieldGroupField { DataField = fieldName });
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "add-field-to-field-group", objectName = tableName, groupName, fieldName, api = "IMetaTableProvider.Update" };
+        }
+
+        // ========================
+        // TABLE FIELD MODIFY / RENAME / REMOVE / REPLACE-ALL
+        // ========================
+
+        /// <summary>Modifies properties of an existing field on a table.</summary>
+        public object ModifyField(string tableName, string fieldName, Dictionary<string, string>? properties)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            AxTableField? target = null;
+            foreach (AxTableField f in axTable.Fields)
+            {
+                if (string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+                { target = f; break; }
+            }
+            if (target == null)
+                throw new InvalidOperationException($"Field '{fieldName}' not found on table '{tableName}'");
+
+            if (properties != null)
+            {
+                foreach (var kv in properties)
+                    SetTableFieldProperty(target, kv.Key, kv.Value);
+            }
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "modify-field", objectName = tableName, fieldName, api = "IMetaTableProvider.Update" };
+        }
+
+        /// <summary>
+        /// Renames a field on a table. Also fixes index DataField refs and TitleField1/2.
+        /// </summary>
+        public object RenameField(string tableName, string oldName, string newName)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            AxTableField? target = null;
+            foreach (AxTableField f in axTable.Fields)
+            {
+                if (string.Equals(f.Name, oldName, StringComparison.OrdinalIgnoreCase))
+                { target = f; break; }
+            }
+            if (target == null)
+                throw new InvalidOperationException($"Field '{oldName}' not found on table '{tableName}'");
+
+            target.Name = newName;
+
+            // Fix index DataField references
+            foreach (AxTableIndex idx in axTable.Indexes)
+            {
+                foreach (AxTableIndexField ixf in idx.Fields)
+                {
+                    if (string.Equals(ixf.DataField, oldName, StringComparison.OrdinalIgnoreCase))
+                        ixf.DataField = newName;
+                }
+            }
+
+            // Fix TitleField1/2
+            if (string.Equals(axTable.TitleField1, oldName, StringComparison.OrdinalIgnoreCase))
+                axTable.TitleField1 = newName;
+            if (string.Equals(axTable.TitleField2, oldName, StringComparison.OrdinalIgnoreCase))
+                axTable.TitleField2 = newName;
+
+            // Fix field group references
+            foreach (AxTableFieldGroup fg in axTable.FieldGroups)
+            {
+                foreach (AxTableFieldGroupField fgf in fg.Fields)
+                {
+                    if (string.Equals(fgf.DataField, oldName, StringComparison.OrdinalIgnoreCase))
+                        fgf.DataField = newName;
+                }
+            }
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "rename-field", objectName = tableName, oldName, newName, api = "IMetaTableProvider.Update" };
+        }
+
+        /// <summary>Removes a field from a table.</summary>
+        public object RemoveField(string tableName, string fieldName)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            AxTableField? toRemove = null;
+            foreach (AxTableField f in axTable.Fields)
+            {
+                if (string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+                { toRemove = f; break; }
+            }
+            if (toRemove == null)
+                throw new InvalidOperationException($"Field '{fieldName}' not found on table '{tableName}'");
+            axTable.Fields.Remove(toRemove);
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "remove-field", objectName = tableName, fieldName, api = "IMetaTableProvider.Update" };
+        }
+
+        /// <summary>Replaces ALL fields on a table (clear + re-add). Use for bulk field rewrite.</summary>
+        public object ReplaceAllFields(string tableName, List<WriteFieldParam> fields)
+        {
+            var axTable = _provider.Tables.Read(tableName)
+                ?? throw new ArgumentException($"Table '{tableName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Tables, tableName);
+
+            // Clear existing fields
+            var existing = new List<AxTableField>();
+            foreach (AxTableField f in axTable.Fields) existing.Add(f);
+            foreach (var f in existing) axTable.Fields.Remove(f);
+
+            // Add new fields
+            foreach (var fp in fields)
+            {
+                var axField = CreateTableField(fp);
+                axTable.AddField(axField);
+            }
+
+            ((IMetaTableProvider)_provider.Tables).Update(axTable, msi);
+            return new { success = true, operation = "replace-all-fields", objectName = tableName, fieldCount = fields.Count, api = "IMetaTableProvider.Update" };
+        }
+
+        // ========================
+        // ENUM VALUE OPERATIONS
+        // ========================
+
+        /// <summary>Adds a value to an enum.</summary>
+        public object AddEnumValue(string enumName, string valueName, int value, string? label)
+        {
+            var axEnum = _provider.Enums.Read(enumName)
+                ?? throw new ArgumentException($"Enum '{enumName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Enums, enumName);
+
+            var axVal = new AxEnumValue { Name = valueName, Value = value };
+            if (!string.IsNullOrEmpty(label)) axVal.Label = label;
+            axEnum.AddEnumValue(axVal);
+
+            ((IMetaEnumProvider)_provider.Enums).Update(axEnum, msi);
+            return new { success = true, operation = "add-enum-value", objectName = enumName, valueName, value, api = "IMetaEnumProvider.Update" };
+        }
+
+        /// <summary>Modifies properties of an existing enum value.</summary>
+        public object ModifyEnumValue(string enumName, string valueName, Dictionary<string, string>? properties)
+        {
+            var axEnum = _provider.Enums.Read(enumName)
+                ?? throw new ArgumentException($"Enum '{enumName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Enums, enumName);
+
+            AxEnumValue? target = null;
+            foreach (AxEnumValue v in axEnum.EnumValues)
+            {
+                if (string.Equals(v.Name, valueName, StringComparison.OrdinalIgnoreCase))
+                { target = v; break; }
+            }
+            if (target == null)
+                throw new InvalidOperationException($"Enum value '{valueName}' not found on enum '{enumName}'");
+
+            if (properties != null)
+            {
+                foreach (var kv in properties)
+                {
+                    switch (kv.Key.ToLowerInvariant())
+                    {
+                        case "label": target.Label = kv.Value; break;
+                        case "value":
+                            if (int.TryParse(kv.Value, out var iv)) target.Value = iv;
+                            break;
+                    }
+                }
+            }
+
+            ((IMetaEnumProvider)_provider.Enums).Update(axEnum, msi);
+            return new { success = true, operation = "modify-enum-value", objectName = enumName, valueName, api = "IMetaEnumProvider.Update" };
+        }
+
+        /// <summary>Removes a value from an enum.</summary>
+        public object RemoveEnumValue(string enumName, string valueName)
+        {
+            var axEnum = _provider.Enums.Read(enumName)
+                ?? throw new ArgumentException($"Enum '{enumName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Enums, enumName);
+
+            AxEnumValue? toRemove = null;
+            foreach (AxEnumValue v in axEnum.EnumValues)
+            {
+                if (string.Equals(v.Name, valueName, StringComparison.OrdinalIgnoreCase))
+                { toRemove = v; break; }
+            }
+            if (toRemove == null)
+                throw new InvalidOperationException($"Enum value '{valueName}' not found on enum '{enumName}'");
+            axEnum.EnumValues.Remove(toRemove);
+
+            ((IMetaEnumProvider)_provider.Enums).Update(axEnum, msi);
+            return new { success = true, operation = "remove-enum-value", objectName = enumName, valueName, api = "IMetaEnumProvider.Update" };
+        }
+
+        // ========================
+        // FORM: ADD CONTROL / ADD DATA SOURCE
+        // ========================
+
+        /// <summary>
+        /// Adds a control to a form. Navigates to parentControl and inserts a new child control.
+        /// </summary>
+        public object AddControl(string formName, string controlName, string parentControl,
+            string controlType, string? dataSource, string? dataField, string? label)
+        {
+            var axForm = _provider.Forms.Read(formName)
+                ?? throw new ArgumentException($"Form '{formName}' not found");
+            var msi = GetModelSaveInfoForObject(_provider.Forms, formName);
+
+            // Navigate to parent control in the design tree
+            var design = axForm.Design;
+            var parent = FindControlRecursive(design, parentControl);
+            if (parent == null)
+                throw new InvalidOperationException($"Parent control '{parentControl}' not found in form '{formName}'");
+
+            // Create the control using reflection (AxFormControl is abstract)
+            var control = CreateFormControl(controlType, controlName, dataSource, dataField, label);
+            AddChildControl(parent, control);
+
+            ((IMetaFormProvider)_provider.Forms).Update(axForm, msi);
+            return new { success = true, operation = "add-control", objectName = formName, controlName, parentControl, controlType, api = "IMetaFormProvider.Update" };
+        }
+
+        /// <summary>
+        /// Adds a data source to a form or query.
+        /// </summary>
+        public object AddDataSource(string objectType, string objectName, string dsName, string table,
+            string? joinSource, string? linkType)
+        {
+            switch (objectType.ToLowerInvariant())
+            {
+                case "form":
+                {
+                    var axForm = _provider.Forms.Read(objectName)
+                        ?? throw new ArgumentException($"Form '{objectName}' not found");
+                    var msi = GetModelSaveInfoForObject(_provider.Forms, objectName);
+
+                    var ds = new AxFormDataSourceItem { Name = dsName, Table = table };
+                    if (!string.IsNullOrEmpty(joinSource)) ds.JoinSource = joinSource;
+                    axForm.AddDataSource(ds);
+
+                    ((IMetaFormProvider)_provider.Forms).Update(axForm, msi);
+                    return new { success = true, operation = "add-data-source", objectType, objectName, dsName, table, api = "IMetaFormProvider.Update" };
+                }
+                default:
+                    throw new ArgumentException($"add-data-source not supported for objectType '{objectType}' via bridge");
+            }
+        }
+
+        // ========================
         // HELPERS: Table Field Creation
         // ========================
 
@@ -1129,6 +1837,160 @@ namespace D365MetadataBridge.Services
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[WriteService] RemoveMethodIfExists failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Removes a method by name, returning true if found and removed.
+        /// Unlike RemoveMethodIfExists, this throws-friendly variant returns a boolean.
+        /// </summary>
+        private bool RemoveMethodByName(object axObject, string methodName)
+        {
+            try
+            {
+                dynamic dyn = axObject;
+                var methods = dyn.Methods;
+                AxMethod? toRemove = null;
+                foreach (AxMethod m in methods)
+                {
+                    if (string.Equals(m.Name, methodName, StringComparison.OrdinalIgnoreCase))
+                    { toRemove = m; break; }
+                }
+                if (toRemove != null)
+                {
+                    methods.Remove(toRemove);
+                    return true;
+                }
+                return false;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>Sets a property on an existing table field.</summary>
+        private void SetTableFieldProperty(AxTableField field, string prop, string value)
+        {
+            switch (prop.ToLowerInvariant())
+            {
+                case "label": field.Label = value; break;
+                case "helptext": field.HelpText = value; break;
+                case "mandatory":
+                    field.Mandatory = ParseNoYes(value);
+                    break;
+                case "allowedit":
+                    field.AllowEdit = ParseNoYes(value);
+                    break;
+                case "extendeddatatype":
+                case "edt":
+                    field.ExtendedDataType = value;
+                    break;
+                case "stringsize":
+                    if (field is AxTableFieldString sf && int.TryParse(value, out var ss)) sf.StringSize = ss;
+                    break;
+                case "enumtype":
+                    if (field is AxTableFieldEnum ef) ef.EnumType = value;
+                    break;
+                default:
+                    Console.Error.WriteLine($"[WriteService] Unknown table field property: {prop}");
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Recursively finds a control in the form design tree by name.
+        /// Returns the dynamic control object (AxFormControl subclass).
+        /// </summary>
+        private dynamic? FindControlRecursive(dynamic container, string controlName)
+        {
+            try
+            {
+                // Try container.Controls (design and container controls have this)
+                var controls = container.Controls;
+                if (controls != null)
+                {
+                    foreach (dynamic c in controls)
+                    {
+                        string cName = c.Name;
+                        if (string.Equals(cName, controlName, StringComparison.OrdinalIgnoreCase))
+                            return c;
+                        var found = FindControlRecursive(c, controlName);
+                        if (found != null) return found;
+                    }
+                }
+            }
+            catch { /* container has no Controls property */ }
+            return null;
+        }
+
+        /// <summary>Creates a form control of the specified type.</summary>
+        private dynamic CreateFormControl(string controlType, string controlName,
+            string? dataSource, string? dataField, string? label)
+        {
+            // Use reflection to find AxFormControl* types in the metadata assembly
+            var assembly = typeof(AxClass).Assembly;
+            string typeName = $"Microsoft.Dynamics.AX.Metadata.MetaModel.AxFormControl{controlType}";
+            var ctrlType = assembly.GetType(typeName);
+
+            // Fallback: try common type names
+            if (ctrlType == null)
+            {
+                var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["String"] = "AxFormControlString",
+                    ["Integer"] = "AxFormControlInteger",
+                    ["Real"] = "AxFormControlReal",
+                    ["Date"] = "AxFormControlDate",
+                    ["DateTime"] = "AxFormControlDateTime",
+                    ["Int64"] = "AxFormControlInt64",
+                    ["CheckBox"] = "AxFormControlCheckBox",
+                    ["ComboBox"] = "AxFormControlComboBox",
+                    ["Group"] = "AxFormControlGroup",
+                    ["Button"] = "AxFormControlButton",
+                    ["Grid"] = "AxFormControlGrid",
+                    ["Tab"] = "AxFormControlTab",
+                    ["TabPage"] = "AxFormControlTabPage",
+                    ["Image"] = "AxFormControlImage",
+                    ["ActionPane"] = "AxFormControlActionPane",
+                    ["ActionPaneTab"] = "AxFormControlActionPaneTab",
+                    ["ButtonGroup"] = "AxFormControlButtonGroup",
+                };
+                if (map.TryGetValue(controlType, out var mapped))
+                    ctrlType = assembly.GetType($"Microsoft.Dynamics.AX.Metadata.MetaModel.{mapped}");
+            }
+
+            if (ctrlType == null)
+                throw new ArgumentException($"Unknown form control type: '{controlType}' — no matching AxFormControl type found");
+
+            dynamic ctrl = Activator.CreateInstance(ctrlType)!;
+            ctrl.Name = controlName;
+            if (!string.IsNullOrEmpty(dataSource))
+            {
+                try { ctrl.DataSource = dataSource; } catch { }
+            }
+            if (!string.IsNullOrEmpty(dataField))
+            {
+                try { ctrl.DataField = dataField; } catch { }
+            }
+            if (!string.IsNullOrEmpty(label))
+            {
+                try { ctrl.Label = label; } catch { }
+            }
+            return ctrl;
+        }
+
+        /// <summary>Adds a child control to a container control (design, group, tab, etc.).</summary>
+        private void AddChildControl(dynamic parent, dynamic child)
+        {
+            try
+            {
+                parent.Controls.Add(child);
+            }
+            catch
+            {
+                try { parent.AddControl(child); }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException($"Cannot add control to '{parent.Name}': {ex.Message}");
+                }
             }
         }
 

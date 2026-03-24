@@ -840,31 +840,44 @@ export async function bridgeResolveObject(
 
 /**
  * Supported object types for bridge-based creation.
- * Covers core types + menu items + security objects + query/view.
- * Forms and reports continue using TypeScript XML generation (complex nested designs).
+ * Covers core types + menu items + security + extensions + form + menu.
+ * Complex types (report, data-entity, business-event, tile, kpi) continue
+ * using TypeScript XML generation — the bridge handles them via xmlContent passthrough.
  */
 const BRIDGE_CREATE_TYPES = new Set([
-  'class', 'table', 'enum', 'edt',
-  'query', 'view',
+  'class', 'class-extension', 'table', 'enum', 'edt',
+  'query', 'view', 'form',
+  'table-extension', 'form-extension', 'enum-extension',
+  'menu',
   'menu-item-action', 'menu-item-display', 'menu-item-output',
   'security-privilege', 'security-duty', 'security-role',
 ]);
 
 /**
  * Supported operations for bridge-based modification.
- * Other operations (add-index, add-relation, add-control, add-data-source, etc.)
- * continue using the TypeScript xml2js approach.
+ * All modify operations are now routed through the C# bridge.
  */
-const BRIDGE_MODIFY_OPS = new Set(['add-method', 'add-field', 'modify-property', 'replace-code']);
+const BRIDGE_MODIFY_OPS = new Set([
+  'add-method', 'remove-method', 'replace-code',
+  'add-field', 'modify-field', 'rename-field', 'replace-all-fields', 'remove-field',
+  'add-index', 'remove-index',
+  'add-relation', 'remove-relation',
+  'add-field-group', 'remove-field-group', 'add-field-to-field-group',
+  'modify-property',
+  'add-enum-value', 'modify-enum-value', 'remove-enum-value',
+  'add-control', 'add-data-source',
+  'add-display-method', 'add-table-method',
+]);
 
 /**
  * Supported object types for bridge-based modification.
  * Covers core types + query/view/form (add-method, modify-property, replace-code)
- * + menu items and security (modify-property only).
+ * + menu items, security, and extension types.
  */
 const BRIDGE_MODIFY_TYPES = new Set([
   'class', 'table', 'enum', 'edt',
   'form', 'query', 'view',
+  'table-extension', 'form-extension', 'enum-extension',
   'menu-item-action', 'menu-item-display', 'menu-item-output',
 ]);
 
@@ -1028,6 +1041,422 @@ export async function bridgeReplaceCode(
     };
   } catch (e) {
     console.error(`[BridgeAdapter] replaceCode(${objectType}, ${objectName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Removes a method from a class, table, form, etc. via the C# bridge.
+ */
+export async function bridgeRemoveMethod(
+  bridge: BridgeClient | undefined,
+  objectType: string,
+  objectName: string,
+  methodName: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  if (!BRIDGE_MODIFY_TYPES.has(objectType.toLowerCase())) return null;
+
+  try {
+    const result = await bridge.removeMethod(objectType, objectName, methodName);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Method '${methodName}' removed via ${result.api}`
+        : `Bridge removeMethod returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] removeMethod(${objectType}, ${objectName}, ${methodName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Adds an index to a table via the C# bridge.
+ */
+export async function bridgeAddIndex(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  indexName: string,
+  fields?: string[],
+  allowDuplicates?: boolean,
+  alternateKey?: boolean,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.addIndex(tableName, indexName, fields, allowDuplicates, alternateKey);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Index '${indexName}' added via ${result.api}`
+        : `Bridge addIndex returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] addIndex(${tableName}, ${indexName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Removes an index from a table via the C# bridge.
+ */
+export async function bridgeRemoveIndex(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  indexName: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.removeIndex(tableName, indexName);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Index '${indexName}' removed via ${result.api}`
+        : `Bridge removeIndex returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] removeIndex(${tableName}, ${indexName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Adds a relation to a table via the C# bridge.
+ */
+export async function bridgeAddRelation(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  relationName: string,
+  relatedTable: string,
+  constraints?: Array<{ field?: string; relatedField?: string }>,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.addRelation(tableName, relationName, relatedTable, constraints);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Relation '${relationName}' added via ${result.api}`
+        : `Bridge addRelation returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] addRelation(${tableName}, ${relationName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Removes a relation from a table via the C# bridge.
+ */
+export async function bridgeRemoveRelation(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  relationName: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.removeRelation(tableName, relationName);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Relation '${relationName}' removed via ${result.api}`
+        : `Bridge removeRelation returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] removeRelation(${tableName}, ${relationName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Adds a field group to a table via the C# bridge.
+ */
+export async function bridgeAddFieldGroup(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  groupName: string,
+  label?: string,
+  fields?: string[],
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.addFieldGroup(tableName, groupName, label, fields);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Field group '${groupName}' added via ${result.api}`
+        : `Bridge addFieldGroup returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] addFieldGroup(${tableName}, ${groupName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Removes a field group from a table via the C# bridge.
+ */
+export async function bridgeRemoveFieldGroup(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  groupName: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.removeFieldGroup(tableName, groupName);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Field group '${groupName}' removed via ${result.api}`
+        : `Bridge removeFieldGroup returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] removeFieldGroup(${tableName}, ${groupName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Adds a field to an existing field group on a table via the C# bridge.
+ */
+export async function bridgeAddFieldToFieldGroup(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  groupName: string,
+  fieldName: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.addFieldToFieldGroup(tableName, groupName, fieldName);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Field '${fieldName}' added to group '${groupName}' via ${result.api}`
+        : `Bridge addFieldToFieldGroup returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] addFieldToFieldGroup(${tableName}, ${groupName}, ${fieldName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Modifies field properties on a table via the C# bridge.
+ */
+export async function bridgeModifyField(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  fieldName: string,
+  properties?: Record<string, string>,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.modifyField(tableName, fieldName, properties);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Field '${fieldName}' modified via ${result.api}`
+        : `Bridge modifyField returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] modifyField(${tableName}, ${fieldName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Renames a field on a table via the C# bridge. Also fixes index/fieldgroup/TitleField refs.
+ */
+export async function bridgeRenameField(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  oldName: string,
+  newName: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.renameField(tableName, oldName, newName);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Field renamed '${oldName}' → '${newName}' via ${result.api}`
+        : `Bridge renameField returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] renameField(${tableName}, ${oldName} → ${newName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Removes a field from a table via the C# bridge.
+ */
+export async function bridgeRemoveField(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  fieldName: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.removeField(tableName, fieldName);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Field '${fieldName}' removed via ${result.api}`
+        : `Bridge removeField returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] removeField(${tableName}, ${fieldName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Replaces ALL fields on a table via the C# bridge. Use for bulk field rewrite.
+ */
+export async function bridgeReplaceAllFields(
+  bridge: BridgeClient | undefined,
+  tableName: string,
+  fields: Array<Record<string, unknown>>,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.replaceAllFields(tableName, fields);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ All fields replaced (${fields.length}) via ${result.api}`
+        : `Bridge replaceAllFields returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] replaceAllFields(${tableName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Adds a value to an enum via the C# bridge.
+ */
+export async function bridgeAddEnumValue(
+  bridge: BridgeClient | undefined,
+  enumName: string,
+  valueName: string,
+  value: number,
+  label?: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.addEnumValue(enumName, valueName, value, label);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Enum value '${valueName}'=${value} added via ${result.api}`
+        : `Bridge addEnumValue returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] addEnumValue(${enumName}, ${valueName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Modifies an enum value's properties via the C# bridge.
+ */
+export async function bridgeModifyEnumValue(
+  bridge: BridgeClient | undefined,
+  enumName: string,
+  valueName: string,
+  properties?: Record<string, string>,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.modifyEnumValue(enumName, valueName, properties);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Enum value '${valueName}' modified via ${result.api}`
+        : `Bridge modifyEnumValue returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] modifyEnumValue(${enumName}, ${valueName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Removes an enum value via the C# bridge.
+ */
+export async function bridgeRemoveEnumValue(
+  bridge: BridgeClient | undefined,
+  enumName: string,
+  valueName: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.removeEnumValue(enumName, valueName);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Enum value '${valueName}' removed via ${result.api}`
+        : `Bridge removeEnumValue returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] removeEnumValue(${enumName}, ${valueName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Adds a control to a form via the C# bridge.
+ */
+export async function bridgeAddControl(
+  bridge: BridgeClient | undefined,
+  formName: string,
+  controlName: string,
+  parentControl: string,
+  controlType: string,
+  dataSource?: string,
+  dataField?: string,
+  label?: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.addControl(formName, controlName, parentControl, controlType, dataSource, dataField, label);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ Control '${controlName}' added to '${parentControl}' via ${result.api}`
+        : `Bridge addControl returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] addControl(${formName}, ${controlName}) failed: ${e}`);
+    return null;
+  }
+}
+
+/**
+ * Adds a data source to a form via the C# bridge.
+ */
+export async function bridgeAddDataSource(
+  bridge: BridgeClient | undefined,
+  objectType: string,
+  objectName: string,
+  dsName: string,
+  table: string,
+  joinSource?: string,
+  linkType?: string,
+): Promise<{ success: boolean; message: string } | null> {
+  if (!bridge?.isReady || !bridge.metadataAvailable) return null;
+  try {
+    const result = await bridge.addDataSource(objectType, objectName, dsName, table, joinSource, linkType);
+    return {
+      success: result.success,
+      message: result.success
+        ? `✅ DataSource '${dsName}' added via ${result.api}`
+        : `Bridge addDataSource returned success=false`,
+    };
+  } catch (e) {
+    console.error(`[BridgeAdapter] addDataSource(${objectType}, ${objectName}, ${dsName}) failed: ${e}`);
     return null;
   }
 }

@@ -409,6 +409,91 @@ export class BridgeClient extends EventEmitter {
     return this.call<BridgeWriteResult>('replaceCode', { objectType, objectName, methodName, oldCode, newCode });
   }
 
+  /** Remove a method from a class, table, form, query, or view */
+  async removeMethod(objectType: string, objectName: string, methodName: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('removeMethod', { objectType, objectName, methodName });
+  }
+
+  /** Add an index to a table */
+  async addIndex(tableName: string, indexName: string, fields?: string[], allowDuplicates?: boolean, alternateKey?: boolean): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('addIndex', { objectName: tableName, indexName, fields, allowDuplicates, alternateKey });
+  }
+
+  /** Remove an index from a table */
+  async removeIndex(tableName: string, indexName: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('removeIndex', { objectName: tableName, indexName });
+  }
+
+  /** Add a relation to a table */
+  async addRelation(tableName: string, relationName: string, relatedTable: string, constraints?: Array<{ field?: string; relatedField?: string }>): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('addRelation', { objectName: tableName, relationName, relatedTable, constraints });
+  }
+
+  /** Remove a relation from a table */
+  async removeRelation(tableName: string, relationName: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('removeRelation', { objectName: tableName, relationName });
+  }
+
+  /** Add a field group to a table */
+  async addFieldGroup(tableName: string, groupName: string, label?: string, fields?: string[]): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('addFieldGroup', { objectName: tableName, fieldGroupName: groupName, label, fields });
+  }
+
+  /** Remove a field group from a table */
+  async removeFieldGroup(tableName: string, groupName: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('removeFieldGroup', { objectName: tableName, fieldGroupName: groupName });
+  }
+
+  /** Add a field reference to an existing field group */
+  async addFieldToFieldGroup(tableName: string, groupName: string, fieldName: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('addFieldToFieldGroup', { objectName: tableName, fieldGroupName: groupName, fieldName });
+  }
+
+  /** Modify properties of an existing field on a table */
+  async modifyField(tableName: string, fieldName: string, properties?: Record<string, string>): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('modifyField', { objectName: tableName, fieldName, properties });
+  }
+
+  /** Rename a field on a table (also fixes index/fieldgroup/TitleField refs) */
+  async renameField(tableName: string, oldName: string, newName: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('renameField', { objectName: tableName, fieldName: oldName, fieldNewName: newName });
+  }
+
+  /** Remove a field from a table */
+  async removeField(tableName: string, fieldName: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('removeField', { objectName: tableName, fieldName });
+  }
+
+  /** Replace ALL fields on a table (clear + re-add) */
+  async replaceAllFields(tableName: string, fields: Array<Record<string, unknown>>): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('replaceAllFields', { objectName: tableName, fields });
+  }
+
+  /** Add a value to an enum */
+  async addEnumValue(enumName: string, valueName: string, value: number, label?: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('addEnumValue', { objectName: enumName, enumValueName: valueName, enumValue: value, label });
+  }
+
+  /** Modify an existing enum value's properties */
+  async modifyEnumValue(enumName: string, valueName: string, properties?: Record<string, string>): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('modifyEnumValue', { objectName: enumName, enumValueName: valueName, properties });
+  }
+
+  /** Remove a value from an enum */
+  async removeEnumValue(enumName: string, valueName: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('removeEnumValue', { objectName: enumName, enumValueName: valueName });
+  }
+
+  /** Add a control to a form */
+  async addControl(formName: string, controlName: string, parentControl: string, controlType: string, dataSource?: string, dataField?: string, label?: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('addControl', { objectName: formName, controlName, parentControl, controlType, controlDataSource: dataSource, controlDataField: dataField, label });
+  }
+
+  /** Add a data source to a form */
+  async addDataSource(objectType: string, objectName: string, dsName: string, table: string, joinSource?: string, linkType?: string): Promise<BridgeWriteResult> {
+    return this.call<BridgeWriteResult>('addDataSource', { objectType, objectName, dataSourceName: dsName, dataSourceTable: table, joinSource, linkType });
+  }
+
   // ========================================
   // Delete, Batch, Capabilities, Pattern Discovery
   // ========================================

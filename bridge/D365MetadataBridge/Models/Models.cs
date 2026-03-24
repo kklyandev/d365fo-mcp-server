@@ -722,6 +722,27 @@ namespace D365MetadataBridge.Models
 
         [JsonPropertyName("params")]
         public Dictionary<string, object>? Params { get; set; }
+
+        /// <summary>
+        /// Deserializes a typed parameter from the Params dictionary.
+        /// Values arrive as JsonElement from System.Text.Json — convert to the target type.
+        /// </summary>
+        public T? GetTypedParam<T>(string key) where T : class
+        {
+            if (Params == null || !Params.TryGetValue(key, out var raw) || raw == null)
+                return null;
+            try
+            {
+                if (raw is System.Text.Json.JsonElement je)
+                    return System.Text.Json.JsonSerializer.Deserialize<T>(je.GetRawText());
+                // Already correct type
+                if (raw is T typed) return typed;
+                // Fallback: serialize then deserialize
+                var json = System.Text.Json.JsonSerializer.Serialize(raw);
+                return System.Text.Json.JsonSerializer.Deserialize<T>(json);
+            }
+            catch { return null; }
+        }
     }
 
     public class BatchOperationResult

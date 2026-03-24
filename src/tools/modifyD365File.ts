@@ -14,7 +14,15 @@ import { parseStringPromise, Builder } from 'xml2js';
 import { getConfigManager } from '../utils/configManager.js';
 import { PackageResolver } from '../utils/packageResolver.js';
 import { resolveDbPathLocally } from '../utils/metadataResolver.js';
-import { bridgeValidateAfterWrite, canBridgeModify, bridgeAddMethod, bridgeAddField, bridgeSetProperty, bridgeReplaceCode } from '../bridge/index.js';
+import {
+  bridgeValidateAfterWrite, canBridgeModify,
+  bridgeAddMethod, bridgeRemoveMethod, bridgeAddField, bridgeSetProperty, bridgeReplaceCode,
+  bridgeModifyField, bridgeRenameField, bridgeRemoveField, bridgeReplaceAllFields,
+  bridgeAddIndex, bridgeRemoveIndex, bridgeAddRelation, bridgeRemoveRelation,
+  bridgeAddFieldGroup, bridgeRemoveFieldGroup, bridgeAddFieldToFieldGroup,
+  bridgeAddEnumValue, bridgeModifyEnumValue, bridgeRemoveEnumValue,
+  bridgeAddControl, bridgeAddDataSource,
+} from '../bridge/index.js';
 import { ProjectFileManager, ProjectFileFinder } from './createD365File.js';
 
 /**
@@ -552,16 +560,18 @@ export async function modifyD365FileTool(request: CallToolRequest, context: XppS
     }
 
     // ── Phase 4: Bridge-first modify via IMetadataProvider.Update() ──────────
-    // For supported operations (add-method, add-field, modify-property, replace-code)
-    // on supported types (class, table, enum, edt): try C# bridge first.
+    // ALL modify operations are now routed through the C# bridge when available.
     // The bridge reads/modifies/writes via the official API — no xml2js needed.
     // Skip for dry-run (bridge writes directly, cannot preview diff).
+    // On failure → falls through to the xml2js fallback path for compatibility.
     if (!dryRun && context?.bridge && canBridgeModify(objectType, operation)) {
       try {
         let bridgeResult: { success: boolean; message: string } | null = null;
 
         switch (operation) {
-          case 'add-method': {
+          case 'add-method':
+          case 'add-display-method':
+          case 'add-table-method': {
             if (args.methodName && args.sourceCode) {
               bridgeResult = await bridgeAddMethod(
                 context.bridge,
@@ -569,6 +579,17 @@ export async function modifyD365FileTool(request: CallToolRequest, context: XppS
                 objectName,
                 args.methodName,
                 args.sourceCode,
+              );
+            }
+            break;
+          }
+          case 'remove-method': {
+            if (args.methodName) {
+              bridgeResult = await bridgeRemoveMethod(
+                context.bridge,
+                objectType,
+                objectName,
+                args.methodName,
               );
             }
             break;
@@ -583,6 +604,133 @@ export async function modifyD365FileTool(request: CallToolRequest, context: XppS
                 (args as any).edt,
                 (args as any).mandatory,
                 (args as any).label,
+              );
+            }
+            break;
+          }
+          case 'modify-field': {
+            if (args.fieldName) {
+              const fieldProps: Record<string, string> = {};
+              if ((args as any).label) fieldProps.label = (args as any).label;
+              if ((args as any).helpText) fieldProps.helpText = (args as any).helpText;
+              if ((args as any).mandatory !== undefined) fieldProps.mandatory = String((args as any).mandatory);
+              if ((args as any).edt) fieldProps.edt = (args as any).edt;
+              if ((args as any).enumType) fieldProps.enumType = (args as any).enumType;
+              if ((args as any).stringSize) fieldProps.stringSize = String((args as any).stringSize);
+              bridgeResult = await bridgeModifyField(
+                context.bridge,
+                objectName,
+                args.fieldName,
+                Object.keys(fieldProps).length > 0 ? fieldProps : undefined,
+              );
+            }
+            break;
+          }
+          case 'rename-field': {
+            if (args.fieldName && (args as any).fieldNewName) {
+              bridgeResult = await bridgeRenameField(
+                context.bridge,
+                objectName,
+                args.fieldName,
+                (args as any).fieldNewName,
+              );
+            }
+            break;
+          }
+          case 'remove-field': {
+            if (args.fieldName) {
+              bridgeResult = await bridgeRemoveField(
+                context.bridge,
+                objectName,
+                args.fieldName,
+              );
+            }
+            break;
+          }
+          case 'replace-all-fields': {
+            if ((args as any).fields) {
+              bridgeResult = await bridgeReplaceAllFields(
+                context.bridge,
+                objectName,
+                (args as any).fields,
+              );
+            }
+            break;
+          }
+          case 'add-index': {
+            if ((args as any).indexName) {
+              bridgeResult = await bridgeAddIndex(
+                context.bridge,
+                objectName,
+                (args as any).indexName,
+                (args as any).indexFields,
+                (args as any).allowDuplicates,
+                (args as any).alternateKey,
+              );
+            }
+            break;
+          }
+          case 'remove-index': {
+            if ((args as any).indexName) {
+              bridgeResult = await bridgeRemoveIndex(
+                context.bridge,
+                objectName,
+                (args as any).indexName,
+              );
+            }
+            break;
+          }
+          case 'add-relation': {
+            if ((args as any).relationName && (args as any).relatedTable) {
+              bridgeResult = await bridgeAddRelation(
+                context.bridge,
+                objectName,
+                (args as any).relationName,
+                (args as any).relatedTable,
+                (args as any).relationConstraints,
+              );
+            }
+            break;
+          }
+          case 'remove-relation': {
+            if ((args as any).relationName) {
+              bridgeResult = await bridgeRemoveRelation(
+                context.bridge,
+                objectName,
+                (args as any).relationName,
+              );
+            }
+            break;
+          }
+          case 'add-field-group': {
+            if ((args as any).fieldGroupName) {
+              bridgeResult = await bridgeAddFieldGroup(
+                context.bridge,
+                objectName,
+                (args as any).fieldGroupName,
+                (args as any).fieldGroupLabel,
+                (args as any).fields,
+              );
+            }
+            break;
+          }
+          case 'remove-field-group': {
+            if ((args as any).fieldGroupName) {
+              bridgeResult = await bridgeRemoveFieldGroup(
+                context.bridge,
+                objectName,
+                (args as any).fieldGroupName,
+              );
+            }
+            break;
+          }
+          case 'add-field-to-field-group': {
+            if ((args as any).fieldGroupName && args.fieldName) {
+              bridgeResult = await bridgeAddFieldToFieldGroup(
+                context.bridge,
+                objectName,
+                (args as any).fieldGroupName,
+                args.fieldName,
               );
             }
             break;
@@ -608,6 +756,71 @@ export async function modifyD365FileTool(request: CallToolRequest, context: XppS
                 args.methodName,
                 args.oldCode,
                 args.newCode,
+              );
+            }
+            break;
+          }
+          case 'add-enum-value': {
+            if ((args as any).enumValueName !== undefined) {
+              bridgeResult = await bridgeAddEnumValue(
+                context.bridge,
+                objectName,
+                (args as any).enumValueName,
+                (args as any).enumValue ?? 0,
+                (args as any).enumValueLabel,
+              );
+            }
+            break;
+          }
+          case 'modify-enum-value': {
+            if ((args as any).enumValueName) {
+              const evProps: Record<string, string> = {};
+              if ((args as any).enumValueLabel) evProps.label = (args as any).enumValueLabel;
+              if ((args as any).enumValue !== undefined) evProps.value = String((args as any).enumValue);
+              bridgeResult = await bridgeModifyEnumValue(
+                context.bridge,
+                objectName,
+                (args as any).enumValueName,
+                Object.keys(evProps).length > 0 ? evProps : undefined,
+              );
+            }
+            break;
+          }
+          case 'remove-enum-value': {
+            if ((args as any).enumValueName) {
+              bridgeResult = await bridgeRemoveEnumValue(
+                context.bridge,
+                objectName,
+                (args as any).enumValueName,
+              );
+            }
+            break;
+          }
+          case 'add-control': {
+            if ((args as any).controlName && (args as any).parentControl) {
+              bridgeResult = await bridgeAddControl(
+                context.bridge,
+                objectName,
+                (args as any).controlName,
+                (args as any).parentControl,
+                (args as any).controlType ?? 'String',
+                (args as any).controlDataSource,
+                (args as any).controlDataField,
+                (args as any).label,
+              );
+            }
+            break;
+          }
+          case 'add-data-source': {
+            if ((args as any).dataSourceName && (args as any).dataSourceTable) {
+              bridgeResult = await bridgeAddDataSource(
+                context.bridge,
+                objectType,
+                objectName,
+                (args as any).dataSourceName,
+                (args as any).dataSourceTable,
+                (args as any).joinSource,
+                (args as any).linkType,
               );
             }
             break;

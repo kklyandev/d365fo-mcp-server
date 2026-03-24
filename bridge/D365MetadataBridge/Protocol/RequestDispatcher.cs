@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using D365MetadataBridge.Services;
+using D365MetadataBridge.Models;
 
 namespace D365MetadataBridge.Protocol
 {
@@ -196,7 +198,12 @@ namespace D365MetadataBridge.Protocol
                                 "readReport", "getMethodSource", "searchObjects",
                                 "listObjects", "findReferences", "getInfo",
                                 "validateObject", "resolveObjectInfo", "refreshProvider",
-                                "createObject", "addMethod", "addField",
+                                "createObject", "addMethod", "removeMethod", "addField",
+                                "modifyField", "renameField", "removeField", "replaceAllFields",
+                                "addIndex", "removeIndex", "addRelation", "removeRelation",
+                                "addFieldGroup", "removeFieldGroup", "addFieldToFieldGroup",
+                                "addEnumValue", "modifyEnumValue", "removeEnumValue",
+                                "addControl", "addDataSource",
                                 "setProperty", "replaceCode",
                                 "deleteObject", "getCapabilities", "discoverFormPatterns"
                             }
@@ -300,6 +307,34 @@ namespace D365MetadataBridge.Protocol
                                     return _writeService!.CreateSecurityRole(objectName, modelName,
                                         request.GetDictParam("properties"));
 
+                                case "table-extension":
+                                    return _writeService!.CreateTableExtension(objectName, modelName,
+                                        request.GetParam<System.Collections.Generic.List<WriteFieldParam>>("fields"),
+                                        request.GetParam<System.Collections.Generic.List<WriteFieldGroupParam>>("fieldGroups"),
+                                        request.GetParam<System.Collections.Generic.List<WriteIndexParam>>("indexes"),
+                                        request.GetParam<System.Collections.Generic.List<WriteRelationParam>>("relations"),
+                                        request.GetParam<System.Collections.Generic.List<WriteMethodParam>>("methods"),
+                                        request.GetDictParam("properties"));
+
+                                case "form-extension":
+                                    return _writeService!.CreateFormExtension(objectName, modelName,
+                                        request.GetParam<System.Collections.Generic.List<WriteMethodParam>>("methods"),
+                                        request.GetDictParam("properties"));
+
+                                case "enum-extension":
+                                    return _writeService!.CreateEnumExtension(objectName, modelName,
+                                        request.GetParam<System.Collections.Generic.List<WriteEnumValueParam>>("values"),
+                                        request.GetDictParam("properties"));
+
+                                case "form":
+                                    return _writeService!.CreateForm(objectName, modelName,
+                                        request.GetParam<System.Collections.Generic.List<WriteMethodParam>>("methods"),
+                                        request.GetDictParam("properties"));
+
+                                case "menu":
+                                    return _writeService!.CreateMenu(objectName, modelName,
+                                        request.GetDictParam("properties"));
+
                                 default:
                                     throw new ArgumentException($"createObject not supported for '{objectType}' via bridge — use XML fallback");
                             }
@@ -360,6 +395,218 @@ namespace D365MetadataBridge.Protocol
                                 ?? throw new ArgumentException("Missing: newCode");
                             return _writeService!.ReplaceCode(objectType, objectName,
                                 request.GetStringParam("methodName"), oldCode, newCode);
+                        });
+
+                    case "removemethod":
+                        return HandleWrite(request, () =>
+                        {
+                            var objectType = request.GetStringParam("objectType")
+                                ?? throw new ArgumentException("Missing: objectType");
+                            var objectName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var methodName = request.GetStringParam("methodName")
+                                ?? throw new ArgumentException("Missing: methodName");
+                            return _writeService!.RemoveMethod(objectType, objectName, methodName);
+                        });
+
+                    case "addindex":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var indexName = request.GetStringParam("indexName")
+                                ?? throw new ArgumentException("Missing: indexName");
+                            return _writeService!.AddIndex(tableName, indexName,
+                                request.GetParam<System.Collections.Generic.List<string>>("fields"),
+                                request.GetBoolParam("allowDuplicates") ?? false,
+                                request.GetBoolParam("alternateKey") ?? false);
+                        });
+
+                    case "removeindex":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var indexName = request.GetStringParam("indexName")
+                                ?? throw new ArgumentException("Missing: indexName");
+                            return _writeService!.RemoveIndex(tableName, indexName);
+                        });
+
+                    case "addrelation":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var relationName = request.GetStringParam("relationName")
+                                ?? throw new ArgumentException("Missing: relationName");
+                            var relatedTable = request.GetStringParam("relatedTable")
+                                ?? throw new ArgumentException("Missing: relatedTable");
+                            return _writeService!.AddRelation(tableName, relationName, relatedTable,
+                                request.GetParam<System.Collections.Generic.List<WriteRelationConstraint>>("constraints"));
+                        });
+
+                    case "removerelation":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var relationName = request.GetStringParam("relationName")
+                                ?? throw new ArgumentException("Missing: relationName");
+                            return _writeService!.RemoveRelation(tableName, relationName);
+                        });
+
+                    case "addfieldgroup":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var groupName = request.GetStringParam("fieldGroupName")
+                                ?? request.GetStringParam("groupName")
+                                ?? throw new ArgumentException("Missing: fieldGroupName");
+                            return _writeService!.AddFieldGroup(tableName, groupName,
+                                request.GetStringParam("label"),
+                                request.GetParam<System.Collections.Generic.List<string>>("fields"));
+                        });
+
+                    case "removefieldgroup":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var groupName = request.GetStringParam("fieldGroupName")
+                                ?? request.GetStringParam("groupName")
+                                ?? throw new ArgumentException("Missing: fieldGroupName");
+                            return _writeService!.RemoveFieldGroup(tableName, groupName);
+                        });
+
+                    case "addfieldtofieldgroup":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var groupName = request.GetStringParam("fieldGroupName")
+                                ?? request.GetStringParam("groupName")
+                                ?? throw new ArgumentException("Missing: fieldGroupName");
+                            var fieldName = request.GetStringParam("fieldName")
+                                ?? throw new ArgumentException("Missing: fieldName");
+                            return _writeService!.AddFieldToFieldGroup(tableName, groupName, fieldName);
+                        });
+
+                    case "modifyfield":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var fieldName = request.GetStringParam("fieldName")
+                                ?? throw new ArgumentException("Missing: fieldName");
+                            return _writeService!.ModifyField(tableName, fieldName,
+                                request.GetDictParam("properties"));
+                        });
+
+                    case "renamefield":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var oldName = request.GetStringParam("fieldName")
+                                ?? request.GetStringParam("oldName")
+                                ?? throw new ArgumentException("Missing: fieldName");
+                            var newName = request.GetStringParam("fieldNewName")
+                                ?? request.GetStringParam("newName")
+                                ?? throw new ArgumentException("Missing: fieldNewName");
+                            return _writeService!.RenameField(tableName, oldName, newName);
+                        });
+
+                    case "removefield":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var fieldName = request.GetStringParam("fieldName")
+                                ?? throw new ArgumentException("Missing: fieldName");
+                            return _writeService!.RemoveField(tableName, fieldName);
+                        });
+
+                    case "replaceallfields":
+                        return HandleWrite(request, () =>
+                        {
+                            var tableName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var fields = request.GetParam<System.Collections.Generic.List<WriteFieldParam>>("fields")
+                                ?? throw new ArgumentException("Missing: fields");
+                            return _writeService!.ReplaceAllFields(tableName, fields);
+                        });
+
+                    case "addenumvalue":
+                        return HandleWrite(request, () =>
+                        {
+                            var enumName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var valueName = request.GetStringParam("enumValueName")
+                                ?? request.GetStringParam("valueName")
+                                ?? throw new ArgumentException("Missing: enumValueName");
+                            var value = request.GetIntParam("enumValue")
+                                ?? request.GetIntParam("value")
+                                ?? throw new ArgumentException("Missing: enumValue");
+                            return _writeService!.AddEnumValue(enumName, valueName, value,
+                                request.GetStringParam("label"));
+                        });
+
+                    case "modifyenumvalue":
+                        return HandleWrite(request, () =>
+                        {
+                            var enumName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var valueName = request.GetStringParam("enumValueName")
+                                ?? request.GetStringParam("valueName")
+                                ?? throw new ArgumentException("Missing: enumValueName");
+                            return _writeService!.ModifyEnumValue(enumName, valueName,
+                                request.GetDictParam("properties"));
+                        });
+
+                    case "removeenumvalue":
+                        return HandleWrite(request, () =>
+                        {
+                            var enumName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var valueName = request.GetStringParam("enumValueName")
+                                ?? request.GetStringParam("valueName")
+                                ?? throw new ArgumentException("Missing: enumValueName");
+                            return _writeService!.RemoveEnumValue(enumName, valueName);
+                        });
+
+                    case "addcontrol":
+                        return HandleWrite(request, () =>
+                        {
+                            var formName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var controlName = request.GetStringParam("controlName")
+                                ?? throw new ArgumentException("Missing: controlName");
+                            var parentControl = request.GetStringParam("parentControl")
+                                ?? throw new ArgumentException("Missing: parentControl");
+                            var controlType = request.GetStringParam("controlType") ?? "String";
+                            return _writeService!.AddControl(formName, controlName, parentControl, controlType,
+                                request.GetStringParam("controlDataSource"),
+                                request.GetStringParam("controlDataField"),
+                                request.GetStringParam("label"));
+                        });
+
+                    case "adddatasource":
+                        return HandleWrite(request, () =>
+                        {
+                            var objectType = request.GetStringParam("objectType")
+                                ?? throw new ArgumentException("Missing: objectType");
+                            var objectName = request.GetStringParam("objectName")
+                                ?? throw new ArgumentException("Missing: objectName");
+                            var dsName = request.GetStringParam("dataSourceName")
+                                ?? request.GetStringParam("dsName")
+                                ?? throw new ArgumentException("Missing: dataSourceName");
+                            var table = request.GetStringParam("dataSourceTable")
+                                ?? request.GetStringParam("table")
+                                ?? throw new ArgumentException("Missing: dataSourceTable");
+                            return _writeService!.AddDataSource(objectType, objectName, dsName, table,
+                                request.GetStringParam("joinSource"),
+                                request.GetStringParam("linkType"));
                         });
 
                     // === Batch Modify (multiple operations in one call) ===
@@ -506,6 +753,12 @@ namespace D365MetadataBridge.Protocol
                                     S("sourceCode") ?? throw new ArgumentException("Missing: sourceCode"));
                                 break;
 
+                            case "removemethod":
+                            case "remove-method":
+                                writeResult = _writeService.RemoveMethod(objectType, objectName,
+                                    S("methodName") ?? throw new ArgumentException("Missing: methodName"));
+                                break;
+
                             case "addfield":
                             case "add-field":
                                 writeResult = _writeService.AddField(objectName,
@@ -514,6 +767,128 @@ namespace D365MetadataBridge.Protocol
                                     S("edt"),
                                     B("mandatory") ?? false,
                                     S("label"));
+                                break;
+
+                            case "modifyfield":
+                            case "modify-field":
+                                writeResult = _writeService.ModifyField(objectName,
+                                    S("fieldName") ?? throw new ArgumentException("Missing: fieldName"),
+                                    p.Where(x => x.Key != "fieldName").ToDictionary(x => x.Key, x => x.Value?.ToString() ?? ""));
+                                break;
+
+                            case "renamefield":
+                            case "rename-field":
+                                writeResult = _writeService.RenameField(objectName,
+                                    S("fieldName") ?? S("oldName") ?? throw new ArgumentException("Missing: fieldName"),
+                                    S("fieldNewName") ?? S("newName") ?? throw new ArgumentException("Missing: fieldNewName"));
+                                break;
+
+                            case "removefield":
+                            case "remove-field":
+                                writeResult = _writeService.RemoveField(objectName,
+                                    S("fieldName") ?? throw new ArgumentException("Missing: fieldName"));
+                                break;
+
+                            case "replaceallfields":
+                            case "replace-all-fields":
+                                {
+                                    var fields = op.GetTypedParam<System.Collections.Generic.List<WriteFieldParam>>("fields")
+                                        ?? throw new ArgumentException("Missing: fields");
+                                    writeResult = _writeService.ReplaceAllFields(objectName, fields);
+                                }
+                                break;
+
+                            case "addindex":
+                            case "add-index":
+                                writeResult = _writeService.AddIndex(objectName,
+                                    S("indexName") ?? throw new ArgumentException("Missing: indexName"),
+                                    op.GetTypedParam<System.Collections.Generic.List<string>>("fields"),
+                                    B("allowDuplicates") ?? false,
+                                    B("alternateKey") ?? false);
+                                break;
+
+                            case "removeindex":
+                            case "remove-index":
+                                writeResult = _writeService.RemoveIndex(objectName,
+                                    S("indexName") ?? throw new ArgumentException("Missing: indexName"));
+                                break;
+
+                            case "addrelation":
+                            case "add-relation":
+                                writeResult = _writeService.AddRelation(objectName,
+                                    S("relationName") ?? throw new ArgumentException("Missing: relationName"),
+                                    S("relatedTable") ?? throw new ArgumentException("Missing: relatedTable"),
+                                    op.GetTypedParam<System.Collections.Generic.List<WriteRelationConstraint>>("constraints"));
+                                break;
+
+                            case "removerelation":
+                            case "remove-relation":
+                                writeResult = _writeService.RemoveRelation(objectName,
+                                    S("relationName") ?? throw new ArgumentException("Missing: relationName"));
+                                break;
+
+                            case "addfieldgroup":
+                            case "add-field-group":
+                                writeResult = _writeService.AddFieldGroup(objectName,
+                                    S("fieldGroupName") ?? S("groupName") ?? throw new ArgumentException("Missing: fieldGroupName"),
+                                    S("label"),
+                                    op.GetTypedParam<System.Collections.Generic.List<string>>("fields"));
+                                break;
+
+                            case "removefieldgroup":
+                            case "remove-field-group":
+                                writeResult = _writeService.RemoveFieldGroup(objectName,
+                                    S("fieldGroupName") ?? S("groupName") ?? throw new ArgumentException("Missing: fieldGroupName"));
+                                break;
+
+                            case "addfieldtofieldgroup":
+                            case "add-field-to-field-group":
+                                writeResult = _writeService.AddFieldToFieldGroup(objectName,
+                                    S("fieldGroupName") ?? S("groupName") ?? throw new ArgumentException("Missing: fieldGroupName"),
+                                    S("fieldName") ?? throw new ArgumentException("Missing: fieldName"));
+                                break;
+
+                            case "addenumvalue":
+                            case "add-enum-value":
+                                {
+                                    int enumVal = 0;
+                                    if (p.TryGetValue("enumValue", out var ev) || p.TryGetValue("value", out ev))
+                                        int.TryParse(ev?.ToString(), out enumVal);
+                                    writeResult = _writeService.AddEnumValue(objectName,
+                                        S("enumValueName") ?? S("valueName") ?? throw new ArgumentException("Missing: enumValueName"),
+                                        enumVal, S("label"));
+                                }
+                                break;
+
+                            case "modifyenumvalue":
+                            case "modify-enum-value":
+                                writeResult = _writeService.ModifyEnumValue(objectName,
+                                    S("enumValueName") ?? S("valueName") ?? throw new ArgumentException("Missing: enumValueName"),
+                                    p.Where(x => x.Key != "enumValueName" && x.Key != "valueName")
+                                     .ToDictionary(x => x.Key, x => x.Value?.ToString() ?? ""));
+                                break;
+
+                            case "removeenumvalue":
+                            case "remove-enum-value":
+                                writeResult = _writeService.RemoveEnumValue(objectName,
+                                    S("enumValueName") ?? S("valueName") ?? throw new ArgumentException("Missing: enumValueName"));
+                                break;
+
+                            case "addcontrol":
+                            case "add-control":
+                                writeResult = _writeService.AddControl(objectName,
+                                    S("controlName") ?? throw new ArgumentException("Missing: controlName"),
+                                    S("parentControl") ?? throw new ArgumentException("Missing: parentControl"),
+                                    S("controlType") ?? "String",
+                                    S("controlDataSource"), S("controlDataField"), S("label"));
+                                break;
+
+                            case "adddatasource":
+                            case "add-data-source":
+                                writeResult = _writeService.AddDataSource(objectType, objectName,
+                                    S("dataSourceName") ?? S("dsName") ?? throw new ArgumentException("Missing: dataSourceName"),
+                                    S("dataSourceTable") ?? S("table") ?? throw new ArgumentException("Missing: dataSourceTable"),
+                                    S("joinSource"), S("linkType"));
                                 break;
 
                             case "setproperty":

@@ -10,10 +10,11 @@ just ask in plain English.
 > CI) or the object is not found, the tools transparently fall back to the SQLite database.
 > Bridge-sourced results include a `_Source: C# bridge (IMetadataProvider)_` marker.
 >
-> **Write operations** also leverage the bridge: 12 create types (class, table, enum, edt,
-> query, view, 3 menu items, 3 security objects) and 10 modify types use
-> `IMetadataProvider.Create()` / `Update()` as the primary write path, falling back to
-> TypeScript XML generation for unsupported types.
+> **Write operations** are now fully bridged: 17 create types (class, table, enum, edt,
+> query, view, form, menu, 3 menu items, 3 security objects, 3 extension types) and **all 25
+> modify operations** use `IMetadataProvider.Create()` / `Update()` as the primary write path,
+> falling back to TypeScript XML generation only for complex types (report, data-entity) or
+> when the bridge is unavailable.
 > See [BRIDGE.md](BRIDGE.md) for details.
 
 ---
