@@ -227,6 +227,7 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
     // 1. Resolve model directory
     // Package name can differ from model name in any environment (not just UDE).
     const configManager = getConfigManager();
+    await configManager.ensureLoaded();
     const envType = await configManager.getDevEnvironmentType();
 
     let resolvedPackagePath: string;
