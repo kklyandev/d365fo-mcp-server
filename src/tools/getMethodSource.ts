@@ -28,7 +28,7 @@ export async function getMethodSourceTool(request: CallToolRequest, context: Xpp
     // Bridge returned nothing — try fuzzy name suggestions from SQLite
     let hint = '';
     try {
-      const db = context.symbolIndex.db;
+      const db = context.symbolIndex.getReadDb();
       const candidates = db.prepare(
         `SELECT name, signature FROM symbols
          WHERE type = 'method' AND parent_name = ? AND name LIKE ?

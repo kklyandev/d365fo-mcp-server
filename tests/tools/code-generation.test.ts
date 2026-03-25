@@ -53,6 +53,7 @@ const buildContext = (overrides: Partial<XppServerContext> = {}): XppServerConte
     suggestMissingMethods: vi.fn(() => []),
     getApiUsagePatterns: vi.fn(() => []),
     db: { prepare: vi.fn(() => ({ all: vi.fn(() => []), get: vi.fn(() => undefined), run: vi.fn() })) },
+    getReadDb: vi.fn(function(this: any) { return this.db; }),
   } as any,
   parser: {
     parseClassFile: vi.fn(async () => ({ success: false })),

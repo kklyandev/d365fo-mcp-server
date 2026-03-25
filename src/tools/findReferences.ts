@@ -108,7 +108,7 @@ export async function findReferencesTool(request: CallToolRequest, context: XppS
 
     // Cross-type check: detect when the caller used a form/table/view name as if it were a class
     const typeMismatchSection = parentObjectName
-      ? buildObjectTypeMismatchMessage(symbolIndex.db, parentObjectName)
+      ? buildObjectTypeMismatchMessage(symbolIndex.getReadDb(), parentObjectName)
       : '';
 
     if (limitedReferences.length === 0) {
@@ -218,11 +218,9 @@ function ftsMethodSearch(db: any, term: string, limit: number, extraColumns?: st
  */
 function findMethodReferences(symbolIndex: any, methodName: string, _scope: string, limit: number): Reference[] {
   const references: Reference[] = [];
+  const rdb = symbolIndex.getReadDb();
 
-  // Use FTS5 index instead of LIKE '%...%' full-table scans.
-  // FTS5 tokenises on non-word chars so "methodName" matches .methodName( and ::methodName(
-  // Fetch up to limit*3 candidates so the extractMethodCallContext filter has enough to work with.
-  const rows = ftsMethodSearch(symbolIndex.db, methodName, limit * 3, 'signature');
+  const rows = ftsMethodSearch(rdb, methodName, limit * 3, 'signature');
 
   for (const row of rows) {
     const context = extractMethodCallContext(row.source_snippet, methodName);
@@ -245,9 +243,10 @@ function findMethodReferences(symbolIndex: any, methodName: string, _scope: stri
  */
 function findClassReferences(symbolIndex: any, className: string, _scope: string, limit: number): Reference[] {
   const references: Reference[] = [];
+  const rdb = symbolIndex.getReadDb();
 
   // 1. Find classes that extend this class
-  const extendsStmt = symbolIndex.db.prepare(`
+  const extendsStmt = rdb.prepare(`
     SELECT name, file_path, model, extends_class
     FROM symbols
     WHERE type = 'class'
@@ -267,7 +266,7 @@ function findClassReferences(symbolIndex: any, className: string, _scope: string
   }
 
   // 2. Find classes that implement this interface
-  const implementsStmt = symbolIndex.db.prepare(`
+  const implementsStmt = rdb.prepare(`
     SELECT name, file_path, model, implements_interfaces
     FROM symbols
     WHERE type = 'class'
@@ -290,7 +289,7 @@ function findClassReferences(symbolIndex: any, className: string, _scope: string
 
   // 3. Find instantiations (new ClassName())
   // FTS5: search for className in source_snippet; extractInstantiationContext filters for 'new ClassName('
-  const instRows = ftsMethodSearch(symbolIndex.db, className, limit);
+  const instRows = ftsMethodSearch(rdb, className, limit);
   for (const row of instRows) {
     const context = extractInstantiationContext(row.source_snippet, className);
     if (context) {
@@ -306,7 +305,7 @@ function findClassReferences(symbolIndex: any, className: string, _scope: string
 
   // 4. Find general type references (classStr(), variable declarations, static calls)
   // FTS5: a single indexed lookup replaces three LIKE full-table scans
-  const typeRefRows = ftsMethodSearch(symbolIndex.db, className, limit);
+  const typeRefRows = ftsMethodSearch(rdb, className, limit);
   const existingCallers = new Set(references.map(r => r.caller));
   for (const row of typeRefRows) {
     const caller = row.parent_name ? `${row.parent_name}.${row.name}` : row.name;
@@ -332,10 +331,9 @@ function findClassReferences(symbolIndex: any, className: string, _scope: string
  */
 function findTableReferences(symbolIndex: any, tableName: string, _scope: string, limit: number): Reference[] {
   const references: Reference[] = [];
+  const rdb = symbolIndex.getReadDb();
 
-  // FTS5: one indexed lookup replaces three LIKE full-table scans.
-  // Covers "TableName table;", "select * from TableName", "TableName::find()" etc.
-  const rows = ftsMethodSearch(symbolIndex.db, tableName, limit);
+  const rows = ftsMethodSearch(rdb, tableName, limit);
 
   for (const row of rows) {
     const context = extractTableReferenceContext(row.source_snippet, tableName);
@@ -358,10 +356,9 @@ function findTableReferences(symbolIndex: any, tableName: string, _scope: string
  */
 function findFieldReferences(symbolIndex: any, fieldName: string, _scope: string, limit: number): Reference[] {
   const references: Reference[] = [];
+  const rdb = symbolIndex.getReadDb();
 
-  // FTS5: indexed lookup instead of LIKE '%.fieldName%' full-table scan.
-  // extractFieldAccessContext validates that the hit is a real field access.
-  const rows = ftsMethodSearch(symbolIndex.db, fieldName, limit);
+  const rows = ftsMethodSearch(rdb, fieldName, limit);
 
   for (const row of rows) {
     const context = extractFieldAccessContext(row.source_snippet, fieldName);
@@ -384,10 +381,9 @@ function findFieldReferences(symbolIndex: any, fieldName: string, _scope: string
  */
 function findEnumReferences(symbolIndex: any, enumName: string, _scope: string, limit: number): Reference[] {
   const references: Reference[] = [];
+  const rdb = symbolIndex.getReadDb();
 
-  // FTS5: indexed lookup instead of LIKE '%EnumName::%' full-table scan.
-  // extractEnumReferenceContext validates that the match is an actual enum usage.
-  const rows = ftsMethodSearch(symbolIndex.db, enumName, limit);
+  const rows = ftsMethodSearch(rdb, enumName, limit);
 
   for (const row of rows) {
     const context = extractEnumReferenceContext(row.source_snippet, enumName);

@@ -7,6 +7,7 @@
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { XppServerContext } from '../types/context.js';
+import { tryBridgeEventHandlers } from '../bridge/index.js';
 
 const FindEventHandlersArgsSchema = z.object({
   targetClass: z.string().optional().describe('Class whose events to find handlers for'),
@@ -20,7 +21,6 @@ const FindEventHandlersArgsSchema = z.object({
 export async function findEventHandlersTool(request: CallToolRequest, context: XppServerContext) {
   try {
     const args = FindEventHandlersArgsSchema.parse(request.params.arguments);
-    const db = context.symbolIndex.db;
 
     if (!args.targetClass && !args.targetTable) {
       return {
@@ -30,6 +30,16 @@ export async function findEventHandlersTool(request: CallToolRequest, context: X
     }
 
     const targetName = args.targetClass || args.targetTable!;
+
+    // ── Bridge fast-path (DYNAMICSXREFDB) ──
+    // When no specific eventName or handlerType filter is used, xref is a good source
+    if (!args.eventName && args.handlerType === 'all') {
+      const bridgeResult = await tryBridgeEventHandlers(context.bridge, targetName);
+      if (bridgeResult) return bridgeResult;
+    }
+
+    // ── Fallback: SQLite index ──
+    const rdb = context.symbolIndex.getReadDb();
     const isTable = !!args.targetTable;
 
     let output = `Event Handlers for: ${targetName} (${isTable ? 'table' : 'class'} events)\n`;
@@ -40,7 +50,7 @@ export async function findEventHandlersTool(request: CallToolRequest, context: X
     let metaHandlers: any[] = [];
     if (args.handlerType !== 'delegate') {
       try {
-        metaHandlers = db.prepare(
+        metaHandlers = rdb.prepare(
           `SELECT extension_name, model, event_subscriptions
            FROM extension_metadata
            WHERE (event_subscriptions LIKE ? OR event_subscriptions LIKE ?)
@@ -52,27 +62,44 @@ export async function findEventHandlersTool(request: CallToolRequest, context: X
       }
     }
 
-    // ── 2. FTS search on source_snippet for SubscribesTo ──
-    const subLike1 = `%SubscribesTo(classStr(${targetName}%`;
-    const subLike2 = `%SubscribesTo(tableStr(${targetName}%`;
-    const subLike3 = `%SubscribesTo(formStr(${targetName}%`;
-
+    // ── 2. FTS5 search for SubscribesTo (replaces LIKE full-table scan) ──
     let ftsHandlers: any[] = [];
     if (args.handlerType !== 'delegate') {
-      ftsHandlers = db.prepare(
-        `SELECT name, parent_name, model, source_snippet FROM symbols
-         WHERE type = 'method'
-         AND source_snippet LIKE '%SubscribesTo%'
-         AND (source_snippet LIKE ? OR source_snippet LIKE ? OR source_snippet LIKE ?)
-         ORDER BY model, parent_name, name
-         LIMIT 50`
-      ).all(subLike1, subLike2, subLike3) as any[];
+      try {
+        ftsHandlers = rdb.prepare(
+          `SELECT s.name, s.parent_name, s.model, s.source_snippet
+           FROM symbols_fts fts JOIN symbols s ON s.id = fts.rowid
+           WHERE symbols_fts MATCH 'source_snippet:SubscribesTo'
+           AND s.type = 'method'
+           AND (s.source_snippet LIKE ? OR s.source_snippet LIKE ? OR s.source_snippet LIKE ?)
+           ORDER BY s.model, s.parent_name, s.name
+           LIMIT 50`
+        ).all(
+          `%SubscribesTo(classStr(${targetName}%`,
+          `%SubscribesTo(tableStr(${targetName}%`,
+          `%SubscribesTo(formStr(${targetName}%`
+        ) as any[];
+      } catch {
+        // FTS5 query failed — fallback to LIKE
+        ftsHandlers = rdb.prepare(
+          `SELECT name, parent_name, model, source_snippet FROM symbols
+           WHERE type = 'method'
+           AND source_snippet LIKE '%SubscribesTo%'
+           AND (source_snippet LIKE ? OR source_snippet LIKE ? OR source_snippet LIKE ?)
+           ORDER BY model, parent_name, name
+           LIMIT 50`
+        ).all(
+          `%SubscribesTo(classStr(${targetName}%`,
+          `%SubscribesTo(tableStr(${targetName}%`,
+          `%SubscribesTo(formStr(${targetName}%`
+        ) as any[];
+      }
     }
 
     // ── 3. Delegate subscription search (+= syntax) ──
     let delegateHandlers: any[] = [];
     if (args.handlerType !== 'static') {
-      delegateHandlers = db.prepare(
+      delegateHandlers = rdb.prepare(
         `SELECT name, parent_name, model, source_snippet FROM symbols
          WHERE type = 'method'
          AND source_snippet LIKE ?
@@ -81,7 +108,7 @@ export async function findEventHandlersTool(request: CallToolRequest, context: X
       ).all(`%${targetName}.on%+=% `) as any[];
 
       // Also: find methods with body referencing delegate attach
-      const delegateHandlers2 = db.prepare(
+      const delegateHandlers2 = rdb.prepare(
         `SELECT name, parent_name, model, source_snippet FROM symbols
          WHERE type = 'method'
          AND source_snippet LIKE ?

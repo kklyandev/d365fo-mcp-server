@@ -107,8 +107,9 @@ export async function getTablePatternsTool(request: CallToolRequest, context: Xp
 }
 
 async function analyzeSimilarTable(symbolIndex: any, tableName: string, limit: number): Promise<string> {
+  const rdb = symbolIndex.getReadDb();
   // Get table info
-  const tableRow = symbolIndex.db.prepare(`
+  const tableRow = rdb.prepare(`
     SELECT * FROM symbols WHERE type = 'table' AND name = ? LIMIT 1
   `).get(tableName);
 
@@ -117,14 +118,14 @@ async function analyzeSimilarTable(symbolIndex: any, tableName: string, limit: n
   }
 
   // Get fields
-  const fields = symbolIndex.db.prepare(`
+  const fields = rdb.prepare(`
     SELECT name, signature FROM symbols 
     WHERE type = 'field' AND parent_name = ?
     ORDER BY name
   `).all(tableName) as Array<{ name: string; signature: string }>;
 
   // Get relations
-  const relations = symbolIndex.db.prepare(`
+  const relations = rdb.prepare(`
     SELECT target_table, relation_name, constraint_fields 
     FROM table_relations 
     WHERE source_table = ?
@@ -157,7 +158,7 @@ async function analyzeSimilarTable(symbolIndex: any, tableName: string, limit: n
   const fieldEdts = fields.map(f => f.signature).filter(Boolean);
   if (fieldEdts.length > 0) {
     // Find tables with overlapping EDTs
-    const similarTables = symbolIndex.db.prepare(`
+    const similarTables = rdb.prepare(`
       SELECT DISTINCT s.parent_name as table_name, COUNT(*) as match_count
       FROM symbols s
       WHERE s.type = 'field' 
@@ -177,12 +178,11 @@ async function analyzeSimilarTable(symbolIndex: any, tableName: string, limit: n
 }
 
 async function analyzeTableGroup(symbolIndex: any, tableGroup: string, limit: number): Promise<string> {
+  const rdb = symbolIndex.getReadDb();
   let output = '';
 
   // Get sample tables from this group
   // Note: We don't have tableGroup in symbols table, so we'll use heuristics
-  // Transaction tables often have "Trans" in name
-  // Parameter tables often have "Parameters" suffix
   let namePattern = '';
   if (tableGroup === 'Transaction') {
     namePattern = '%Trans%';
@@ -192,7 +192,7 @@ async function analyzeTableGroup(symbolIndex: any, tableGroup: string, limit: nu
     namePattern = '%Table';
   }
 
-  const sampleTables = symbolIndex.db.prepare(`
+  const sampleTables = rdb.prepare(`
     SELECT DISTINCT name, model 
     FROM symbols 
     WHERE type = 'table' 
@@ -208,15 +208,26 @@ async function analyzeTableGroup(symbolIndex: any, tableGroup: string, limit: nu
 
   output += `**Sample Tables Found:** ${sampleTables.length}\n\n`;
 
+  // ── BATCHED field query: fetch all fields for all sample tables in ONE query ──
+  const tableNames = sampleTables.map(t => t.name);
+  const placeholders = tableNames.map(() => '?').join(',');
+  const allFields = rdb.prepare(`
+    SELECT parent_name, name, signature FROM symbols
+    WHERE type = 'field' AND parent_name IN (${placeholders})
+  `).all(...tableNames) as Array<{ parent_name: string; name: string; signature: string }>;
+
+  // Group fields by table
+  const fieldsByTable = new Map<string, Array<{ name: string; signature: string }>>();
+  for (const f of allFields) {
+    if (!fieldsByTable.has(f.parent_name)) fieldsByTable.set(f.parent_name, []);
+    fieldsByTable.get(f.parent_name)!.push({ name: f.name, signature: f.signature });
+  }
+
   // Analyze common field patterns
   const fieldPatternMap = new Map<string, { edt: string; count: number }>();
 
   for (const table of sampleTables) {
-    const fields = symbolIndex.db.prepare(`
-      SELECT name, signature FROM symbols 
-      WHERE type = 'field' AND parent_name = ?
-    `).all(table.name) as Array<{ name: string; signature: string }>;
-
+    const fields = fieldsByTable.get(table.name) || [];
     for (const field of fields) {
       if (!field.signature) continue;
       const key = `${field.name}:${field.signature}`;
@@ -243,16 +254,14 @@ async function analyzeTableGroup(symbolIndex: any, tableGroup: string, limit: nu
     output += `| ${fieldName} | ${data.edt} | ${frequency} |\n`;
   }
 
-  // Analyze common relations
-  const relationMap = new Map<string, number>();
-  for (const table of sampleTables) {
-    const relations = symbolIndex.db.prepare(`
-      SELECT target_table FROM table_relations WHERE source_table = ?
-    `).all(table.name) as Array<{ target_table: string }>;
+  // ── BATCHED relation query: fetch all relations for all sample tables in ONE query ──
+  const allRelations = rdb.prepare(`
+    SELECT source_table, target_table FROM table_relations WHERE source_table IN (${placeholders})
+  `).all(...tableNames) as Array<{ source_table: string; target_table: string }>;
 
-    for (const rel of relations) {
-      relationMap.set(rel.target_table, (relationMap.get(rel.target_table) || 0) + 1);
-    }
+  const relationMap = new Map<string, number>();
+  for (const rel of allRelations) {
+    relationMap.set(rel.target_table, (relationMap.get(rel.target_table) || 0) + 1);
   }
 
   if (relationMap.size > 0) {

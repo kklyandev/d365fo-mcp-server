@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { XppServerContext } from '../types/context.js';
 import { getConfigManager } from '../utils/configManager.js';
 import { scanFsExtensions } from '../utils/fsExtensionScanner.js';
+import { tryBridgeCocExtensions } from '../bridge/index.js';
 
 const FindCocExtensionsArgsSchema = z.object({
   className: z.string().describe('Base class or table name being extended'),
@@ -19,9 +20,17 @@ const FindCocExtensionsArgsSchema = z.object({
 export async function findCocExtensionsTool(request: CallToolRequest, context: XppServerContext) {
   try {
     const args = FindCocExtensionsArgsSchema.parse(request.params.arguments);
-    const db = context.symbolIndex.db;
+    const rdb = context.symbolIndex.getReadDb();
     const className = args.className;
     const methodName = args.methodName;
+
+    // ── Bridge fast-path (DYNAMICSXREFDB) ──
+    // Note: xref gives us extension class names but not method-level detail.
+    // Use as supplementary source, not a full replacement, when methodName is specified.
+    if (!methodName) {
+      const bridgeResult = await tryBridgeCocExtensions(context.bridge, className);
+      if (bridgeResult) return bridgeResult;
+    }
 
     let output = `CoC Extensions of: ${className}\n`;
     if (methodName) output += `Filtering by method: ${methodName}\n`;
@@ -30,7 +39,7 @@ export async function findCocExtensionsTool(request: CallToolRequest, context: X
     // 1. Query extension_metadata table for class-extension records
     let extensionRows: any[] = [];
     try {
-      extensionRows = db.prepare(
+      extensionRows = rdb.prepare(
         `SELECT extension_name, model, base_object_name, coc_methods, added_methods, event_subscriptions
          FROM extension_metadata
          WHERE base_object_name = ? AND extension_type = 'class-extension'
@@ -41,7 +50,7 @@ export async function findCocExtensionsTool(request: CallToolRequest, context: X
     }
 
     // 2. Fallback: query symbols by extends_class column
-    const symbolExtensions = db.prepare(
+    const symbolExtensions = rdb.prepare(
       `SELECT name, model, file_path FROM symbols
        WHERE type = 'class-extension' AND (extends_class = ? OR name LIKE ?)
        ORDER BY model, name`
@@ -189,22 +198,36 @@ export async function findCocExtensionsTool(request: CallToolRequest, context: X
       // Look for SubscribesTo references in extension_metadata
       let eventHandlerRows: any[] = [];
       try {
-        eventHandlerRows = db.prepare(
+        eventHandlerRows = rdb.prepare(
           `SELECT extension_name, model, event_subscriptions FROM extension_metadata
            WHERE (event_subscriptions LIKE ? OR event_subscriptions LIKE ?)
            ORDER BY model, extension_name`
         ).all(`%classStr(${className}%`, `%tableStr(${className}%`) as any[];
       } catch { /**/ }
 
-      // Also search symbols source_snippet for SubscribesTo patterns
-      const ftsHandlers = db.prepare(
-        `SELECT s.name, s.parent_name, s.model, s.source_snippet FROM symbols s
-         WHERE s.type = 'method'
-         AND s.source_snippet LIKE '%SubscribesTo%'
-         AND (s.source_snippet LIKE ? OR s.source_snippet LIKE ?)
-         ORDER BY s.model, s.parent_name, s.name
-         LIMIT 20`
-      ).all(`%${className}%`, `%${className}%`) as any[];
+      // FTS5 search for SubscribesTo patterns (replaces LIKE full-table scan)
+      let ftsHandlers: any[] = [];
+      try {
+        ftsHandlers = rdb.prepare(
+          `SELECT s.name, s.parent_name, s.model, s.source_snippet
+           FROM symbols_fts fts JOIN symbols s ON s.id = fts.rowid
+           WHERE symbols_fts MATCH 'source_snippet:SubscribesTo'
+           AND s.type = 'method'
+           AND (s.source_snippet LIKE ? OR s.source_snippet LIKE ?)
+           ORDER BY s.model, s.parent_name, s.name
+           LIMIT 20`
+        ).all(`%classStr(${className}%`, `%tableStr(${className}%`) as any[];
+      } catch {
+        // FTS5 fallback — use LIKE on source_snippet
+        ftsHandlers = rdb.prepare(
+          `SELECT s.name, s.parent_name, s.model, s.source_snippet FROM symbols s
+           WHERE s.type = 'method'
+           AND s.source_snippet LIKE '%SubscribesTo%'
+           AND (s.source_snippet LIKE ? OR s.source_snippet LIKE ?)
+           ORDER BY s.model, s.parent_name, s.name
+           LIMIT 20`
+        ).all(`%classStr(${className}%`, `%tableStr(${className}%`) as any[];
+      }
 
       const handlerSeen = new Set<string>();
       const allHandlers: Array<{ className: string; method: string; model: string; event?: string }> = [];

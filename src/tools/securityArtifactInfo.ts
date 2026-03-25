@@ -6,6 +6,7 @@
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { XppServerContext } from '../types/context.js';
+import { tryBridgeSecurityArtifact } from '../bridge/index.js';
 
 const SecurityArtifactInfoArgsSchema = z.object({
   name: z.string().describe('Name of the security privilege, duty, or role'),
@@ -19,14 +20,22 @@ export async function securityArtifactInfoTool(
 ): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
   try {
     const args = SecurityArtifactInfoArgsSchema.parse(request.params.arguments);
-    const db = context.symbolIndex.db;
+
+    // ── Bridge fast-path (C# IMetadataProvider) ──
+    const bridgeResult = await tryBridgeSecurityArtifact(
+      context.bridge, args.name, args.artifactType, args.includeChain ?? true,
+    );
+    if (bridgeResult) return bridgeResult;
+
+    // ── Fallback: SQLite index ──
+    const rdb = context.symbolIndex.getReadDb();
 
     if (args.artifactType === 'privilege') {
-      return getPrivilegeInfo(db, args.name, args.includeChain ?? true);
+      return getPrivilegeInfo(rdb, args.name, args.includeChain ?? true);
     } else if (args.artifactType === 'duty') {
-      return getDutyInfo(db, args.name, args.includeChain ?? true);
+      return getDutyInfo(rdb, args.name, args.includeChain ?? true);
     } else {
-      return getRoleInfo(db, args.name, args.includeChain ?? true);
+      return getRoleInfo(rdb, args.name, args.includeChain ?? true);
     }
   } catch (error) {
     return {
@@ -109,18 +118,33 @@ function getDutyInfo(db: any, name: string, includeChain: boolean) {
 
   if (privileges.length > 0) {
     output += `\nPrivileges (${privileges.length}):\n`;
-    for (const priv of privileges) {
-      if (includeChain) {
-        // Show entry points for each privilege
-        const eps = db.prepare(
-          `SELECT entry_point_name, object_type, access_level FROM security_privilege_entries WHERE privilege_name = ? ORDER BY entry_point_name`
-        ).all(priv.privilege_name) as any[];
+
+    if (includeChain) {
+      // A4: Batched query — fetch ALL entry points for all privileges in one query
+      const privNames = privileges.map((p: any) => p.privilege_name);
+      const ph = privNames.map(() => '?').join(',');
+      const allEps = db.prepare(
+        `SELECT privilege_name, entry_point_name, object_type, access_level
+         FROM security_privilege_entries WHERE privilege_name IN (${ph})
+         ORDER BY privilege_name, entry_point_name`
+      ).all(...privNames) as any[];
+
+      const epsByPriv = new Map<string, any[]>();
+      for (const ep of allEps) {
+        if (!epsByPriv.has(ep.privilege_name)) epsByPriv.set(ep.privilege_name, []);
+        epsByPriv.get(ep.privilege_name)!.push(ep);
+      }
+
+      for (const priv of privileges) {
+        const eps = epsByPriv.get(priv.privilege_name) || [];
         output += `  • ${priv.privilege_name}`;
         if (eps.length > 0) {
           output += ` (${eps.length} entry points: ${eps.slice(0, 3).map((ep: any) => `${ep.entry_point_name}[${ep.access_level}]`).join(', ')}${eps.length > 3 ? '...' : ''})`;
         }
         output += '\n';
-      } else {
+      }
+    } else {
+      for (const priv of privileges) {
         output += `  • ${priv.privilege_name}\n`;
       }
     }
@@ -155,33 +179,45 @@ function getRoleInfo(db: any, name: string, includeChain: boolean) {
 
   if (duties.length > 0) {
     output += `\nDuties (${duties.length}):\n`;
-    for (const duty of duties) {
-      output += `  • ${duty.duty_name}`;
-
-      if (includeChain) {
-        const privileges = db.prepare(
-          `SELECT privilege_name FROM security_duty_privileges WHERE duty_name = ? ORDER BY privilege_name`
-        ).all(duty.duty_name) as any[];
-
-        if (privileges.length > 0) {
-          output += ` → ${privileges.length} privilege(s): ${privileges.slice(0, 3).map((p: any) => p.privilege_name).join(', ')}${privileges.length > 3 ? '...' : ''}`;
-        }
-      }
-      output += '\n';
-    }
 
     if (includeChain) {
-      // Count total entry points across all duties
-      const totalEntryPoints = (db.prepare(`
-        SELECT COUNT(*) as cnt FROM security_privilege_entries spe
-        WHERE spe.privilege_name IN (
-          SELECT privilege_name FROM security_duty_privileges WHERE duty_name IN (
-            SELECT duty_name FROM security_role_duties WHERE role_name = ?
-          )
-        )
-      `).get(name) as any)?.cnt ?? 0;
+      // A4: Batched query — fetch ALL privileges for all duties in one query
+      const dutyNames = duties.map((d: any) => d.duty_name);
+      const ph = dutyNames.map(() => '?').join(',');
+      const allPrivs = db.prepare(
+        `SELECT duty_name, privilege_name FROM security_duty_privileges
+         WHERE duty_name IN (${ph}) ORDER BY duty_name, privilege_name`
+      ).all(...dutyNames) as any[];
 
-      output += `\nTotal entry points covered: ${totalEntryPoints}\n`;
+      const privsByDuty = new Map<string, string[]>();
+      for (const p of allPrivs) {
+        if (!privsByDuty.has(p.duty_name)) privsByDuty.set(p.duty_name, []);
+        privsByDuty.get(p.duty_name)!.push(p.privilege_name);
+      }
+
+      for (const duty of duties) {
+        const privs = privsByDuty.get(duty.duty_name) || [];
+        output += `  • ${duty.duty_name}`;
+        if (privs.length > 0) {
+          output += ` → ${privs.length} privilege(s): ${privs.slice(0, 3).join(', ')}${privs.length > 3 ? '...' : ''}`;
+        }
+        output += '\n';
+      }
+
+      // Batched: count total entry points across all duties' privileges
+      const allPrivNames = [...new Set(allPrivs.map(p => p.privilege_name))];
+      if (allPrivNames.length > 0) {
+        const ph2 = allPrivNames.map(() => '?').join(',');
+        const epCount = (db.prepare(
+          `SELECT COUNT(*) as cnt FROM security_privilege_entries
+           WHERE privilege_name IN (${ph2})`
+        ).get(...allPrivNames) as any)?.cnt ?? 0;
+        output += `\nTotal entry points covered: ${epCount}\n`;
+      }
+    } else {
+      for (const duty of duties) {
+        output += `  • ${duty.duty_name}\n`;
+      }
     }
   } else {
     output += `\nDuties: none indexed\n`;

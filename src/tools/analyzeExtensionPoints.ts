@@ -28,20 +28,20 @@ const AnalyzeExtensionPointsArgsSchema = z.object({
 export async function analyzeExtensionPointsTool(request: CallToolRequest, context: XppServerContext) {
   try {
     const args = AnalyzeExtensionPointsArgsSchema.parse(request.params.arguments);
-    const db = context.symbolIndex.db;
+    const rdb = context.symbolIndex.getReadDb();
     const objName = args.objectName;
 
     // ── Step 1: Resolve object type ──
     let resolvedType = args.objectType;
     if (resolvedType === 'auto') {
-      const sym = db.prepare(
+      const sym = rdb.prepare(
         `SELECT type FROM symbols WHERE name = ? AND type IN ('class','table','form')
          ORDER BY CASE type WHEN 'class' THEN 0 WHEN 'table' THEN 1 WHEN 'form' THEN 2 END LIMIT 1`
       ).get(objName) as any;
       if (sym) resolvedType = sym.type as any;
     }
 
-    const baseSymbol = db.prepare(
+    const baseSymbol = rdb.prepare(
       `SELECT name, type, model, file_path FROM symbols WHERE name = ? AND type = ? LIMIT 1`
     ).get(objName, resolvedType === 'auto' ? 'class' : resolvedType) as any;
 
@@ -55,7 +55,7 @@ export async function analyzeExtensionPointsTool(request: CallToolRequest, conte
     if (args.showExistingExtensions) {
       try {
         const extType = resolvedType === 'auto' ? '%' : `${resolvedType}-extension`;
-        existingExtensions = db.prepare(
+        existingExtensions = rdb.prepare(
           `SELECT extension_name, model, coc_methods, event_subscriptions, added_methods
            FROM extension_metadata
            WHERE base_object_name = ? AND extension_type LIKE ?
@@ -125,9 +125,11 @@ export async function analyzeExtensionPointsTool(request: CallToolRequest, conte
 
     // Also scan symbols for SubscribesTo for this object
     try {
-      const subHandlers = db.prepare(
-        `SELECT name, parent_name, source_snippet FROM symbols
-         WHERE type='method' AND source_snippet LIKE '%SubscribesTo%' AND source_snippet LIKE ?
+      const subHandlers = rdb.prepare(
+        `SELECT s.name, s.parent_name, s.source_snippet FROM symbols_fts fts
+         JOIN symbols s ON s.id = fts.rowid
+         WHERE symbols_fts MATCH 'source_snippet:SubscribesTo' AND s.type = 'method'
+         AND s.source_snippet LIKE ?
          LIMIT 30`
       ).all(`%${objName}%`) as any[];
 
@@ -149,7 +151,7 @@ export async function analyzeExtensionPointsTool(request: CallToolRequest, conte
 
     // ── Step 3: For classes — analyze methods ──
     if (resolvedType === 'class' || resolvedType === 'auto') {
-      const methods = db.prepare(
+      const methods = rdb.prepare(
         `SELECT name, signature, source_snippet FROM symbols
          WHERE parent_name = ? AND type = 'method'
          ORDER BY name`
@@ -230,27 +232,43 @@ export async function analyzeExtensionPointsTool(request: CallToolRequest, conte
 
     // ── Step 4: For tables — show standard events ──
     if (resolvedType === 'table' || resolvedType === 'auto') {
+      // Batch: single FTS5 query for ALL standard events instead of 8× individual full-table scans.
+      // This is O(1) FTS5 lookup instead of O(N × 584K) LIKE scans.
+      const eventHandlerCounts = new Map<string, number>();
+      try {
+        const allEvHandlers = rdb.prepare(
+          `SELECT s.source_snippet FROM symbols_fts fts
+           JOIN symbols s ON s.id = fts.rowid
+           WHERE symbols_fts MATCH 'source_snippet:SubscribesTo'
+           AND s.type = 'method'
+           AND s.source_snippet LIKE ?
+           LIMIT 200`
+        ).all(`%${objName}%`) as any[];
+
+        for (const row of allEvHandlers) {
+          const src = row.source_snippet || '';
+          for (const ev of TABLE_STANDARD_EVENTS) {
+            if (src.includes(ev)) {
+              eventHandlerCounts.set(ev, (eventHandlerCounts.get(ev) || 0) + 1);
+            }
+          }
+        }
+      } catch { /* FTS5 query failed — non-fatal, counts stay 0 */ }
+
       output += `Table Events (${TABLE_STANDARD_EVENTS.length} standard hooks):\n`;
       for (const ev of TABLE_STANDARD_EVENTS) {
         const subscribers = alreadySubscribed.get(ev) || [];
-        // Also check FTS
-        if (subscribers.length === 0) {
-          try {
-            const ftsCheck = db.prepare(
-              `SELECT COUNT(*) as cnt FROM symbols WHERE type='method'
-               AND source_snippet LIKE ? AND source_snippet LIKE ?`
-            ).get(`%SubscribesTo%`, `%${ev}%`) as any;
-            output += `  ${ev.padEnd(22)} [${ftsCheck?.cnt > 0 ? `~${ftsCheck.cnt} handler(s)` : '0 handlers'}]\n`;
-          } catch {
-            output += `  ${ev.padEnd(22)} [${subscribers.length} handler(s)]\n`;
-          }
-        } else {
+        const ftsCount = eventHandlerCounts.get(ev) || 0;
+        const totalCount = Math.max(subscribers.length, ftsCount);
+        if (subscribers.length > 0) {
           output += `  ${ev.padEnd(22)} [${subscribers.length} handler(s): ${subscribers.slice(0, 2).join(', ')}]\n`;
+        } else {
+          output += `  ${ev.padEnd(22)} [${totalCount > 0 ? `~${totalCount} handler(s)` : '0 handlers'}]\n`;
         }
       }
 
       // Also check custom delegates on the table class
-      const tableMethods = db.prepare(
+      const tableMethods = rdb.prepare(
         `SELECT name, source_snippet FROM symbols
          WHERE parent_name = ? AND type = 'method'
          AND (source_snippet LIKE '%delegate %' OR signature LIKE '%delegate %')
@@ -268,7 +286,7 @@ export async function analyzeExtensionPointsTool(request: CallToolRequest, conte
 
     // ── Step 5: For forms — show data sources and methods ──
     if (resolvedType === 'form') {
-      const formDataSources = db.prepare(
+      const formDataSources = rdb.prepare(
         `SELECT name FROM symbols WHERE parent_name = ? AND type = 'datasource' ORDER BY name`
       ).all(objName) as any[];
 
@@ -280,7 +298,7 @@ export async function analyzeExtensionPointsTool(request: CallToolRequest, conte
         output += '\n';
       }
 
-      const formMethods = db.prepare(
+      const formMethods = rdb.prepare(
         `SELECT name FROM symbols WHERE parent_name = ? AND type = 'method' ORDER BY name LIMIT 20`
       ).all(objName) as any[];
 

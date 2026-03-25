@@ -334,6 +334,9 @@ export async function handleGenerateSmartReport(
   const controllerClassName = `${finalName}Controller`;
   const reportCaption = caption || finalName;
 
+  // Read pool connection for all symbol lookups in this function
+  const rdb = symbolIndex.getReadDb();
+
   // ── Resolve fields ─────────────────────────────────────────────────────────
   let reportFields: ReportFieldSpec[] = [];
 
@@ -341,7 +344,7 @@ export async function handleGenerateSmartReport(
   if (copyFrom) {
     log(`Copying field structure from: ${copyFrom}`);
     try {
-      const db = symbolIndex.db;
+      const db = symbolIndex.getReadDb();
       // Try to find the DP class's TmpTable
       const dpSearch = db.prepare(
         `SELECT name FROM symbols WHERE type = 'class' AND name LIKE ? LIMIT 1`
@@ -374,7 +377,7 @@ export async function handleGenerateSmartReport(
           .map(f => ({
             name: f.name,
             edt: f.signature || undefined,
-            dataType: resolveRdlDataType(f.signature, symbolIndex.db),
+            dataType: resolveRdlDataType(f.signature, rdb),
           }));
         log(`Copied ${reportFields.length} fields from ${srcTmpTable}`);
       } else {
@@ -390,7 +393,7 @@ export async function handleGenerateSmartReport(
     reportFields = structuredFields.map(f => ({
       ...f,
       edt: f.edt || suggestEdtFromFieldName(f.name),
-      dataType: f.dataType || resolveRdlDataType(f.edt || suggestEdtFromFieldName(f.name), symbolIndex.db),
+      dataType: f.dataType || resolveRdlDataType(f.edt || suggestEdtFromFieldName(f.name), rdb),
     }));
     log(`Using ${reportFields.length} structured fields`);
   }
@@ -403,7 +406,7 @@ export async function handleGenerateSmartReport(
       return {
         name: h,
         edt,
-        dataType: resolveRdlDataType(edt, symbolIndex.db),
+        dataType: resolveRdlDataType(edt, rdb),
       };
     });
     log(`Parsed ${reportFields.length} fields from fieldsHint`);
@@ -444,13 +447,13 @@ export async function handleGenerateSmartReport(
       dsFields = ds.fields.map((f: ReportFieldSpec) => ({
         ...f,
         edt: f.edt || suggestEdtFromFieldName(f.name),
-        dataType: f.dataType || resolveRdlDataType(f.edt || suggestEdtFromFieldName(f.name), symbolIndex.db),
+        dataType: f.dataType || resolveRdlDataType(f.edt || suggestEdtFromFieldName(f.name), rdb),
       }));
     } else if (ds.fieldsHint) {
       const hints = ds.fieldsHint.split(',').map((s: string) => s.trim()).filter(Boolean);
       dsFields = hints.map((h: string) => {
         const edt = suggestEdtFromFieldName(h);
-        return { name: h, edt, dataType: resolveRdlDataType(edt, symbolIndex.db) };
+        return { name: h, edt, dataType: resolveRdlDataType(edt, rdb) };
       });
     }
     return {
@@ -460,7 +463,7 @@ export async function handleGenerateSmartReport(
       tableFields: dsFields.map((f: ReportFieldSpec) => ({
         name: f.name,
         edt: f.edt,
-        type: resolveFieldType(f.edt, symbolIndex.db),
+        type: resolveFieldType(f.edt, rdb),
       })),
     };
   });
@@ -479,7 +482,7 @@ export async function handleGenerateSmartReport(
   const tableFields: TableFieldSpec[] = reportFields.map(f => ({
     name: f.name,
     edt: f.edt,
-    type: resolveFieldType(f.edt, symbolIndex.db),
+    type: resolveFieldType(f.edt, rdb),
   }));
 
   const builder = new SmartXmlBuilder();
@@ -660,7 +663,7 @@ export async function handleGenerateSmartReport(
   // For aotQuery: try to resolve the first datasource table so we can generate
   // tableNum()-based, type-safe code instead of the generic Common/getNo(1) fallback.
   const querySourceTable = aotQuery
-    ? resolveAotQueryFirstTable(aotQuery, symbolIndex.db)
+    ? resolveAotQueryFirstTable(aotQuery, rdb)
     : undefined;
   if (querySourceTable) log(`Resolved aotQuery "${aotQuery}" first datasource: ${querySourceTable}`);
 

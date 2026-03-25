@@ -51,9 +51,10 @@ export async function getMethodSignatureTool(request: CallToolRequest, context: 
 
     // 1. Find the class/table/view — methods live on all three object types
     const OBJECT_TYPES = `('class', 'table', 'view', 'data-entity')`;
+    const rdb = symbolIndex.getReadDb();
     let classRow: any;
     if (modelName) {
-      classRow = symbolIndex.db.prepare(`
+      classRow = rdb.prepare(`
         SELECT file_path, model, name, type
         FROM symbols
         WHERE type IN ${OBJECT_TYPES} AND name = ? AND model = ?
@@ -61,7 +62,7 @@ export async function getMethodSignatureTool(request: CallToolRequest, context: 
         LIMIT 1
       `).get(className, modelName);
     } else {
-      classRow = symbolIndex.db.prepare(`
+      classRow = rdb.prepare(`
         SELECT file_path, model, name, type
         FROM symbols
         WHERE type IN ${OBJECT_TYPES} AND name = ?
@@ -71,7 +72,7 @@ export async function getMethodSignatureTool(request: CallToolRequest, context: 
     }
 
     if (!classRow) {
-      const typeMismatch = buildObjectTypeMismatchMessage(symbolIndex.db, className);
+      const typeMismatch = buildObjectTypeMismatchMessage(rdb, className);
       return {
         content: [
           {
@@ -84,7 +85,7 @@ export async function getMethodSignatureTool(request: CallToolRequest, context: 
     }
 
     // 2. Find the method in database
-    const methodStmt = symbolIndex.db.prepare(`
+    const methodStmt = rdb.prepare(`
       SELECT name, signature, parent_name, file_path
       FROM symbols
       WHERE type = 'method'

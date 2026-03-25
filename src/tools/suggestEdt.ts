@@ -43,7 +43,7 @@ export async function handleSuggestEdt(
 
   console.log(`[suggestEdt] Suggesting EDT for field: ${fieldName}, context: ${context}`);
 
-  const db = symbolIndex.db;
+  const db = symbolIndex.getReadDb();
 
   // Strategy 1: Exact match on EDT name
   const exactMatch = db.prepare(`
