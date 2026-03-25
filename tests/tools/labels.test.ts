@@ -391,6 +391,49 @@ describe('create_label', () => {
     expect(result.content[0].text).toContain('projectPath not resolved');
   });
 
+  it('surfaces addLabelToProject error in tool response', async () => {
+    mockAddLabelToProject.mockClear();
+    mockAddLabelToProject.mockRejectedValueOnce(new Error('EBUSY: resource busy, open \'K:\\Test.rnrproj\''));
+    mockConfigMgr.getProjectPath.mockResolvedValueOnce('K:\\Test.rnrproj');
+
+    const result = await createLabelTool(
+      req('create_label', {
+        labelId: 'ErrorVisibilityTest',
+        labelFileId: 'MyModel',
+        model: 'MyModel',
+        createLabelFileIfMissing: true,
+        updateIndex: false,
+        translations: [{ language: 'en-US', text: 'Error test' }],
+      }),
+      ctx,
+    );
+    expect(result.isError).toBeFalsy(); // label was created, only project failed
+    expect(result.content[0].text).toContain('failed to add to VS project');
+    expect(result.content[0].text).toContain('EBUSY');
+    expect(result.content[0].text).toContain('Visual Studio has the .rnrproj file locked');
+  });
+
+  it('shows "already in project" when entries already exist', async () => {
+    mockAddLabelToProject.mockClear();
+    // Return empty array = all entries already present
+    mockAddLabelToProject.mockResolvedValueOnce([]);
+    mockConfigMgr.getProjectPath.mockResolvedValueOnce('K:\\Test.rnrproj');
+
+    const result = await createLabelTool(
+      req('create_label', {
+        labelId: 'AlreadyInProjectTest',
+        labelFileId: 'MyModel',
+        model: 'MyModel',
+        createLabelFileIfMissing: true,
+        updateIndex: false,
+        translations: [{ language: 'en-US', text: 'Already test' }],
+      }),
+      ctx,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain('already in VS project');
+  });
+
   it('returns error when labelId contains invalid characters', async () => {
     const result = await createLabelTool(
       req('create_label', {

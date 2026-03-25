@@ -3090,6 +3090,7 @@ export class ProjectFileManager {
     }
 
     const added: string[] = [];
+    let newEntries = 0;
     const existingIncludes = new Set(
       contentGroup.Content.map((c: any) => c.$?.Include).filter(Boolean)
     );
@@ -3109,6 +3110,7 @@ export class ProjectFileManager {
         });
         existingIncludes.add(descriptorInclude);
         added.push(descriptorName);
+        newEntries++;
       }
 
       // 2. LabelResources .label.txt entry with DependentUpon
@@ -3120,10 +3122,11 @@ export class ProjectFileManager {
           DependentUpon: descriptorInclude,
         });
         existingIncludes.add(resourceFileName);
+        newEntries++;
       }
     }
 
-    if (added.length === 0) {
+    if (newEntries === 0) {
       console.error(`[ProjectFileManager] All label entries already in project — skipping write`);
       return added;
     }

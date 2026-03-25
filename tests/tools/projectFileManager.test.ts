@@ -239,5 +239,29 @@ describe('ProjectFileManager', () => {
       const added2 = await manager.addLabelToProject(projectPath, 'TestLabels', ['en-US']);
       expect(added2).toEqual([]);
     });
+
+    it('writes resource entry even when descriptor already exists', async () => {
+      const projectPath = 'K:\\Test\\Test.rnrproj';
+      fileStore.set(projectPath, REALISTIC_RNRPROJ_WITH_BOM);
+
+      const manager = new ProjectFileManager();
+      // First call adds both descriptor + resource
+      await manager.addLabelToProject(projectPath, 'TestLabels', ['en-US']);
+      let xml = fileStore.get(projectPath)!;
+      expect(xml).toContain('TestLabels.en-US.label.txt');
+
+      // Simulate resource entry being manually removed (descriptor remains)
+      xml = xml.replace(/<Content Include="TestLabels\.en-US\.label\.txt">[\s\S]*?<\/Content>/, '');
+      fileStore.set(projectPath, xml);
+      expect(fileStore.get(projectPath)).not.toContain('TestLabels.en-US.label.txt');
+
+      // Second call: descriptor exists → added=[], but resource must still be written
+      const added2 = await manager.addLabelToProject(projectPath, 'TestLabels', ['en-US']);
+      expect(added2).toEqual([]); // no NEW descriptors
+      const xml2 = fileStore.get(projectPath)!;
+      // But resource entry must be restored
+      expect(xml2).toContain('TestLabels.en-US.label.txt');
+      expect(xml2).toContain('<DependentUpon>AxLabelFile\\TestLabels_en-US</DependentUpon>');
+    });
   });
 });

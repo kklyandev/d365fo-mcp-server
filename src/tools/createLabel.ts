@@ -413,6 +413,7 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
     // 5b. Add label file descriptors to VS project (.rnrproj) so builds detect them
     const addedToProject: string[] = [];
     let projectWarning = '';
+    let projectAlreadyOk = false;
     if (args.addToProject && (written.length > 0 || existingLanguages.length > 0)) {
       // Resolve projectPath with the same fallback chain as create_d365fo_file:
       // 1. Explicit arg  2. configManager  3. solutionPath + ProjectFileFinder scan
@@ -430,11 +431,26 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
         const pfm = new ProjectFileManager();
         // Collect all languages that have an XML descriptor
         const allLangs = [...new Set([...written, ...existingLanguages])];
+        console.error(`[create_label] Adding label to project: ${projectPath} | labelFileId=${labelFileId} | langs=${allLangs.join(',')}`);
         try {
           const added = await pfm.addLabelToProject(projectPath, labelFileId, allLangs);
           addedToProject.push(...added);
+          if (added.length === 0) {
+            projectAlreadyOk = true;
+            console.error(`[create_label] All label entries already in project — no write needed`);
+          } else {
+            console.error(`[create_label] Added ${added.length} descriptor(s) to project`);
+          }
         } catch (projErr: any) {
-          console.error(`[create_label] Failed to add label entries to project: ${projErr.message}`);
+          const errMsg = projErr instanceof Error ? projErr.message : String(projErr);
+          const isLocked = errMsg.includes('EBUSY') || errMsg.includes('EPERM') || errMsg.includes('EACCES');
+          console.error(`[create_label] Failed to add label entries to project: ${errMsg}`);
+          projectWarning =
+            `\n⚠️ Label created but failed to add to VS project:\n${errMsg}\n` +
+            (isLocked
+              ? 'This usually means Visual Studio has the .rnrproj file locked.\n' +
+                'Close Visual Studio (or unload the project), re-run the tool, then reopen.\n'
+              : `Verify that projectPath exists: ${projectPath}\n`);
         }
       } else {
         console.error('[create_label] projectPath is null — label descriptors will NOT be added to .rnrproj.');
@@ -447,16 +463,20 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
 
     // 6. Build result summary
     if (written.length === 0 && skipped.length > 0) {
+      const skipLines = [
+        `⚠️ Label "${labelId}" already exists in all languages:\n` +
+        skipped.map(s => `  - ${s}`).join('\n') +
+        '\n\nNo label text changes were made.',
+      ];
+      if (addedToProject.length > 0) {
+        skipLines.push('\nAdded to VS project:');
+        skipLines.push(...addedToProject.map(n => `  ✔ ${n}`));
+      } else if (projectAlreadyOk) {
+        skipLines.push('\n✅ Label file entries already in VS project.');
+      }
+      if (projectWarning) skipLines.push(projectWarning);
       return {
-        content: [
-          {
-            type: 'text',
-            text:
-              `⚠️ Label "${labelId}" already exists in all languages:\n` +
-              skipped.map(s => `  - ${s}`).join('\n') +
-              '\n\nNo changes were made.',
-          },
-        ],
+        content: [{ type: 'text', text: skipLines.join('\n') }],
       };
     }
 
@@ -480,6 +500,9 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
       lines.push('');
       lines.push('Added to VS project:');
       lines.push(...addedToProject.map(n => `  ✔ ${n}`));
+    } else if (projectAlreadyOk) {
+      lines.push('');
+      lines.push('✅ Label file entries already in VS project.');
     }
     if (projectWarning) {
       lines.push(projectWarning);
