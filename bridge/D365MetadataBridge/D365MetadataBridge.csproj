@@ -13,8 +13,12 @@
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <!-- MSB3277: version conflict between Microsoft-shipped SCDP.dll (7.0.0) and
          SCDPBundling.dll (depends on 7.0.4) in PackagesLocalDirectory\bin.
-         We don't control these DLLs and the bridge doesn't use SCDP at all — safe to suppress. -->
-    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+         We don't control these DLLs and the bridge doesn't use SCDP at all — safe to suppress.
+         MSB3106: some D365FO versions ship MetaModel.Core with a version suffix in the filename
+         (e.g. Microsoft.Dynamics.Framework.Tools.MetaModel.Core.17.0.dll); the wildcard glob
+         picks it up automatically, so the explicit name reference is gone and this warning should
+         no longer appear — kept here as a safety net for edge-case environments. -->
+    <MSBuildWarningsAsMessages>MSB3277;MSB3106</MSBuildWarningsAsMessages>
   </PropertyGroup>
 
   <!--
@@ -53,9 +57,6 @@
   </ItemGroup>
   <ItemGroup Condition="'$(D365BinPath)' != ''">
     <Reference Include="$(D365BinPath)\Microsoft.Dynamics.*.dll">
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="$(D365BinPath)\Microsoft.Dynamics.Framework.Tools.MetaModel.Core.dll">
       <Private>false</Private>
     </Reference>
   </ItemGroup>
