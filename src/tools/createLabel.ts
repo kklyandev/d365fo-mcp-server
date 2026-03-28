@@ -103,6 +103,14 @@ const CreateLabelArgsSchema = z.object({
     .optional()
     .default(true)
     .describe('Update the MCP label index after writing files (default: true)'),
+  sortLabels: z
+    .boolean()
+    .optional()
+    .describe(
+      'Sort labels alphabetically when writing .label.txt files. ' +
+        'When false, new labels are appended at the end preserving existing file order. ' +
+        'Defaults to the LABEL_SORT_ORDER env var ("alphabetical" = true, "append" = false), or true if not set.',
+    ),
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -138,11 +146,15 @@ function parseLabelMap(content: string): Map<string, { text: string; comment?: s
   return map;
 }
 
-/** Render a label map back to .label.txt content (alphabetically sorted) with UTF-8 BOM */
-function serializeLabelMap(map: Map<string, { text: string; comment?: string }>): string {
-  const sorted = [...map.entries()].sort(([a], [b]) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+/** Render a label map back to .label.txt content with UTF-8 BOM.
+ *  When `sort` is true (default), entries are sorted alphabetically by label ID.
+ *  When `sort` is false, entries are written in insertion order (existing + appended). */
+function serializeLabelMap(map: Map<string, { text: string; comment?: string }>, sort = true): string {
+  const entries = sort
+    ? [...map.entries()].sort(([a], [b]) => a.localeCompare(b, 'en', { sensitivity: 'base' }))
+    : [...map.entries()];
   const lines: string[] = [];
-  for (const [id, { text, comment }] of sorted) {
+  for (const [id, { text, comment }] of entries) {
     lines.push(`${id}=${text}`);
     if (comment) lines.push(` ;${comment}`);
   }
@@ -194,6 +206,10 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
       createLabelFileIfMissing,
       updateIndex,
     } = args;
+
+    // Resolve sortLabels: explicit param → LABEL_SORT_ORDER env → true (alphabetical)
+    const envSortOrder = process.env.LABEL_SORT_ORDER?.toLowerCase();
+    const shouldSort = args.sortLabels ?? (envSortOrder === 'append' ? false : true);
 
     // Description fallback: explicit description → VS project name → labelFileId
     // Model name is not useful here — it's typically identical to labelFileId.
@@ -390,7 +406,7 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
       await fs.mkdir(langDir, { recursive: true });
 
       // Write updated file with UTF-8 BOM
-      const newContent = serializeLabelMap(labelMap);
+      const newContent = serializeLabelMap(labelMap, shouldSort);
       await writeFileWithBom(txtPath, newContent);
       written.push(lang);
 

@@ -236,6 +236,9 @@ All available parameters in one block with comments:
         // "DEBUG_LOGGING": "true",               // verbose JSON-RPC trace
         // "LOG_FILE": "C:\\Temp\\d365fo-mcp.log" // tee all output to file
 
+        // ── Label options ───────────────────────────────────────────
+        // "LABEL_SORT_ORDER": "append"            // "alphabetical" (default) or "append"
+
         // ── HTTP port (only for npm run dev, not stdio) ─────────────
         // "PORT": "8080"
       }
@@ -301,6 +304,7 @@ All available parameters in one block with comments:
 | `bridgeLogFile` | — | optional | optional | optional |
 | `DEBUG_LOGGING` | — | optional | optional | optional |
 | `LOG_FILE` | — | optional | optional | optional |
+| `LABEL_SORT_ORDER` | — | optional | optional | optional |
 
 ---
 

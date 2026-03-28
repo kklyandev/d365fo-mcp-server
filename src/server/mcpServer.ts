@@ -1634,20 +1634,23 @@ Examples:
           name: 'create_label',
           description: `🏷️ Add a new label to an existing AxLabelFile in a custom D365FO model.
 
-Writes the label into EVERY language .label.txt file that exists in the model (inserts alphabetically), creates XML descriptors if missing, and updates the MCP label index.
+Writes the label into EVERY language .label.txt file that exists in the model, creates XML descriptors if missing, and updates the MCP label index.
+
+By default labels are inserted alphabetically. Set sortLabels=false (or LABEL_SORT_ORDER=append in env) to append new labels at the end preserving existing file order.
 
 ⚠️ ALWAYS call search_labels first to check if a suitable label already exists!
 
 Process:
 1. Reads each existing .label.txt file for the model
 2. Checks for duplicate label ID
-3. Inserts the new label in alphabetical position
+3. Inserts the new label (alphabetically or appended, based on sortLabels)
 4. Writes the updated file back to disk
 5. Updates the SQLite label index
 
 Examples:
 - create_label("MyNewField", "MyModel", "MyModel", [{language:"en-US", text:"My new field"}, {language:"cs", text:"Moje nové pole"}])
-- create_label with createLabelFileIfMissing=true → creates AxLabelFile structure from scratch`,
+- create_label with createLabelFileIfMissing=true → creates AxLabelFile structure from scratch
+- create_label with sortLabels=false → appends the new label at the end of each .label.txt file`,
           inputSchema: {
             type: 'object',
             properties: {
@@ -1715,6 +1718,13 @@ Examples:
               updateIndex: {
                 type: 'boolean',
                 description: 'Update MCP label index after writing (default: true)',
+              },
+              sortLabels: {
+                type: 'boolean',
+                description:
+                  'Sort labels alphabetically when writing .label.txt files (default: true). ' +
+                  'Set to false to append new labels at the end preserving existing file order. ' +
+                  'Defaults to LABEL_SORT_ORDER env var ("alphabetical" = true, "append" = false).',
               },
             },
             required: ['labelId', 'labelFileId', 'model', 'translations'],

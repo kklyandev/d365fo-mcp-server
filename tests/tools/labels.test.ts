@@ -560,6 +560,141 @@ describe('create_label', () => {
     expect(labelWrite).toContain(' ;Explicit comment');
     expect(labelWrite).not.toContain('Should be overridden');
   });
+
+  it('appends new label at end when sortLabels=false', async () => {
+    const fsMock = await import('fs');
+    const writeCalls: string[] = [];
+    (fsMock.promises.writeFile as any).mockImplementation(async (_p: string, content: string) => {
+      writeCalls.push(content);
+    });
+    (fsMock.promises.readdir as any).mockResolvedValueOnce(['en-US']);
+    // Existing file has labels in non-alphabetical order: Zebra before Apple
+    (fsMock.promises.readFile as any).mockResolvedValueOnce('\uFEFFZebraLabel=Zebra text\nAppleLabel=Apple text\n');
+
+    const result = await createLabelTool(
+      req('create_label', {
+        labelId: 'MiddleLabel',
+        labelFileId: 'MyModel',
+        model: 'MyModel',
+        updateIndex: false,
+        sortLabels: false,
+        translations: [{ language: 'en-US', text: 'Middle text' }],
+      }),
+      ctx,
+    );
+    expect(result.isError).toBeFalsy();
+    const labelWrite = writeCalls.find(c => c.includes('MiddleLabel='));
+    expect(labelWrite).toBeDefined();
+    // With sortLabels=false, original order preserved: Zebra, Apple, then Middle appended
+    const lines = labelWrite!.split('\n').filter(l => l.includes('='));
+    expect(lines[0]).toContain('ZebraLabel=');
+    expect(lines[1]).toContain('AppleLabel=');
+    expect(lines[2]).toContain('MiddleLabel=');
+  });
+
+  it('sorts alphabetically by default (sortLabels not specified)', async () => {
+    const fsMock = await import('fs');
+    const writeCalls: string[] = [];
+    (fsMock.promises.writeFile as any).mockImplementation(async (_p: string, content: string) => {
+      writeCalls.push(content);
+    });
+    (fsMock.promises.readdir as any).mockResolvedValueOnce(['en-US']);
+    // Existing file has labels in non-alphabetical order
+    (fsMock.promises.readFile as any).mockResolvedValueOnce('\uFEFFZebraLabel=Zebra text\nAppleLabel=Apple text\n');
+
+    const result = await createLabelTool(
+      req('create_label', {
+        labelId: 'MiddleLabel',
+        labelFileId: 'MyModel',
+        model: 'MyModel',
+        updateIndex: false,
+        translations: [{ language: 'en-US', text: 'Middle text' }],
+      }),
+      ctx,
+    );
+    expect(result.isError).toBeFalsy();
+    const labelWrite = writeCalls.find(c => c.includes('MiddleLabel='));
+    expect(labelWrite).toBeDefined();
+    // Default: alphabetically sorted
+    const lines = labelWrite!.split('\n').filter(l => l.includes('='));
+    expect(lines[0]).toContain('AppleLabel=');
+    expect(lines[1]).toContain('MiddleLabel=');
+    expect(lines[2]).toContain('ZebraLabel=');
+  });
+
+  it('respects LABEL_SORT_ORDER=append env var when sortLabels not specified', async () => {
+    const fsMock = await import('fs');
+    const writeCalls: string[] = [];
+    (fsMock.promises.writeFile as any).mockImplementation(async (_p: string, content: string) => {
+      writeCalls.push(content);
+    });
+    (fsMock.promises.readdir as any).mockResolvedValueOnce(['en-US']);
+    (fsMock.promises.readFile as any).mockResolvedValueOnce('\uFEFFZebraLabel=Zebra text\nAppleLabel=Apple text\n');
+
+    // Set env var
+    const origEnv = process.env.LABEL_SORT_ORDER;
+    process.env.LABEL_SORT_ORDER = 'append';
+    try {
+      const result = await createLabelTool(
+        req('create_label', {
+          labelId: 'MiddleLabel',
+          labelFileId: 'MyModel',
+          model: 'MyModel',
+          updateIndex: false,
+          translations: [{ language: 'en-US', text: 'Middle text' }],
+        }),
+        ctx,
+      );
+      expect(result.isError).toBeFalsy();
+      const labelWrite = writeCalls.find(c => c.includes('MiddleLabel='));
+      expect(labelWrite).toBeDefined();
+      // Env says append: Zebra, Apple, Middle (not sorted)
+      const lines = labelWrite!.split('\n').filter(l => l.includes('='));
+      expect(lines[0]).toContain('ZebraLabel=');
+      expect(lines[1]).toContain('AppleLabel=');
+      expect(lines[2]).toContain('MiddleLabel=');
+    } finally {
+      if (origEnv === undefined) delete process.env.LABEL_SORT_ORDER;
+      else process.env.LABEL_SORT_ORDER = origEnv;
+    }
+  });
+
+  it('sortLabels=true overrides LABEL_SORT_ORDER=append env var', async () => {
+    const fsMock = await import('fs');
+    const writeCalls: string[] = [];
+    (fsMock.promises.writeFile as any).mockImplementation(async (_p: string, content: string) => {
+      writeCalls.push(content);
+    });
+    (fsMock.promises.readdir as any).mockResolvedValueOnce(['en-US']);
+    (fsMock.promises.readFile as any).mockResolvedValueOnce('\uFEFFZebraLabel=Zebra text\nAppleLabel=Apple text\n');
+
+    const origEnv = process.env.LABEL_SORT_ORDER;
+    process.env.LABEL_SORT_ORDER = 'append';
+    try {
+      const result = await createLabelTool(
+        req('create_label', {
+          labelId: 'MiddleLabel',
+          labelFileId: 'MyModel',
+          model: 'MyModel',
+          updateIndex: false,
+          sortLabels: true,
+          translations: [{ language: 'en-US', text: 'Middle text' }],
+        }),
+        ctx,
+      );
+      expect(result.isError).toBeFalsy();
+      const labelWrite = writeCalls.find(c => c.includes('MiddleLabel='));
+      expect(labelWrite).toBeDefined();
+      // Explicit sortLabels=true wins: alphabetical
+      const lines = labelWrite!.split('\n').filter(l => l.includes('='));
+      expect(lines[0]).toContain('AppleLabel=');
+      expect(lines[1]).toContain('MiddleLabel=');
+      expect(lines[2]).toContain('ZebraLabel=');
+    } finally {
+      if (origEnv === undefined) delete process.env.LABEL_SORT_ORDER;
+      else process.env.LABEL_SORT_ORDER = origEnv;
+    }
+  });
 });
 
 // ─── rename_label ────────────────────────────────────────────────────────────
