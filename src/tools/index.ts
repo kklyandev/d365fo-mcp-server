@@ -2,8 +2,6 @@
  * Tools module exports
  */
 
-export * from './xppTools.js';
-
 export * from './updateSymbolIndex.js';
 export * from './buildProject.js';
 export * from './dbSync.js';

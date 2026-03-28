@@ -7,7 +7,6 @@ import type { XppMetadataParser } from '../metadata/xmlParser.js';
 import type { RedisCacheService } from '../cache/redisCache.js';
 import type { WorkspaceScanner } from '../workspace/workspaceScanner.js';
 import type { HybridSearch } from '../workspace/hybridSearch.js';
-import type { TermRelationshipGraph } from '../utils/suggestionEngine.js';
 import type { BridgeClient } from '../bridge/bridgeClient.js';
 
 /**
@@ -37,7 +36,6 @@ export interface XppServerContext {
   cache: RedisCacheService;
   workspaceScanner: WorkspaceScanner;
   hybridSearch: HybridSearch;
-  termRelationshipGraph: TermRelationshipGraph;
   editorContext?: EditorContext;
   /**
    * C# bridge to Microsoft's Dev Tools API (IMetadataProvider + DYNAMICSXREFDB).

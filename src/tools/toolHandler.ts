@@ -374,7 +374,6 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         return await dbSyncTool(request.params.arguments as any, context);
       case 'run_bp_check':
         return await runBpCheckTool(request.params.arguments as any, context);
-      case 'run_sys_test':
       case 'run_systest_class':
         return await sysTestRunnerTool(request.params.arguments as any, context);
       case 'review_workspace_changes':

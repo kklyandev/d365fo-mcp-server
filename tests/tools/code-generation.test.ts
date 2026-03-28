@@ -66,7 +66,6 @@ const buildContext = (overrides: Partial<XppServerContext> = {}): XppServerConte
   } as any,
   workspaceScanner: {} as any,
   hybridSearch: { searchWorkspace: vi.fn(async () => []) } as any,
-  termRelationshipGraph: { getRelated: vi.fn(() => []) } as any,
   ...overrides,
 });
 

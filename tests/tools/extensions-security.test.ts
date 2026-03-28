@@ -62,7 +62,6 @@ const buildContext = (dbOverride?: ReturnType<typeof createMockDb>): XppServerCo
     } as any,
     workspaceScanner: {} as any,
     hybridSearch: {} as any,
-    termRelationshipGraph: {} as any,
   };
 };
 

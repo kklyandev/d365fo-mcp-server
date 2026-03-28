@@ -51,6 +51,8 @@ export function buildProgressMessage(toolName: string, args: Record<string, any>
       return `🔧 Reading extensions of table ${a.tableName ?? ''}`;
     case 'analyze_extension_points':
       return `🔍 Analyzing extension points of ${a.objectName ?? ''}`;
+    case 'recommend_extension_strategy':
+      return `💡 Recommending extension strategy for "${a.goal ?? ''}"${a.objectName ? ` on ${a.objectName}` : ''}`;
     case 'analyze_code_patterns':
       return `📐 Analyzing code patterns: "${a.scenario ?? ''}"`;
     case 'suggest_method_implementation':
@@ -97,7 +99,6 @@ export function buildProgressMessage(toolName: string, args: Record<string, any>
       return `🗄️ Triggering database sync${a.tableName ? ` for ${a.tableName}` : ''}`;
     case 'run_bp_check':
       return `🔍 Running Best Practices check${a.targetFilter ? ` on ${a.targetFilter}` : ''}`;
-    case 'run_sys_test':
     case 'run_systest_class':
       return `🧪 Running unit tests: ${a.className ?? ''}`;
     case 'review_workspace_changes':

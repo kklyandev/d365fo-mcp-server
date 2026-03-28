@@ -210,6 +210,15 @@ Examples:
                 default: 'all'
               },
               limit: { type: 'number', description: 'Maximum results to return', default: 20 },
+              workspacePath: {
+                type: 'string',
+                description: 'Optional workspace path to search local project files in addition to external metadata',
+              },
+              includeWorkspace: {
+                type: 'boolean',
+                default: false,
+                description: 'Whether to include workspace files in search results (workspace-aware search)',
+              },
             },
             required: ['query'],
           },
@@ -301,6 +310,13 @@ workspacePath and includeWorkspace parameters.`,
                   'When true, symbols appearing in multiple query results are collapsed. ' +
                   'Later occurrences are replaced with a reference to the query where they first appeared.',
               },
+              crossReference: {
+                type: 'boolean',
+                default: true,
+                description:
+                  'Append a cross-reference summary at the end listing symbols that appeared in multiple queries. ' +
+                  'Useful for identifying the most relevant / commonly matched objects across all searches.',
+              },
             },
             required: ['queries'],
           },
@@ -369,6 +385,10 @@ Examples:
             type: 'object',
             properties: {
               className: { type: 'string', description: 'Name of the X++ class' },
+              includeWorkspace: { type: 'boolean', default: false, description: 'Whether to search in workspace first' },
+              workspacePath: { type: 'string', description: 'Workspace path to search for class' },
+              methodOffset: { type: 'number', default: 0, description: 'Offset for paginating methods (use multiples of 15)' },
+              compact: { type: 'boolean', default: true, description: 'Signatures only, no source bodies (default true). Set false only when you need to read method bodies' },
             },
             required: ['className'],
           },
@@ -406,6 +426,7 @@ Examples:
             type: 'object',
             properties: {
               tableName: { type: 'string', description: 'Name of the X++ table' },
+              methodOffset: { type: 'number', default: 0, description: 'Offset for paginating methods (use multiples of 25)' },
             },
             required: ['tableName'],
           },
@@ -607,7 +628,19 @@ Examples:
             properties: {
               className: { type: 'string', description: 'Name of the class containing the method' },
               methodName: { type: 'string', description: 'Name of the method to implement' },
-              parameters: { type: 'string', description: 'Optional method parameters to help find similar methods' },
+              parameters: {
+                type: 'array',
+                description: 'Method parameters',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    type: { type: 'string' },
+                  },
+                  required: ['name', 'type'],
+                },
+              },
+              returnType: { type: 'string', default: 'void', description: 'Method return type' },
             },
             required: ['className', 'methodName'],
           },
@@ -779,7 +812,7 @@ EXAMPLES:
               },
               modelName: {
                 type: 'string',
-                description: 'Actual model name from .mcp.json (e.g., "ContosoExt", "WHSExt", "ApplicationSuite") — determines the object naming prefix. ALWAYS read this from get_workspace_info() or workspace context. NEVER guess or use generic placeholders like "MyModel" or "MyPackage". DO NOT use model names from search results — those are source models of existing objects, not your target model.'
+                description: 'Actual model name (e.g., "ContosoExt", "ApplicationSuite") — determines object naming prefix. Auto-detected from .mcp.json if omitted. ALWAYS read from get_workspace_info() when calling explicitly. NEVER guess or use placeholders like "MyModel". DO NOT use model names from search results — those are source models of existing objects, not your target model.'
               },
               packageName: {
                 type: 'string',
@@ -839,7 +872,7 @@ EXAMPLES:
                 default: false,
               },
             },
-            required: ['objectType', 'objectName', 'modelName'],
+            required: ['objectType', 'objectName'],
           },
         },
         {

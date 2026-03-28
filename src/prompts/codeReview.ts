@@ -120,16 +120,16 @@ MANDATORY STEPS (NO EXCEPTIONS):
 1. ALWAYS call create_d365fo_file FIRST:
    - objectType: class/table/form/enum/query/view
    - objectName: from user request
-   - modelName: extract from workspace path (NEVER ask user)
+   - modelName: auto-detected from .mcp.json (NEVER ask user)
    - addToProject: true
    - sourceCode: generated X++ code
 
-2. IF create_d365fo_file fails with "requires file system access":
-   THEN use generate_d365fo_xml + create_file
-   OTHERWISE: DONE
+2. IF create_d365fo_file fails:
+   THEN STOP and report the error to the user.
+   NEVER fall back to create_file or PowerShell.
 
 FORBIDDEN:
-❌ NEVER use generate_d365fo_xml as first choice
+❌ NEVER use generate_d365fo_xml + create_file as a fallback
 ❌ NEVER use create_file directly for D365FO objects
 ❌ NEVER skip create_d365fo_file
 
@@ -282,9 +282,8 @@ Use event handlers for loosely-coupled reactions to table/class/form events.
 \`\`\`xpp
 public final class CustTableEventHandler
 {
-    [SubscribesTo(tableStr(CustTable),
-                  delegateStr(CustTable, onInserted))]
-    public static void CustTable_onInserted(Common _sender, InsertEventArgs _e)
+    [DataEventHandler(tableStr(CustTable), DataEventType::Inserted)]
+    public static void CustTable_onInserted(Common _sender, DataEventArgs _e)
     {
         CustTable record = _sender;
         // Logic here
@@ -294,8 +293,9 @@ public final class CustTableEventHandler
 
 ### Rules
 - Handler methods MUST be \`static public void\`
+- Standard table data events (onInserted, onUpdated, onDeleted, onValidatedWrite, etc.) → use \`[DataEventHandler(tableStr(...), DataEventType::...)]\`
+- Custom delegates only → use \`[SubscribesTo(tableStr(...), delegateStr(...))]\`
 - Table events → use \`tableStr()\`; class events → \`classStr()\`; form events → \`formStr()\`
-- Standard table events: onInserted, onUpdated, onDeleted, onValidatedWrite, onValidatedInsert, onValidatedDelete, onInitialized, onInitValue
 
 ---
 
@@ -416,7 +416,7 @@ public final class MyOperationDataContract
     TransDate   transDate;
 
     [DataMemberAttribute('TransDate'),
-     SysOperationLabelAttribute(literalStr("Transaction date"))]
+     SysOperationLabelAttribute(literalStr("@SYS24562"))]
     public TransDate parmTransDate(TransDate _transDate = transDate)
     {
         transDate = _transDate;
@@ -437,7 +437,7 @@ class MyOperationController extends SysOperationServiceController
 {
     protected ClassDescription defaultCaption()
     {
-        return "My Operation";
+        return "@SYS112020";
     }
 
     public static void main(Args _args)
@@ -532,7 +532,7 @@ try
 catch (Exception::Error)
 {
     // tts is automatically rolled back
-    error("Operation failed");
+    error("@SYS319855");
 }
 \`\`\`
 

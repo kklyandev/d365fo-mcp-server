@@ -97,7 +97,6 @@ const buildContext = (): XppServerContext => ({
   } as any,
   workspaceScanner: {} as any,
   hybridSearch: {} as any,
-  termRelationshipGraph: {} as any,
 });
 
 // ─── validate_object_naming ──────────────────────────────────────────────────

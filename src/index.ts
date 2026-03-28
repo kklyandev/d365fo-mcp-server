@@ -169,16 +169,14 @@ async function initializeServices() {
     const parser = new XppMetadataParser();
     const workspaceScanner = new WorkspaceScanner();
     const hybridSearch = new HybridSearch(symbolIndex, workspaceScanner);
-    const { TermRelationshipGraph } = await import('./utils/suggestionEngine.js');
-    const termRelationshipGraph = new TermRelationshipGraph();
 
     serverState.symbolIndex = symbolIndex;
     serverState.parser = parser;
     serverState.cache = cache;
 
-    const mcpServer = createXppMcpServer({ symbolIndex, parser, cache, workspaceScanner, hybridSearch, termRelationshipGraph });
+    const mcpServer = createXppMcpServer({ symbolIndex, parser, cache, workspaceScanner, hybridSearch });
     console.log('✅ MCP Server initialized (write-only mode)');
-    return { mcpServer, symbolIndex, parser, cache, workspaceScanner, hybridSearch, termRelationshipGraph };
+    return { mcpServer, symbolIndex, parser, cache, workspaceScanner, hybridSearch };
   }
 
   // -----------------------------------------------------------------------
@@ -318,31 +316,6 @@ async function initializeServices() {
     const hybridSearch = new HybridSearch(symbolIndex, workspaceScanner);
     console.log('✅ Workspace-aware search enabled');
 
-    // Initialize term relationship graph for search suggestions (lazy loading)
-    // Only build if explicitly enabled or in development mode
-    const enableSuggestions = process.env.ENABLE_SEARCH_SUGGESTIONS === 'true' || process.env.NODE_ENV === 'development';
-    let termRelationshipGraph: any;
-    
-    if (enableSuggestions) {
-      console.log('🔗 Building term relationship graph (lazy mode)...');
-      const { TermRelationshipGraph } = await import('./utils/suggestionEngine.js');
-      termRelationshipGraph = new TermRelationshipGraph();
-      // Build graph asynchronously to avoid blocking startup
-      setImmediate(() => {
-        try {
-          const symbolsForAnalysis = symbolIndex.getAllSymbolsForAnalysis();
-          termRelationshipGraph.build(symbolsForAnalysis);
-          console.log(`✅ Term relationship graph built (${symbolsForAnalysis.length} symbols analyzed)`);
-        } catch (error) {
-          console.warn('⚠️ Failed to build term relationship graph:', error);
-        }
-      });
-    } else {
-      console.log('⏭️  Search suggestions disabled (set ENABLE_SEARCH_SUGGESTIONS=true to enable)');
-      const { TermRelationshipGraph } = await import('./utils/suggestionEngine.js');
-      termRelationshipGraph = new TermRelationshipGraph(); // Empty graph
-    }
-
     // Create MCP server with full context
     serverState.statusMessage = 'Initializing MCP server...';
     const mcpServer = createXppMcpServer({ 
@@ -351,11 +324,10 @@ async function initializeServices() {
       cache, 
       workspaceScanner, 
       hybridSearch,
-      termRelationshipGraph
     });
     console.log('✅ MCP Server initialized with workspace support');
 
-    return { mcpServer, symbolIndex, parser, cache, workspaceScanner, hybridSearch, termRelationshipGraph };
+    return { mcpServer, symbolIndex, parser, cache, workspaceScanner, hybridSearch };
   } catch (error) {
     console.error('❌ Initialization error:', error);
     serverState.statusMessage = `Initialization failed: ${error}`;
@@ -501,14 +473,12 @@ async function main() {
     //     then execute immediately with full results.
 
     // Step 1: lightweight stub + deferred dbReady promise
-    const { TermRelationshipGraph } = await import('./utils/suggestionEngine.js');
     const stubCache = new RedisCacheService();
     stubCache.waitForConnection().catch(() => {});
     const stubIndex = new XppSymbolIndex(':memory:', ':memory:');
     const stubParser = new XppMetadataParser();
     const stubScanner = new WorkspaceScanner();
     const stubHybrid = new HybridSearch(stubIndex, stubScanner);
-    const stubGraph = new TermRelationshipGraph();
 
     let resolveDbReady!: () => void;
     let rejectDbReady!: (err: unknown) => void;
@@ -523,7 +493,6 @@ async function main() {
       cache: stubCache,
       workspaceScanner: stubScanner,
       hybridSearch: stubHybrid,
-      termRelationshipGraph: stubGraph,
       dbReady: dbReadyPromise,
     };
     const mcpServer = createXppMcpServer(stubContext);
@@ -585,14 +554,13 @@ async function main() {
 
     // Step 4: load real database in the background
     const dbLoadStart = Date.now();
-    initializeServices().then(({ symbolIndex, parser, cache, workspaceScanner, hybridSearch, termRelationshipGraph }) => {
+    initializeServices().then(({ symbolIndex, parser, cache, workspaceScanner, hybridSearch }) => {
       // Step 5: patch the context references used by tool handlers
       stubContext.symbolIndex       = symbolIndex;
       stubContext.parser            = parser;
       stubContext.cache             = cache;
       stubContext.workspaceScanner  = workspaceScanner;
       stubContext.hybridSearch      = hybridSearch;
-      stubContext.termRelationshipGraph = termRelationshipGraph;
       serverState.symbolIndex = symbolIndex;
       serverState.parser      = parser;
       serverState.cache       = cache;
@@ -662,9 +630,9 @@ async function main() {
     }));
 
     // Initialise services in the background; register MCP routes once ready
-    initializeServices().then(({ mcpServer, symbolIndex, parser, cache, workspaceScanner, hybridSearch, termRelationshipGraph }) => {
+    initializeServices().then(({ mcpServer, symbolIndex, parser, cache, workspaceScanner, hybridSearch }) => {
       // Register MCP transport (Express supports dynamic route registration)
-      createStreamableHttpTransport(mcpServer, app, { symbolIndex, parser, cache, workspaceScanner, hybridSearch, termRelationshipGraph });
+      createStreamableHttpTransport(mcpServer, app, { symbolIndex, parser, cache, workspaceScanner, hybridSearch });
 
       serverState.isReady = true;
       serverState.isHealthy = true;

@@ -16,7 +16,8 @@
     "index-metadata": "tsx scripts/extract-metadata.ts && node --max-old-space-size=6144 --import tsx/esm scripts/build-database.ts",
     "blob-manager": "tsx scripts/azure-blob-manager.ts",
     "select-config": "powershell -ExecutionPolicy Bypass -File scripts/select-xpp-config.ps1",
-    "test-stdio": "tsx scripts/test-stdio.ts"
+    "test-stdio": "tsx scripts/test-stdio.ts",
+    "db-maintenance": "node scripts/db-maintenance.mjs"
   },
   "keywords": [
     "mcp",

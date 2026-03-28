@@ -38,13 +38,21 @@ tests/
 │   ├── file-ops.test.ts          (20 tests)
 │   ├── labels.test.ts            (15 tests)
 │   ├── local-ops.test.ts
+│   ├── method-fallback.test.ts
 │   ├── object-info.test.ts       (28 tests)
+│   ├── projectFileManager.test.ts
+│   ├── rnrproj-roundtrip.test.ts
 │   └── xpp-knowledge.test.ts
 ├── utils/
 │   ├── configManager.test.ts     (21 tests)
 │   ├── forceProject.test.ts
+│   ├── formPatternTemplates.test.ts
+│   ├── objectSuffix.test.ts
 │   ├── operationLocks.test.ts
 │   └── toolInventory.test.ts
+├── bridge/
+│   └── debouncedRefresh.test.ts
+├── setup.ts
 └── bridge-e2e.ts                 (manual E2E — npx tsx tests/bridge-e2e.ts)
 ```
 
