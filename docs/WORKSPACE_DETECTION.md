@@ -36,7 +36,7 @@ New files created in K:\AosService\PackagesLocalDirectory\MyPackage\MyModel\...
 
 When connected to a remote Azure server via `url:`, the HTTP transport reads the
 `x-workspace-path` request header. VS 2022 does not send this header — configure
-`D365FO_SOLUTIONS_PATH` or explicit `projectPath` in `.mcp.json` context instead.
+`D365FO_SOLUTIONS_PATH` or explicit `D365FO_PROJECT_PATH` env var instead.
 
 ---
 
@@ -62,7 +62,7 @@ and picks up all projects automatically.
 }
 ```
 
-**For HTTP (Azure server):** Use the two-level `workspacePath` in the `context` block:
+**For HTTP (Azure server):** Use the two-level `D365FO_WORKSPACE_PATH` env var:
 
 ```
 K:\AosService\PackagesLocalDirectory\YourPackageName\YourModelName
@@ -119,9 +119,9 @@ persists for all subsequent tool calls in the same session.
 | Situation | What to add |
 |-----------|------------|
 | Single developer, local stdio server | `D365FO_SOLUTIONS_PATH` env var in `.mcp.json` |
-| Azure server, multiple solutions | `projectPath` in `.mcp.json` context pointing to the right `.rnrproj` |
-| Non-standard PackagesLocalDirectory | `workspacePath` with full `PackagesLocalDirectory\Package\Model` path |
-| Running without a VS workspace open | `D365FO_SOLUTIONS_PATH` or explicit `projectPath` |
+| Azure server, multiple solutions | `D365FO_PROJECT_PATH` env var pointing to the right `.rnrproj` |
+| Non-standard PackagesLocalDirectory | `D365FO_WORKSPACE_PATH` with full `PackagesLocalDirectory\Package\Model` path |
+| Running without a VS workspace open | `D365FO_SOLUTIONS_PATH` or explicit `D365FO_PROJECT_PATH` |
 
 ---
 
@@ -129,10 +129,9 @@ persists for all subsequent tool calls in the same session.
 
 | Priority | Source | Notes |
 |----------|--------|-------|
-| 1st | Explicit `modelName` in `.mcp.json` context | Always wins |
-| 2nd | Last segment of `workspacePath` | Only used when path contains `PackagesLocalDirectory` — avoids returning repo names like `ASL` |
+| 1st | Explicit `D365FO_MODEL_NAME` env var | Always wins |
+| 2nd | Last segment of `D365FO_WORKSPACE_PATH` | Only used when path contains `PackagesLocalDirectory` — avoids returning repo names like `ASL` |
 | 3rd | Auto-detected from `.rnrproj` scan | Triggered by roots protocol, `D365FO_SOLUTIONS_PATH`, or workspace seed |
-| 4th | `D365FO_MODEL_NAME` env var | Last resort fallback |
 
 Each value's detection source is shown in `get_workspace_info` output:
 ```
@@ -152,7 +151,7 @@ solution folder.
 
 **Files end up in a Microsoft standard model**
 None of the detection methods found a `.rnrproj`. Add `D365FO_SOLUTIONS_PATH` to the `env`
-block in `.mcp.json`, or set `projectPath` in the `context` block explicitly.
+block in `.mcp.json`, or set `D365FO_PROJECT_PATH` env var explicitly.
 
 **"modelName appears to be a placeholder" warning**
 The server detected a suspicious model name like `"auto"` or `"YourModel"`.

@@ -80,9 +80,6 @@ Your team runs the MCP server on Azure. You only connect as a client — no loca
   "servers": {
     "d365fo-mcp-tools": {
       "url": "https://your-server.azurewebsites.net/mcp/"
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
@@ -107,11 +104,9 @@ Azure handles metadata search. A local companion handles file creation/modificat
       "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
       "env": {
         "MCP_SERVER_MODE": "write-only",
-        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects"
+        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects",
+        "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
       }
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
@@ -128,9 +123,6 @@ Everything runs on your development VM — both search and writes.
   "servers": {
     "d365fo-mcp-tools": {
       "url": "http://localhost:8080/mcp/"
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
@@ -152,11 +144,9 @@ No HTTP server — Copilot spawns the process directly via stdin/stdout.
       "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
       "env": {
         "MCP_SERVER_MODE": "full",
-        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects"
+        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects",
+        "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
       }
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
@@ -240,44 +230,27 @@ All available parameters in one block with comments:
         // "LABEL_SORT_ORDER": "append"            // "alphabetical" (default) or "append"
 
         // ── HTTP port (only for npm run dev, not stdio) ─────────────
-        // "PORT": "8080"
+        // "PORT": "8080",
+
+        // ── D365FO context (replaces old "context" block) ───────────
+        // Required: Two-level path PackagesLocalDirectory\Package\Model
+        // Server auto-derives packagePath, packageName, modelName.
+        "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
+
+        // Optional overrides:
+        // "D365FO_PACKAGE_PATH": "K:\\AosService\\PackagesLocalDirectory",
+        // "D365FO_MODEL_NAME": "YourModelName",
+        // "D365FO_PROJECT_PATH": "K:\\repos\\MySolution\\YourModel\\YourModel.rnrproj",
+        // "D365FO_SOLUTION_PATH": "K:\\repos\\MySolution\\MySolution.sln",
+
+        // UDE (Power Platform Tools):
+        // "D365FO_DEV_ENVIRONMENT_TYPE": "auto",
+        // "D365FO_CUSTOM_PACKAGES_PATH": "C:\\Users\\you\\AppData\\Local\\...\\CustomPackages",
+        // "D365FO_MICROSOFT_PACKAGES_PATH": "C:\\Users\\you\\AppData\\Local\\...\\PackagesLocalDirectory",
+
+        // Bridge diagnostics:
+        // "D365FO_BRIDGE_LOG_FILE": "C:\\Temp\\d365fo-bridge.log"
       }
-    },
-
-    // ── Shared context (read by ALL servers above) ──────────────────
-    "context": {
-      // ── Required ──────────────────────────────────────────────────
-      // Two-level path: PackagesLocalDirectory\PackageName\ModelName
-      // Server auto-derives packagePath, packageName, modelName from this.
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
-
-      // ── Optional overrides ────────────────────────────────────────
-      // Explicit package root (overrides auto-detection from workspacePath)
-      // "packagePath": "K:\\AosService\\PackagesLocalDirectory",
-
-      // Explicit model name (overrides auto-detection from workspacePath)
-      // "modelName": "YourModelName",
-
-      // Path to .rnrproj file (overrides auto-detection from D365FO_SOLUTIONS_PATH)
-      // "projectPath": "K:\\repos\\MySolution\\YourModel\\YourModel.rnrproj",
-
-      // Path to .sln file (overrides auto-detection)
-      // "solutionPath": "K:\\repos\\MySolution\\MySolution.sln",
-
-      // ── UDE (Power Platform Tools) ────────────────────────────────
-      // Dev environment type: "auto" (default) | "traditional" | "ude"
-      // "auto" detects UDE when XPP config exists at %LOCALAPPDATA%\Microsoft\Dynamics365
-      // "devEnvironmentType": "auto",
-
-      // UDE custom packages root (auto-detected from XPP config if omitted)
-      // "customPackagesPath": "C:\\Users\\you\\AppData\\Local\\...\\CustomPackages",
-
-      // UDE Microsoft packages root (auto-detected from XPP config if omitted)
-      // "microsoftPackagesPath": "C:\\Users\\you\\AppData\\Local\\...\\PackagesLocalDirectory",
-
-      // ── Bridge diagnostics ────────────────────────────────────────
-      // Log file for C# bridge — captures ALL bridge stderr (not just errors)
-      // "bridgeLogFile": "C:\\Temp\\d365fo-bridge.log"
     }
   }
 }
@@ -290,18 +263,18 @@ All available parameters in one block with comments:
 | `url` | **required** | **required** (Azure) | **required** | — |
 | `command` + `args` | — | **required** (local) | — | **required** |
 | `MCP_SERVER_MODE` | — | `write-only` | `full` (default) | `full` (default) |
-| `workspacePath` | **required** | **required** | **required** | **required** |
-| `packagePath` | optional | optional | optional | optional |
-| `modelName` | optional | optional | optional | optional |
-| `projectPath` | — | recommended | optional | optional |
-| `solutionPath` | — | optional | optional | optional |
+| `D365FO_WORKSPACE_PATH` | — | **required** | **required** | **required** |
+| `D365FO_PACKAGE_PATH` | — | optional | optional | optional |
+| `D365FO_MODEL_NAME` | — | optional | optional | optional |
+| `D365FO_PROJECT_PATH` | — | recommended | optional | optional |
+| `D365FO_SOLUTION_PATH` | — | optional | optional | optional |
 | `D365FO_SOLUTIONS_PATH` | — | recommended | optional | optional |
 | `DB_PATH` | — | optional | auto | auto |
 | `LABELS_DB_PATH` | — | optional | auto | auto |
-| `devEnvironmentType` | — | optional | optional | optional |
-| `customPackagesPath` | — | — | UDE only | UDE only |
-| `microsoftPackagesPath` | — | — | UDE only | UDE only |
-| `bridgeLogFile` | — | optional | optional | optional |
+| `D365FO_DEV_ENVIRONMENT_TYPE` | — | optional | optional | optional |
+| `D365FO_CUSTOM_PACKAGES_PATH` | — | — | UDE only | UDE only |
+| `D365FO_MICROSOFT_PACKAGES_PATH` | — | — | UDE only | UDE only |
+| `D365FO_BRIDGE_LOG_FILE` | — | optional | optional | optional |
 | `DEBUG_LOGGING` | — | optional | optional | optional |
 | `LOG_FILE` | — | optional | optional | optional |
 | `LABEL_SORT_ORDER` | — | optional | optional | optional |
@@ -341,12 +314,12 @@ Get-Content "C:\Temp\d365fo-mcp.log" -Encoding UTF8 -Wait
 
 The bridge writes diagnostics to stderr. By default, only `[ERROR]` and `[WARN]` lines
 are forwarded to the Node.js server. To capture everything (including `[DEBUG]`, `[INFO]`,
-write tracing, form control traversal, etc.), set `bridgeLogFile` in the `context` block:
+write tracing, form control traversal, etc.), set `D365FO_BRIDGE_LOG_FILE` in the `env` block:
 
 ```json
-"context": {
-  "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\...",
-  "bridgeLogFile": "C:\\Temp\\d365fo-bridge.log"
+"env": {
+  "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\...",
+  "D365FO_BRIDGE_LOG_FILE": "C:\\Temp\\d365fo-bridge.log"
 }
 ```
 

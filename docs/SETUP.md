@@ -105,16 +105,14 @@ No local server, no local database.
   "servers": {
     "d365fo-mcp-tools": {
       "url": "https://your-server.azurewebsites.net/mcp/"
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
 ```
 
-The two-level `workspacePath` (`PackageName\ModelName`) is the only value you need.
-From it the server automatically derives `packagePath`, `packageName`, and `modelName`.
+> **Note:** For HTTP-only servers, `D365FO_WORKSPACE_PATH` cannot be set via `env` because
+> there is no subprocess. The Azure server relies on workspace headers sent by VS Code/VS 2022.
+> For reliable model targeting, use **Scenario B** (hybrid) instead.
 
 > **Read-only limitation:** The Azure server cannot write files to your local Windows VM.
 > To create or modify files, use **Scenario B** (hybrid) or copy the generated XML manually.
@@ -168,13 +166,9 @@ npm run build
       "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
       "env": {
         "MCP_SERVER_MODE": "write-only",
-        "DB_PATH": "K:\\d365fo-mcp-server\\data\\xpp-metadata.db",
-        "LABELS_DB_PATH": "K:\\d365fo-mcp-server\\data\\xpp-metadata-labels.db",
-        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects"
+        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects",
+        "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
       }
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
@@ -249,9 +243,6 @@ The server runs at `http://localhost:8080`. Verify with `http://localhost:8080/h
   "servers": {
     "d365fo-mcp-tools": {
       "url": "http://localhost:8080/mcp/"
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
@@ -283,11 +274,12 @@ automatically. In most cases you do not need to set any paths manually.
 {
   "servers": {
     "d365fo-mcp-tools": {
-      "url": "https://your-server.azurewebsites.net/mcp/"
-    },
-    "context": {
-      "modelName": "YourModelName",
-      "devEnvironmentType": "ude"
+      "command": "node",
+      "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
+      "env": {
+        "D365FO_MODEL_NAME": "YourModelName",
+        "D365FO_DEV_ENVIRONMENT_TYPE": "ude"
+      }
     }
   }
 }
@@ -299,13 +291,14 @@ automatically. In most cases you do not need to set any paths manually.
 {
   "servers": {
     "d365fo-mcp-tools": {
-      "url": "https://your-server.azurewebsites.net/mcp/"
-    },
-    "context": {
-      "modelName": "YourModelName",
-      "customPackagesPath": "C:\\CustomXppCode",
-      "microsoftPackagesPath": "C:\\Users\\...\\Dynamics365\\10.0.2428.63\\PackagesLocalDirectory",
-      "devEnvironmentType": "ude"
+      "command": "node",
+      "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
+      "env": {
+        "D365FO_MODEL_NAME": "YourModelName",
+        "D365FO_CUSTOM_PACKAGES_PATH": "C:\\CustomXppCode",
+        "D365FO_MICROSOFT_PACKAGES_PATH": "C:\\Users\\...\\Dynamics365\\10.0.2428.63\\PackagesLocalDirectory",
+        "D365FO_DEV_ENVIRONMENT_TYPE": "ude"
+      }
     }
   }
 }

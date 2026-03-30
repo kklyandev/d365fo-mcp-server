@@ -96,11 +96,9 @@ npm run dev
       "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
       "env": {
         "MCP_SERVER_MODE": "write-only",
-        "D365FO_SOLUTIONS_PATH": "K:\\VSProjects\\MySolution"
+        "D365FO_SOLUTIONS_PATH": "K:\\VSProjects\\MySolution",
+        "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
       }
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }

@@ -152,8 +152,8 @@ All use the Read → Modify → `IMetaXxxProvider.Update()` pattern.
 | Cause | Fix |
 |---|---|
 | Bridge not built | Run `dotnet build -c Release` in `bridge/D365MetadataBridge/` |
-| Wrong `packagePath` | Fix `packagePath` in `.mcp.json` to point to `PackagesLocalDirectory` |
-| Missing DLLs | Verify `{packagePath}/bin/` contains `Microsoft.Dynamics.AX.Metadata.*.dll` |
+| Wrong `packagePath` | Fix `D365FO_PACKAGE_PATH` env var in `.mcp.json` to point to `PackagesLocalDirectory` |
+| Missing DLLs | Verify `{D365FO_PACKAGE_PATH}/bin/` contains `Microsoft.Dynamics.AX.Metadata.*.dll` |
 | Running on Linux/macOS | Expected — bridge is Windows-only, server uses SQLite fallback |
 
 ### `metadataAvailable: false`

@@ -15,10 +15,11 @@ Place this file in the root of your Visual Studio solution (next to the `.sln` f
 {
   "servers": {
     "d365fo-mcp-tools": {
-      "url": "https://your-server.azurewebsites.net/mcp/"
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
+      "command": "node",
+      "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
+      "env": {
+        "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
+      }
     }
   }
 }
@@ -54,7 +55,8 @@ VS 2022 and VS 2026 both support this via the `command:` key.
       "env": {
         "DB_PATH": "C:\\path\\to\\d365fo-mcp-server\\data\\xpp-metadata.db",
         "LABELS_DB_PATH": "C:\\path\\to\\d365fo-mcp-server\\data\\xpp-metadata-labels.db",
-        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects"
+        "D365FO_SOLUTIONS_PATH": "K:\\repos\\MySolution\\projects",
+        "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
       }
     }
   }
@@ -66,7 +68,8 @@ Key points:
   stdio mode is controlled by the client, not the repo folder.
 - `D365FO_SOLUTIONS_PATH` — folder containing your `.rnrproj` files. The server scans it at
   startup and auto-detects the model name. Required for reliable model detection.
-- No `context` block needed — model name is resolved from `.rnrproj` automatically.
+- `D365FO_WORKSPACE_PATH` — path to your model folder. The server derives packagePath,
+  packageName, and modelName from it.
 - `MCP_SERVER_MODE` defaults to `full` — omit it unless you need `read-only` or `write-only`.
 
 #### Enabling diagnostics
@@ -95,16 +98,16 @@ Get-Content "C:\Temp\d365fo-mcp.log" -Encoding UTF8 -Wait
 The C# bridge (`D365MetadataBridge.exe`) has its own diagnostic output (`[WriteService]` messages)
 that is normally filtered — only `[ERROR]` and `[WARN]` lines reach the TS server. To capture
 **all** bridge diagnostics (including `replace-code` tracing, form control traversal, etc.),
-add `bridgeLogFile` to the `context` block:
+add `D365FO_BRIDGE_LOG_FILE` to the `env` block:
 
 ```json
-"context": {
-  "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackage\\YourModel",
-  "bridgeLogFile": "C:\\Temp\\d365fo-bridge.log"
+"env": {
+  "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\YourPackage\\YourModel",
+  "D365FO_BRIDGE_LOG_FILE": "C:\\Temp\\d365fo-bridge.log"
 }
 ```
 
-When set, `bridgeLogFile` does two things:
+When set, `D365FO_BRIDGE_LOG_FILE` does two things:
 1. The bridge process tees all its stderr to the log file (append mode)
 2. The TS server forwards **all** bridge stderr lines (not just errors/warnings)
 
@@ -124,13 +127,14 @@ The server listens on a TCP port. Used for Azure deployments and for local `npm 
   "servers": {
     "d365fo-mcp-tools": {
       "url": "https://your-server.azurewebsites.net/mcp/"
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
 ```
+
+> **Note:** `D365FO_WORKSPACE_PATH` cannot be passed via `env` for HTTP-only servers (no subprocess).
+> The Azure server uses the workspace path sent by VS Code/VS 2022 in request headers. If your
+> client does not send workspace headers, the server relies on auto-detection.
 
 If the server has `API_KEY` authentication enabled, add a `headers` block:
 
@@ -142,16 +146,10 @@ If the server has `API_KEY` authentication enabled, add a `headers` block:
       "headers": {
         "X-Api-Key": "your-api-key-here"
       }
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
 ```
-
-Note: VS 2022 HTTP transport does **not** send workspace headers. Use `workspacePath` or
-`projectPath` in the `context` block, or switch to stdio.
 
 ---
 
@@ -163,11 +161,12 @@ Note: VS 2022 HTTP transport does **not** send workspace headers. Use `workspace
 {
   "servers": {
     "d365fo-mcp-tools": {
-      "url": "https://your-server.azurewebsites.net/mcp/"
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
-      "projectPath": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj"
+      "command": "node",
+      "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
+      "env": {
+        "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
+        "D365FO_PROJECT_PATH": "K:\\VSProjects\\MySolution\\MyProject\\MyProject.rnrproj"
+      }
     }
   }
 }
@@ -182,13 +181,14 @@ roots — one for your custom code and one for Microsoft standard packages:
 {
   "servers": {
     "d365fo-mcp-tools": {
-      "url": "https://your-server.azurewebsites.net/mcp/"
-    },
-    "context": {
-      "modelName": "YourModelName",
-      "customPackagesPath": "C:\\CustomXppCode",
-      "microsoftPackagesPath": "C:\\Users\\...\\Dynamics365\\10.0.2428.63\\PackagesLocalDirectory",
-      "devEnvironmentType": "ude"
+      "command": "node",
+      "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
+      "env": {
+        "D365FO_MODEL_NAME": "YourModelName",
+        "D365FO_CUSTOM_PACKAGES_PATH": "C:\\CustomXppCode",
+        "D365FO_MICROSOFT_PACKAGES_PATH": "C:\\Users\\...\\Dynamics365\\10.0.2428.63\\PackagesLocalDirectory",
+        "D365FO_DEV_ENVIRONMENT_TYPE": "ude"
+      }
     }
   }
 }
@@ -199,17 +199,25 @@ files from `%LOCALAPPDATA%\Microsoft\Dynamics365\XPPConfig\` and detects the pat
 
 ### All Properties
 
-| Property | Required | What it does |
-|----------|----------|-------------|
-| `workspacePath` | Recommended | Path to your model: `...\PackagesLocalDirectory\PackageName\ModelName`. All three values are derived from it automatically. |
-| `packagePath` | Optional | Base PackagesLocalDirectory path. Auto-extracted from `workspacePath` — only needed when `workspacePath` is not set. |
-| `modelName` | Optional | Explicit model name override — only needed when it differs from the last `workspacePath` segment. |
-| `customPackagesPath` | Optional | UDE: Custom X++ code root (from XPP config `ModelStoreFolder`). |
-| `microsoftPackagesPath` | Optional | UDE: Microsoft X++ root (from XPP config `FrameworkDirectory`). |
-| `devEnvironmentType` | Optional | `auto` (default), `traditional`, or `ude`. Controls path resolution behavior. |
-| `projectPath` | Optional | Full path to your `.rnrproj` file. Auto-detected from roots/list (stdio) or D365FO_SOLUTIONS_PATH. |
-| `solutionPath` | Optional | Visual Studio solution folder. Used when `projectPath` is not set. |
-| `bridgeLogFile` | Optional | Absolute path to a C# bridge log file (e.g. `C:\Temp\d365fo-bridge.log`). When set, the bridge tees all diagnostic output to this file in append mode, and the TS server forwards all bridge stderr lines (not just `[ERROR]`/`[WARN]`). Useful for debugging `modify_d365fo_file` issues (replace-code, form control traversal, etc.). |
+All context properties can be set via environment variables in the `env` block of your
+server definition. This is the **recommended approach** as it avoids schema conflicts
+with VS 2022's `.mcp.json` parser.
+
+| Property | Env variable | Required | What it does |
+|----------|-------------|----------|-------------|
+| `workspacePath` | `D365FO_WORKSPACE_PATH` | Recommended | Path to your model: `...\PackagesLocalDirectory\PackageName\ModelName`. All three values are derived from it automatically. |
+| `packagePath` | `D365FO_PACKAGE_PATH` | Optional | Base PackagesLocalDirectory path. Auto-extracted from `workspacePath` — only needed when `workspacePath` is not set. |
+| `modelName` | `D365FO_MODEL_NAME` | Optional | Explicit model name override — only needed when it differs from the last `workspacePath` segment. |
+| `customPackagesPath` | `D365FO_CUSTOM_PACKAGES_PATH` | Optional | UDE: Custom X++ code root (from XPP config `ModelStoreFolder`). |
+| `microsoftPackagesPath` | `D365FO_MICROSOFT_PACKAGES_PATH` | Optional | UDE: Microsoft X++ root (from XPP config `FrameworkDirectory`). |
+| `devEnvironmentType` | `D365FO_DEV_ENVIRONMENT_TYPE` | Optional | `auto` (default), `traditional`, or `ude`. Controls path resolution behavior. |
+| `projectPath` | `D365FO_PROJECT_PATH` | Optional | Full path to your `.rnrproj` file. Auto-detected from roots/list (stdio) or D365FO_SOLUTIONS_PATH. |
+| `solutionPath` | `D365FO_SOLUTION_PATH` | Optional | Visual Studio solution folder. Used when `projectPath` is not set. |
+| `bridgeLogFile` | `D365FO_BRIDGE_LOG_FILE` | Optional | Absolute path to a C# bridge log file (e.g. `C:\Temp\d365fo-bridge.log`). When set, the bridge tees all diagnostic output to this file in append mode, and the TS server forwards all bridge stderr lines (not just `[ERROR]`/`[WARN]`). Useful for debugging `modify_d365fo_file` issues (replace-code, form control traversal, etc.). |
+
+> **Note:** The legacy `"context": { ... }` section inside `"servers"` is still supported for
+> backward compatibility, but is **deprecated** — VS 2022/VS 2026 interprets every key under
+> `"servers"` as an MCP server definition, causing activation failures. Use `env` variables instead.
 
 ### Environment Variables (stdio `env` block)
 
@@ -218,7 +226,17 @@ files from `%LOCALAPPDATA%\Microsoft\Dynamics365\XPPConfig\` and detects the pat
 | `DB_PATH` | Yes (stdio) | Absolute path to `xpp-metadata.db`. Must be absolute — cwd is not the repo folder in stdio mode. |
 | `LABELS_DB_PATH` | Yes (stdio) | Absolute path to `xpp-metadata-labels.db`. Same reason as DB_PATH. |
 | `D365FO_SOLUTIONS_PATH` | Recommended | Folder containing D365FO `.rnrproj` files. Server scans it at startup for model auto-detection and lists all found projects in `get_workspace_info`. Required for project switching by name (`projectName` parameter). |
+| `D365FO_WORKSPACE_PATH` | Recommended | Path to your model folder (`PackagesLocalDirectory\Package\Model`). Server derives packagePath, packageName, and modelName from it. |
+| `D365FO_PACKAGE_PATH` | Optional | Explicit PackagesLocalDirectory path. Auto-extracted from `D365FO_WORKSPACE_PATH` if not set. |
+| `D365FO_MODEL_NAME` | Optional | Explicit model name — overrides auto-detection. |
+| `D365FO_PROJECT_PATH` | Optional | Full path to `.rnrproj` file — overrides auto-detection. |
+| `D365FO_SOLUTION_PATH` | Optional | Full path to `.sln` file — overrides auto-detection. |
+| `D365FO_BRIDGE_LOG_FILE` | Optional | Path to C# bridge diagnostic log file (append mode). Captures all bridge stderr output. |
+| `D365FO_DEV_ENVIRONMENT_TYPE` | Optional | `auto` (default), `traditional`, or `ude`. |
+| `D365FO_CUSTOM_PACKAGES_PATH` | Optional | UDE: custom X++ code root. |
+| `D365FO_MICROSOFT_PACKAGES_PATH` | Optional | UDE: Microsoft X++ root. |
 | `MCP_SERVER_MODE` | No | `full` (default), `read-only`, or `write-only`. Only needed in hybrid setups. |
+| `MCP_TOOL_TIMEOUT_MS` | No | HTTP transport per-request timeout in ms (default: 120000). Increase if Azure queries time out. |
 | `MCP_FORCE_HTTP` | No | Set to `true` to prevent stdio mode even when stdin is piped (rare). |
 | `DEBUG_LOGGING` | No | Set to `true` to enable verbose raw JSON-RPC trace on stderr. Every message VS 2022 sends to the server (`[VS→MCP]`) and every reply the server sends back (`[MCP→VS]`) is printed with a relative timestamp. Useful for diagnosing handshake failures or unexpected tool responses. Works in both stdio and HTTP mode. |
 | `LOG_FILE` | No | Absolute path to a log file (e.g. `C:\\Temp\\d365fo-mcp.log`). All stderr output — including JSON-RPC trace when `DEBUG_LOGGING=true` — is **tee'd** to this file in addition to the normal stderr stream. The file is opened in append mode at process startup, so multiple sessions accumulate in one file. A banner line with the timestamp and PID is written at the start of each session. Useful on Windows where the VS 2022 Output window truncates long lines and does not persist across sessions. |
@@ -249,7 +267,7 @@ When the server needs to create a file, it resolves the target path in this orde
 
 **UDE mode:**
 
-1. **`.mcp.json` context** — `customPackagesPath` / `microsoftPackagesPath`
+1. **`D365FO_CUSTOM_PACKAGES_PATH` / `D365FO_MICROSOFT_PACKAGES_PATH` env vars**
 2. **XPP config auto-detection** — reads `ModelStoreFolder` and `FrameworkDirectory` from the config file selected by `XPP_CONFIG_NAME` (or the newest) in `%LOCALAPPDATA%\Microsoft\Dynamics365\XPPConfig\`
 3. **Fallback** — existing `PACKAGES_PATH` env var or `packagePath` from `.mcp.json`
 
@@ -261,10 +279,9 @@ also auto-resolves package names by reading descriptor XML files. In traditional
 to assuming package name equals model name.
 
 For the model name used when creating files:
-1. **Explicit `modelName`** in `.mcp.json` context — always wins
-2. **Last segment of `workspacePath`** — only when the path contains `PackagesLocalDirectory` (AOT paths). Skipped for repo paths like `K:\repos\Contoso` to avoid returning the repo folder name instead of the real model.
+1. **Explicit `D365FO_MODEL_NAME` env var** — always wins
+2. **Last segment of `D365FO_WORKSPACE_PATH`** — only when the path contains `PackagesLocalDirectory` (AOT paths). Skipped for repo paths like `K:\repos\Contoso` to avoid returning the repo folder name instead of the real model.
 3. **Auto-detected from `.rnrproj`** — triggered by roots/list protocol (stdio), `D365FO_SOLUTIONS_PATH` scan, or workspace seed from env vars
-4. **`D365FO_MODEL_NAME`** env var — last resort fallback
 
 Each resolved value and its detection source are visible in `get_workspace_info` output.
 
@@ -323,11 +340,10 @@ GitHub Copilot connects to both servers at the same time and selects the right o
       "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
       "env": {
         "MCP_SERVER_MODE": "write-only",
-        "D365FO_SOLUTIONS_PATH": "K:\\VSProjects\\MySolution"
+        "D365FO_SOLUTIONS_PATH": "K:\\VSProjects\\MySolution",
+        "D365FO_WORKSPACE_PATH": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName",
+        "D365FO_PACKAGE_PATH": "K:\\AosService\\PackagesLocalDirectory"
       }
-    },
-    "context": {
-      "workspacePath": "K:\\AosService\\PackagesLocalDirectory\\YourPackageName\\YourModelName"
     }
   }
 }
