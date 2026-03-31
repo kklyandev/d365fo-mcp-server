@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { execFile } from 'child_process';
+import { execFile, type ExecFileOptions } from 'child_process';
 import util from 'util';
 import path from 'path';
 import { access } from 'fs/promises';
@@ -210,11 +210,16 @@ export const buildProjectTool = async (params: any, _context: any) => {
       console.error(`[build_d365fo_project] Running via VsDevCmd: ${fullCmd}`);
       ({ stdout, stderr } = await withOperationLock(
         `build:${resolvedProjectPath}`,
+        // windowsVerbatimArguments prevents Node from auto-quoting fullCmd for
+        // CreateProcess — our string already has the correct quoting for cmd.exe.
+        // Without this flag Node wraps the /C payload in extra double-quotes which
+        // breaks cmd.exe's quote-stripping logic and mangles paths (see #400).
         () => execFileAsync('cmd.exe', ['/C', fullCmd], {
           maxBuffer: 20 * 1024 * 1024,
           timeout: 600_000, // 10 minutes
           windowsHide: true,
-        }),
+          windowsVerbatimArguments: true,
+        } satisfies ExecFileOptions & { windowsVerbatimArguments: boolean }),
       ));
     } else {
       console.error(`[build_d365fo_project] Running: ${msbuildExe} ${buildArgs.join(' ')}`);
