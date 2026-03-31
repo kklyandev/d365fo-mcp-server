@@ -849,19 +849,24 @@ export async function modifyD365FileTool(request: CallToolRequest, context: XppS
 
     console.error(`[modify_d365fo_file] ✅ Bridge ${operation}: ${bridgeResult.message}`);
 
-    // Post-write validation (best-effort)
+    // Post-write validation (best-effort, fire-and-forget).
+    // Not awaited: the validation goes through the sequential bridge stdin/stdout
+    // pipe and can take 60s+, which would block all subsequent MCP calls.
+    // See: https://github.com/dynamics365ninja/d365fo-mcp-server/issues/407
     let bridgeValidation = '';
-    try {
-      const validationMsg = await bridgeValidateAfterWrite(
-        context.bridge,
-        objectType,
-        objectName,
-      );
-      if (validationMsg) bridgeValidation = `\n${validationMsg}`;
-    } catch (_e) { /* skip */ }
+    bridgeValidateAfterWrite(
+      context.bridge,
+      objectType,
+      objectName,
+    ).then(validationMsg => {
+      if (validationMsg) {
+        console.error(`[modify_d365fo_file] Bridge validation: ${validationMsg}`);
+      }
+    }).catch(e => {
+      console.error(`[modify_d365fo_file] Bridge validation skipped: ${e}`);
+    });
 
     // Auto-invalidate Redis cache so subsequent reads return fresh data
-    // (bridgeValidateAfterWrite already refreshed the C# bridge DiskProvider)
     try {
       await invalidateCache(context.cache, objectName, objectType, [objectName]);
     } catch { /* Redis not available — non-fatal */ }
