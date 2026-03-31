@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // --- hoisted mocks -----------------------------------------------------------
-const { execFilePromisified, execFileMock, accessMock, writeFileMock, unlinkMock } = vi.hoisted(() => {
+const { execFilePromisified, execFileMock, accessMock, writeFileMock, unlinkMock, readFileMock, readdirMock } = vi.hoisted(() => {
   const execFilePromisified = vi.fn();
   const execFileMock: any = vi.fn();
   execFileMock[Symbol.for('nodejs.util.promisify.custom')] = (
@@ -12,7 +12,9 @@ const { execFilePromisified, execFileMock, accessMock, writeFileMock, unlinkMock
   const accessMock = vi.fn();
   const writeFileMock = vi.fn().mockResolvedValue(undefined);
   const unlinkMock = vi.fn().mockResolvedValue(undefined);
-  return { execFilePromisified, execFileMock, accessMock, writeFileMock, unlinkMock };
+  const readFileMock = vi.fn().mockRejectedValue(new Error('ENOENT'));
+  const readdirMock = vi.fn().mockRejectedValue(new Error('ENOENT'));
+  return { execFilePromisified, execFileMock, accessMock, writeFileMock, unlinkMock, readFileMock, readdirMock };
 });
 
 vi.mock('child_process', () => ({ execFile: execFileMock }));
@@ -20,11 +22,14 @@ vi.mock('fs/promises', () => ({
   access: accessMock,
   writeFile: writeFileMock,
   unlink: unlinkMock,
+  readFile: readFileMock,
+  readdir: readdirMock,
 }));
 vi.mock('../../src/utils/configManager.js', () => ({
   getConfigManager: () => ({
     ensureLoaded: vi.fn(),
     getProjectPath: vi.fn().mockResolvedValue('C:\\MyProject\\MyProject.rnrproj'),
+    getPackagePath: vi.fn().mockReturnValue(null),
   }),
 }));
 vi.mock('../../src/utils/operationLocks.js', () => ({
@@ -178,5 +183,72 @@ describe('build_d365fo_project', () => {
     const [, batContent] = writeFileMock.mock.calls[0];
     expect(batContent).toContain(`call "${hardcodedDevCmd}"`);
     expect(batContent).toContain(`"${hardcodedMsbuild}"`);
+  });
+
+  it('sets PackagesFolder env vars and generates task override targets when packages path exists', async () => {
+    const PKG_PATH = 'C:\\AOSService\\PackagesLocalDirectory';
+    const BUILD_DLL = path.join(PKG_PATH, 'bin', 'Microsoft.Dynamics.Framework.Tools.BuildTasks.17.0.dll');
+    const DYNAMICS_AX_DIR = path.join(PKG_PATH, 'Dynamics', 'AX');
+
+    allowPaths([VSWHERE, MSBUILD, VSDEVCMD, PKG_PATH, BUILD_DLL, DYNAMICS_AX_DIR]);
+    setupVswhere(VS_INSTALL);
+
+    // Simulate Dynamics\AX directory with a .targets file that has UsingTask
+    readdirMock.mockResolvedValue([
+      'Microsoft.Dynamics.Framework.Tools.BuildTasks.17.0.targets',
+      'SomeOther.targets',
+    ]);
+    readFileMock.mockImplementation(async (filePath: string) => {
+      if (filePath.includes('BuildTasks.17.0.targets')) {
+        return '<Project>\n<UsingTask TaskName="CopyReferencesTask" AssemblyName="Microsoft.Dynamics.Framework.Tools.BuildTasks.17.0" />\n</Project>';
+      }
+      return '<Project />';
+    });
+
+    await buildProjectTool({}, {});
+
+    // Find the .cmd file write (batch file) — should contain D365FO env vars
+    const cmdWrite = writeFileMock.mock.calls.find(
+      (c: any[]) => typeof c[0] === 'string' && c[0].includes('d365build_'),
+    );
+    expect(cmdWrite).toBeDefined();
+    const batContent = cmdWrite![1] as string;
+    expect(batContent).toContain(`set "PackagesFolder=${PKG_PATH}"`);
+    expect(batContent).toContain(`set "MetadataDir=${PKG_PATH}"`);
+    expect(batContent).toContain(`set "PATH=%PATH%;${PKG_PATH}\\bin"`);
+
+    // Find the .targets file write (task override)
+    const targetsWrite = writeFileMock.mock.calls.find(
+      (c: any[]) => typeof c[0] === 'string' && c[0].includes('d365tasks_'),
+    );
+    expect(targetsWrite).toBeDefined();
+    const targetsContent = targetsWrite![1] as string;
+    expect(targetsContent).toContain('CopyReferencesTask');
+    expect(targetsContent).toContain(`AssemblyFile="${BUILD_DLL}"`);
+
+    // MSBuild args should include PackagesFolder and ForceImport
+    const cmdCall = execFilePromisified.mock.calls.find(
+      (c: any[]) => c[0] === 'cmd.exe',
+    );
+    expect(cmdCall).toBeDefined();
+  });
+
+  it('cleans up both temp files (batch + targets override) after build', async () => {
+    const PKG_PATH = 'C:\\AOSService\\PackagesLocalDirectory';
+    const BUILD_DLL = path.join(PKG_PATH, 'bin', 'Microsoft.Dynamics.Framework.Tools.BuildTasks.17.0.dll');
+    const DYNAMICS_AX_DIR = path.join(PKG_PATH, 'Dynamics', 'AX');
+
+    allowPaths([VSWHERE, MSBUILD, VSDEVCMD, PKG_PATH, BUILD_DLL, DYNAMICS_AX_DIR]);
+    setupVswhere(VS_INSTALL);
+    readdirMock.mockResolvedValue(['BuildTasks.targets']);
+    readFileMock.mockResolvedValue('<Project><UsingTask TaskName="CopyReferencesTask" AssemblyName="BuildTasks" /></Project>');
+
+    await buildProjectTool({}, {});
+
+    // Both temp files should be cleaned up
+    expect(unlinkMock).toHaveBeenCalledTimes(2);
+    const unlinkPaths = unlinkMock.mock.calls.map((c: any[]) => c[0] as string);
+    expect(unlinkPaths.some((p: string) => p.includes('d365build_'))).toBe(true);
+    expect(unlinkPaths.some((p: string) => p.includes('d365tasks_'))).toBe(true);
   });
 });

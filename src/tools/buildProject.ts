@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { execFile } from 'child_process';
 import util from 'util';
 import path from 'path';
-import { access, writeFile, unlink } from 'fs/promises';
+import { access, writeFile, unlink, readFile, readdir } from 'fs/promises';
 import os from 'os';
 import crypto from 'crypto';
 import { getConfigManager } from '../utils/configManager.js';
@@ -59,11 +59,135 @@ const VS_DEV_CMD_CANDIDATES = [
 
 const D365_BUILD_TASKS_ASSEMBLY = 'Microsoft.Dynamics.Framework.Tools.BuildTasks';
 
+// DLL filename includes the version suffix (17.0)
+const D365_BUILD_TASKS_DLL = 'Microsoft.Dynamics.Framework.Tools.BuildTasks.17.0.dll';
+
 // Relative path from MSBuild extensions root to the D365FO .targets file
 const D365_TARGETS_RELATIVE = 'Dynamics365\\Microsoft.Dynamics.Framework.Tools.BuildTasks.Xpp.targets';
 
 // vswhere.exe — ships with the Visual Studio Installer and can locate any VS edition/version
 const VSWHERE_PATH = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe';
+
+// Well-known PackagesLocalDirectory paths on D365FO development VMs
+const PACKAGES_CANDIDATES = [
+  'C:\\AOSService\\PackagesLocalDirectory',
+  'K:\\AOSService\\PackagesLocalDirectory',
+  'J:\\AOSService\\PackagesLocalDirectory',
+  'I:\\AOSService\\PackagesLocalDirectory',
+];
+
+/**
+ * Resolve PackagesLocalDirectory path.
+ * Priority: configManager.getPackagePath() → well-known candidate paths.
+ */
+async function resolvePackagesPath(): Promise<string | null> {
+  try {
+    const configManager = getConfigManager();
+    const configPath = configManager.getPackagePath();
+    if (configPath) {
+      try { await access(configPath); return configPath; } catch { /* fall through */ }
+    }
+  } catch { /* configManager not ready */ }
+
+  for (const candidate of PACKAGES_CANDIDATES) {
+    try { await access(candidate); return candidate; } catch { /* try next */ }
+  }
+  return null;
+}
+
+/**
+ * Scan a D365FO .targets file for all <UsingTask> declarations that reference
+ * the given assembly name and return the task names.
+ * Falls back to well-known task names if the file can't be read.
+ */
+async function extractUsingTaskNames(targetsDir: string, _assemblyName: string): Promise<string[]> {
+  const knownTasks = [
+    'CopyReferencesTask',
+    'AxCreateXRefData',
+    'CompileXppTask',
+    'UpdateXRefData',
+    'GenerateCrossReferenceData',
+    'SyncEngine',
+  ];
+
+  try {
+    const files = await readdir(targetsDir);
+    const targetsFiles = files.filter((f: string) => f.toLowerCase().endsWith('.targets'));
+    const taskNames = new Set<string>();
+
+    for (const file of targetsFiles) {
+      try {
+        const content = await readFile(path.join(targetsDir, file), 'utf-8');
+        // Match <UsingTask TaskName="XXX" AssemblyName="...BuildTasks..." />
+        const regex = /<UsingTask\s[^>]*TaskName="([^"]+)"[^>]*Assembly(?:Name|File)="[^"]*BuildTasks[^"]*"/gi;
+        let match;
+        while ((match = regex.exec(content)) !== null) {
+          taskNames.add(match[1]);
+        }
+        // Also match reversed attribute order: AssemblyName before TaskName
+        const regex2 = /<UsingTask\s[^>]*Assembly(?:Name|File)="[^"]*BuildTasks[^"]*"[^>]*TaskName="([^"]+)"/gi;
+        while ((match = regex2.exec(content)) !== null) {
+          taskNames.add(match[1]);
+        }
+      } catch { /* skip unreadable files */ }
+    }
+
+    if (taskNames.size > 0) {
+      return Array.from(taskNames);
+    }
+  } catch { /* directory unreadable */ }
+
+  return knownTasks;
+}
+
+/**
+ * Generate a temporary .targets file that re-declares D365FO build tasks with
+ * AssemblyFile instead of AssemblyName. When imported after the D365FO .targets,
+ * MSBuild's last-wins semantics for UsingTask ensure our definitions take precedence.
+ * This fixes MSB4062 on machines where the build tasks assembly is not in the GAC.
+ */
+async function generateTaskOverrideTargets(packagesPath: string): Promise<string | null> {
+  // Search for the DLL in common locations
+  const searchPaths = [
+    path.join(packagesPath, 'bin', D365_BUILD_TASKS_DLL),
+    path.join(packagesPath, 'Dynamics', 'AX', D365_BUILD_TASKS_DLL),
+  ];
+
+  let dllPath: string | null = null;
+  for (const candidate of searchPaths) {
+    try { await access(candidate); dllPath = candidate; break; } catch { /* try next */ }
+  }
+
+  if (!dllPath) {
+    console.error(`[build_d365fo_project] Build tasks DLL not found in: ${searchPaths.join(', ')}`);
+    return null;
+  }
+
+  console.error(`[build_d365fo_project] Found build tasks DLL: ${dllPath}`);
+  assertSafePath(dllPath, 'Build tasks DLL path');
+
+  // Extract UsingTask names from the targets files in Dynamics\AX
+  const targetsDir = path.join(packagesPath, 'Dynamics', 'AX');
+  const taskNames = await extractUsingTaskNames(targetsDir, D365_BUILD_TASKS_ASSEMBLY);
+
+  console.error(`[build_d365fo_project] Overriding ${taskNames.length} UsingTask declarations: ${taskNames.join(', ')}`);
+
+  // Generate the override targets file
+  const usingTasks = taskNames
+    .map(name => `  <UsingTask TaskName="${name}" AssemblyFile="${dllPath}" />`)
+    .join('\r\n');
+
+  const targetsContent =
+    `<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">\r\n` +
+    `  <!-- Auto-generated by d365fo-mcp-server to fix MSB4062 assembly resolution -->\r\n` +
+    `${usingTasks}\r\n` +
+    `</Project>\r\n`;
+
+  const tempTargets = path.join(os.tmpdir(), `d365tasks_${crypto.randomBytes(4).toString('hex')}.targets`);
+  await writeFile(tempTargets, targetsContent, 'utf-8');
+  console.error(`[build_d365fo_project] Wrote task override targets: ${tempTargets}`);
+  return tempTargets;
+}
 
 /**
  * Use vswhere.exe to dynamically find the latest VS installation with MSBuild.
@@ -188,6 +312,34 @@ export const buildProjectTool = async (params: any, _context: any) => {
       buildArgs.push(`/p:MSBuildExtensionsPath=${msbuildExtensionsPath}\\`);
     }
 
+    // --- Resolve PackagesLocalDirectory for D365FO build task assembly probing ---
+    // The D365FO .targets files reference build tasks (CopyReferencesTask, etc.) that
+    // may not be in the GAC on non-standard machines. We resolve the packages path
+    // and pass it as MSBuild properties so the targets can find their assemblies.
+    const packagesPath = await resolvePackagesPath();
+    let tempTaskOverride: string | null = null;
+
+    if (packagesPath) {
+      assertSafePath(packagesPath, 'PackagesLocalDirectory path');
+      buildArgs.push(`/p:PackagesFolder=${packagesPath}`);
+      buildArgs.push(`/p:MetadataDir=${packagesPath}`);
+      console.error(`[build_d365fo_project] PackagesLocalDirectory: ${packagesPath}`);
+
+      // Generate a ForceImport targets file that overrides UsingTask declarations
+      // with AssemblyFile references, fixing MSB4062 when the assembly isn't in GAC.
+      try {
+        tempTaskOverride = await generateTaskOverrideTargets(packagesPath);
+        if (tempTaskOverride) {
+          assertSafePath(tempTaskOverride, 'Task override targets path');
+          buildArgs.push(`/p:ForceImportAfterMicrosoftCommonTargets=${tempTaskOverride}`);
+        }
+      } catch (e: any) {
+        console.error(`[build_d365fo_project] Failed to generate task override targets: ${e.message}`);
+      }
+    } else {
+      console.error('[build_d365fo_project] PackagesLocalDirectory not found — D365FO build task resolution may fail');
+    }
+
     let stdout: string;
     let stderr: string;
 
@@ -217,7 +369,24 @@ export const buildProjectTool = async (params: any, _context: any) => {
       // Write a temporary batch file — each command on its own line avoids all
       // cmd.exe /C quote-stripping and `call` double-expansion issues.
       const tempBat = path.join(os.tmpdir(), `d365build_${crypto.randomBytes(4).toString('hex')}.cmd`);
-      const batContent = `@echo off\r\ncall ${quoteCmdArg(vsDevCmdPath)}\r\nif errorlevel 1 exit /b 1\r\n${msbuildToken} ${argsToken}\r\n`;
+
+      // Build batch content: set D365FO env vars, call VsDevCmd, then MSBuild
+      let batLines = ['@echo off'];
+
+      // Set D365FO-specific environment variables so that .targets files can resolve
+      // build task assemblies even when they aren't registered in the GAC.
+      if (packagesPath) {
+        batLines.push(`set "PackagesFolder=${packagesPath}"`);
+        batLines.push(`set "MetadataDir=${packagesPath}"`);
+        // Add bin directory to PATH for native dependency resolution
+        batLines.push(`set "PATH=%PATH%;${packagesPath}\\bin"`);
+      }
+
+      batLines.push(`call ${quoteCmdArg(vsDevCmdPath)}`);
+      batLines.push('if errorlevel 1 exit /b 1');
+      batLines.push(`${msbuildToken} ${argsToken}`);
+
+      const batContent = batLines.join('\r\n') + '\r\n';
 
       console.error(`[build_d365fo_project] Writing temp build script: ${tempBat}`);
       console.error(`[build_d365fo_project] VsDevCmd: ${vsDevCmdPath}`);
@@ -235,17 +404,22 @@ export const buildProjectTool = async (params: any, _context: any) => {
         ));
       } finally {
         await unlink(tempBat).catch(() => { /* best-effort cleanup */ });
+        if (tempTaskOverride) await unlink(tempTaskOverride).catch(() => { /* best-effort cleanup */ });
       }
     } else {
       console.error(`[build_d365fo_project] Running: ${msbuildExe} ${buildArgs.join(' ')}`);
-      ({ stdout, stderr } = await withOperationLock(
-        `build:${resolvedProjectPath}`,
-        () => execFileAsync(msbuildExe!, buildArgs, {
-          maxBuffer: 20 * 1024 * 1024,
-          timeout: 600_000, // 10 minutes
-          windowsHide: true,
-        }),
-      ));
+      try {
+        ({ stdout, stderr } = await withOperationLock(
+          `build:${resolvedProjectPath}`,
+          () => execFileAsync(msbuildExe!, buildArgs, {
+            maxBuffer: 20 * 1024 * 1024,
+            timeout: 600_000, // 10 minutes
+            windowsHide: true,
+          }),
+        ));
+      } finally {
+        if (tempTaskOverride) await unlink(tempTaskOverride).catch(() => { /* best-effort cleanup */ });
+      }
     }
 
     const output = [stdout, stderr].filter(Boolean).join('\n').trim();
