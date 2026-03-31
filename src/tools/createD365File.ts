@@ -3711,18 +3711,45 @@ export async function handleCreateD365File(
 
           // Add to .rnrproj if requested
           let projectMsg = '';
-          if (args.addToProject !== false && projectPathToUse) {
-            try {
-              const projectManager = new ProjectFileManager();
-              await projectManager.addToProject(
-                projectPathToUse,
-                args.objectType,
-                finalObjectName,
-                bridgeResult.filePath,
-              );
-              projectMsg = `\n✅ Added to project: ${path.basename(projectPathToUse)}`;
-            } catch (projErr) {
-              projectMsg = `\n⚠️ Could not add to project: ${projErr}`;
+          if (args.addToProject !== false) {
+            if (projectPathToUse) {
+              try {
+                const projectManager = new ProjectFileManager();
+                await projectManager.addToProject(
+                  projectPathToUse,
+                  args.objectType,
+                  finalObjectName,
+                  bridgeResult.filePath,
+                );
+                projectMsg = `\n✅ Added to project: ${path.basename(projectPathToUse)}`;
+              } catch (projErr) {
+                projectMsg = `\n⚠️ Could not add to project: ${projErr}`;
+              }
+            } else if (solutionPathToUse) {
+              // Try to find project in solution directory (same logic as XML fallback path)
+              try {
+                const detectedPath = await ProjectFileFinder.findProjectInSolution(
+                  solutionPathToUse,
+                  actualModelName,
+                );
+                if (detectedPath) {
+                  const projectManager = new ProjectFileManager();
+                  await projectManager.addToProject(
+                    detectedPath,
+                    args.objectType,
+                    finalObjectName,
+                    bridgeResult.filePath,
+                  );
+                  projectMsg = `\n✅ Added to project: ${path.basename(detectedPath)}`;
+                } else {
+                  projectMsg = `\n⚠️ Could not find .rnrproj for model '${actualModelName}' in ${solutionPathToUse}`;
+                }
+              } catch (projErr) {
+                projectMsg = `\n⚠️ Could not add to project: ${projErr}`;
+              }
+            } else {
+              projectMsg = `\n⚠️ addToProject=true but no projectPath could be resolved.\n` +
+                `Add projectPath to .mcp.json or pass it as a parameter.`;
             }
           }
 
