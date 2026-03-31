@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { execFile, exec } from 'child_process';
+import { execFile } from 'child_process';
 import util from 'util';
 import path from 'path';
 import { access } from 'fs/promises';
@@ -7,52 +7,30 @@ import { getConfigManager } from '../utils/configManager.js';
 import { withOperationLock } from '../utils/operationLocks.js';
 
 const execFileAsync = util.promisify(execFile);
-const execAsync = util.promisify(exec);
 
 /**
- * Escape an argument for safe use in a Windows cmd.exe command line.
- * Wraps in double quotes if it contains whitespace or shell metacharacters,
- * and escapes any embedded double quotes.
+ * Validate that a value looks like a legitimate Windows filesystem path.
+ * Rejects values containing shell metacharacters that could alter command semantics.
+ * This is a defense-in-depth check — paths come from vswhere.exe output,
+ * hardcoded candidates, or user-provided .mcp.json config, but we validate
+ * before passing them to any shell invocation.
  */
-function escapeCmdArg(arg: string): string {
-  if (arg === '') {
-    return '""';
+function assertSafePath(value: string, label: string): void {
+  // Block characters that can change shell semantics even inside quotes.
+  // Allowed: letters, digits, spaces, backslash, forward slash, colon, dot, hyphen, underscore, parens, equals
+  if (/[&|<>^`!;$%"'\n\r]/.test(value)) {
+    throw new Error(
+      `${label} contains potentially dangerous characters and cannot be used in a build command: ${value}`
+    );
   }
-  // Characters that can change cmd.exe parsing semantics
-  const needsQuoting = /[\s&|<>^"]/u.test(arg);
-  // Escape double quotes and handle backslashes preceding them in a cmd.exe-compatible way.
-  // Inside a quoted argument, each run of N backslashes followed by a quote should become
-  // 2N backslashes followed by two quotes, so that the called program receives the intented characters.
-  let escaped = '';
-  for (let i = 0; i < arg.length; ) {
-    const ch = arg[i];
-    if (ch === '\\') {
-      // Count run of backslashes
-      let j = i;
-      while (j < arg.length && arg[j] === '\\') {
-        j++;
-      }
-      const numBackslashes = j - i;
-      const nextChar = arg[j];
-      if (nextChar === '"') {
-        // Double the backslashes, then escape the quote by doubling it
-        escaped += '\\'.repeat(numBackslashes * 2) + '""';
-        i = j + 1;
-      } else {
-        // No following quote: keep backslashes as-is
-        escaped += '\\'.repeat(numBackslashes);
-        i = j;
-      }
-    } else if (ch === '"') {
-      // Bare quote: escape by doubling
-      escaped += '""';
-      i++;
-    } else {
-      escaped += ch;
-      i++;
-    }
-  }
-  return needsQuoting ? `"${escaped}"` : escaped;
+}
+
+/**
+ * Quote a Windows cmd.exe argument by wrapping in double-quotes.
+ * Only used for values that have already passed assertSafePath().
+ */
+function quoteCmdArg(arg: string): string {
+  return `"${arg}"`;
 }
 
 // Known MSBuild locations on D365FO development VMs (in order of preference)
@@ -214,17 +192,28 @@ export const buildProjectTool = async (params: any, _context: any) => {
     if (vsDevCmdPath) {
       // Run MSBuild through the VS Developer Command Prompt environment.
       // `call "VsDevCmd.bat"` initialises VS environment variables in-process so that
-      // D365FO MSBuild task assemblies are discoverable by the subsequent MSBuild call
-      // (Node.js exec() uses cmd.exe /C on Windows, so && chaining works correctly).
-      const msbuildToken = escapeCmdArg(msbuildExe!);
-      const argsToken = buildArgs.map(a => escapeCmdArg(a)).join(' ');
-      const fullCmd = `call ${escapeCmdArg(vsDevCmdPath)} && ${msbuildToken} ${argsToken}`;
+      // D365FO MSBuild task assemblies are discoverable by the subsequent MSBuild call.
+      //
+      // Security: instead of exec(string) which passes a concatenated command to
+      // cmd.exe (vulnerable to shell injection via crafted paths), we use
+      // execFile('cmd.exe', ['/C', command]) after validating all dynamic values
+      // contain only safe filesystem-path characters.  See CodeQL alert #15.
+      assertSafePath(vsDevCmdPath, 'VsDevCmd.bat path');
+      assertSafePath(msbuildExe!, 'MSBuild.exe path');
+      for (const arg of buildArgs) {
+        assertSafePath(arg, 'MSBuild argument');
+      }
+
+      const msbuildToken = quoteCmdArg(msbuildExe!);
+      const argsToken = buildArgs.map(a => quoteCmdArg(a)).join(' ');
+      const fullCmd = `call ${quoteCmdArg(vsDevCmdPath)} && ${msbuildToken} ${argsToken}`;
       console.error(`[build_d365fo_project] Running via VsDevCmd: ${fullCmd}`);
       ({ stdout, stderr } = await withOperationLock(
         `build:${resolvedProjectPath}`,
-        () => execAsync(fullCmd, {
+        () => execFileAsync('cmd.exe', ['/C', fullCmd], {
           maxBuffer: 20 * 1024 * 1024,
           timeout: 600_000, // 10 minutes
+          windowsHide: true,
         }),
       ));
     } else {
