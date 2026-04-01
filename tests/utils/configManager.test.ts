@@ -17,6 +17,41 @@ vi.mock('fs', async (orig) => {
   return { ...actual, existsSync: vi.fn(() => false), realpathSync: vi.fn((p: string) => p) };
 });
 
+// ─── Env-var isolation ───────────────────────────────────────────────────────
+// The test setup loads the repo's .env file (via dotenv/config). On developer
+// machines .env may contain D365FO_PACKAGE_PATH (and friends) which getContext()
+// reads as higher-priority than file config, causing every path assertion to
+// receive the real machine path instead of the configured test value.
+const D365FO_ENV_KEYS = [
+  'D365FO_PACKAGE_PATH',
+  'D365FO_WORKSPACE_PATH',
+  'D365FO_MODEL_NAME',
+  'D365FO_CUSTOM_PACKAGES_PATH',
+  'D365FO_MICROSOFT_PACKAGES_PATH',
+  'D365FO_PROJECT_PATH',
+  'D365FO_SOLUTION_PATH',
+  'D365FO_DEV_ENVIRONMENT_TYPE',
+  'D365FO_BRIDGE_LOG_FILE',
+] as const;
+
+let savedEnv: Partial<Record<string, string>> = {};
+beforeEach(() => {
+  savedEnv = {};
+  for (const key of D365FO_ENV_KEYS) {
+    savedEnv[key] = process.env[key];
+    delete process.env[key];
+  }
+});
+afterEach(() => {
+  for (const key of D365FO_ENV_KEYS) {
+    if (savedEnv[key] !== undefined) {
+      process.env[key] = savedEnv[key];
+    } else {
+      delete process.env[key];
+    }
+  }
+});
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Re-create a fresh ConfigManager for each test (bypasses singleton). */
