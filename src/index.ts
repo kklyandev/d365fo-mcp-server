@@ -150,7 +150,7 @@ async function initializeServices() {
 
     console.log('⚙️  Loading .mcp.json configuration...');
     const config = await initializeConfig();
-    if (config?.servers.context) {
+    if (config?.servers?.context) {
       console.log('✅ Configuration loaded from .mcp.json (servers.context)');
       if (config.servers.context.workspacePath) {
         console.log(`   Workspace path: ${config.servers.context.workspacePath}`);
@@ -187,7 +187,7 @@ async function initializeServices() {
     // Load .mcp.json configuration
     console.log('⚙️  Loading .mcp.json configuration...');
     const config = await initializeConfig();
-    if (config?.servers.context) {
+    if (config?.servers?.context) {
       console.log('✅ Configuration loaded from .mcp.json (servers.context)');
       if (config.servers.context.workspacePath) {
         console.log(`   Workspace path: ${config.servers.context.workspacePath}`);
@@ -351,11 +351,18 @@ async function initializeBridge(targetContext: import('./types/context.js').XppS
     // ensureXppConfig() which populates xppConfig.customPackagesPath.
     // Without this ordering, getPackagePath() can't use the UDE custom path.
     const devEnvType = await configMgr.getDevEnvironmentType();
-    const packagesPath = configMgr.getPackagePath() ?? undefined;
-
+    // For UDE environments use getCustomPackagesPath() explicitly for the primary
+    // path. getPackagePath() has a priority chain where .rnrproj auto-detection
+    // (priority #3) can resolve to the Microsoft PackagesLocalDirectory before
+    // the UDE customPackagesPath check (priority #4), causing both
+    // --packages-path and --reference-packages-path to point to the same
+    // Microsoft directory and leaving custom metadata unresolvable.
+    let packagesPath: string | undefined;
     let binPath: string | undefined;
     let referencePackagesPath: string | undefined;
     if (devEnvType === 'ude') {
+      const customPath = await configMgr.getCustomPackagesPath();
+      if (customPath) packagesPath = customPath;
       const msPath = await configMgr.getMicrosoftPackagesPath();
       if (msPath) {
         const { existsSync } = await import('fs');
@@ -366,6 +373,8 @@ async function initializeBridge(targetContext: import('./types/context.js').XppS
         // Microsoft-shipped objects (forms, tables, classes, etc.) are resolvable.
         referencePackagesPath = msPath;
       }
+    } else {
+      packagesPath = configMgr.getPackagePath() ?? undefined;
     }
 
     // Pass xref connection details for UDE environments
