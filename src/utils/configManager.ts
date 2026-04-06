@@ -171,7 +171,7 @@ class ConfigManager {
     if (!detectedProject?.projectPath) {
       const packagePathHint =
         this.runtimeContext.packagePath ||
-        this.config?.servers.context?.packagePath;
+        this.config?.servers?.context?.packagePath;
 
       if (packagePathHint) {
         console.error(`[ConfigManager] No .rnrproj in workspace — scanning packagePath: ${packagePathHint}`);
@@ -864,7 +864,7 @@ class ConfigManager {
     }
 
     if (!this.autoDetectionAttempted) {
-      const ctx = this.config?.servers.context;
+      const ctx = this.config?.servers?.context;
       await this.autoDetectProject(this.runtimeContext.workspacePath || ctx?.workspacePath);
     } else if (!this.autoDetectedProject && this.detectionInProgress) {
       // autoDetectionAttempted was set immediately when background scan started,
@@ -886,8 +886,8 @@ class ConfigManager {
     if (this.runtimeContext.projectPath) {
       projectPath = this.runtimeContext.projectPath;
       projectSource = 'runtime context (from VS Code)';
-    } else if (this.config?.servers.context?.projectPath) {
-      projectPath = this.config.servers.context.projectPath;
+    } else if (this.config?.servers?.context?.projectPath) {
+      projectPath = this.config?.servers?.context?.projectPath ?? null;
       projectSource = '.mcp.json';
     } else if (this.autoDetectedProject?.projectPath) {
       projectPath = this.autoDetectedProject.projectPath;
@@ -977,7 +977,7 @@ class ConfigManager {
     }
     
     // Priority 2: Config file
-    const context = this.config?.servers.context;
+    const context = this.config?.servers?.context;
     if (context?.projectPath) {
       return context.projectPath;
     }
@@ -1001,7 +1001,7 @@ class ConfigManager {
     }
     
     // Priority 2: Config file
-    const context = this.config?.servers.context;
+    const context = this.config?.servers?.context;
     if (context?.solutionPath) {
       return context.solutionPath;
     }
@@ -1031,12 +1031,12 @@ class ConfigManager {
       source,
       projectPath:  this.runtimeContext.projectPath  ??
                     this.autoDetectedProject?.projectPath  ??
-                    this.config?.servers.context?.projectPath  ?? null,
+                    this.config?.servers?.context?.projectPath  ?? null,
       solutionPath: this.runtimeContext.solutionPath ??
                     this.autoDetectedProject?.solutionPath ??
-                    this.config?.servers.context?.solutionPath ?? null,
+                    this.config?.servers?.context?.solutionPath ?? null,
       workspacePath: this.runtimeContext.workspacePath ??
-                     this.config?.servers.context?.workspacePath ?? null,
+                     this.config?.servers?.context?.workspacePath ?? null,
     };
   }
 
@@ -1048,7 +1048,7 @@ class ConfigManager {
    */
   async getRawAutoDetectedModelName(): Promise<string | null> {
     if (!this.autoDetectionAttempted) {
-      const context = this.config?.servers.context;
+      const context = this.config?.servers?.context;
       await this.autoDetectProject(this.runtimeContext.workspacePath || context?.workspacePath);
     }
     return this.autoDetectedProject?.modelName || null;
@@ -1067,7 +1067,7 @@ class ConfigManager {
     }
 
     if (!this.autoDetectionAttempted) {
-      const context = this.config?.servers.context;
+      const context = this.config?.servers?.context;
       await this.autoDetectProject(this.runtimeContext.workspacePath || context?.workspacePath);
     }
 
