@@ -20,16 +20,20 @@ vi.mock('fs/promises', () => ({
   access: accessMock,
   writeFile: writeFileMock,
   unlink: unlinkMock,
+  appendFile: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../../src/utils/configManager.js', () => ({
   getConfigManager: () => ({
     ensureLoaded: vi.fn(),
     getProjectPath: vi.fn().mockResolvedValue('C:\\MyProject\\MyProject.rnrproj'),
     getPackagePath: vi.fn().mockReturnValue(null),
+    getContext: vi.fn().mockReturnValue({}),
   }),
 }));
 vi.mock('../../src/utils/operationLocks.js', () => ({
   withOperationLock: (_key: string, fn: () => any) => fn(),
+  isOperationLockHeld: vi.fn().mockResolvedValue(false),
+  forceReleaseLock: vi.fn().mockResolvedValue(undefined),
 }));
 
 import path from 'path';
