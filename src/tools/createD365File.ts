@@ -3458,6 +3458,24 @@ export async function handleCreateD365File(
       }
     }
 
+    // Case C: dot-notation extension types provided without a dot (bare base name)
+    // e.g. objectType="table-extension", objectName="PurchTable"
+    // → effectiveObjectName="PurchTable.Extension" so applyObjectPrefix SPECIAL CASE A
+    // produces the correct "PurchTable.ContosoExtension" instead of falling into NORMAL CASE
+    // and producing the wrong "ContosoPurchTable".
+    const DOT_NOTATION_EXTENSION_TYPES = new Set([
+      'table-extension', 'form-extension', 'enum-extension', 'edt-extension',
+      'data-entity-extension', 'menu-item-display-extension', 'menu-item-action-extension',
+      'menu-item-output-extension', 'menu-extension',
+    ]);
+    if (DOT_NOTATION_EXTENSION_TYPES.has(args.objectType) && !effectiveObjectName.includes('.')) {
+      effectiveObjectName = `${effectiveObjectName}.Extension`;
+      console.error(
+        `[create_d365fo_file] Bare extension name auto-converted to dot-notation: ` +
+        `${args.objectName} → ${effectiveObjectName}`
+      );
+    }
+
     let finalObjectName = applyObjectPrefix(effectiveObjectName, objectPrefix);
     const objectSuffix = getObjectSuffix();
     finalObjectName = applyObjectSuffix(finalObjectName, objectSuffix);

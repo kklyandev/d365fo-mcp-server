@@ -345,6 +345,29 @@ describe('create_d365fo_file', () => {
     expect((result as any).isError).toBeFalsy();
   });
 
+  it('auto-converts bare extension name to dot-notation (Case C fix)', async () => {
+    // Bug: objectType="table-extension", objectName="PurchTable" (no dot) used to
+    // fall into NORMAL CASE of applyObjectPrefix and produce "ContosoPurchTable".
+    // Fix: Case C should append ".Extension" so applyObjectPrefix handles it correctly.
+    const result = await handleCreateD365File(
+      req('create_d365fo_file', {
+        objectType: 'table-extension',
+        objectName: 'PurchTable',
+        modelName: 'FmMcp',
+        packageName: 'FmMcp',
+        packagePath: 'K:\\PackagesLocalDirectory',
+        addToProject: false,
+      }),
+    );
+    // On macOS the function throws "Cannot create on non-Windows" before writing, which
+    // is caught by the outer catch and returned as content text (no isError flag).
+    // We inspect the path embedded in the message: it must use dot-notation
+    // (PurchTable.<something>Extension.xml) and NOT a flat prefix (FmMcpPurchTable.xml).
+    const text: string = result.content[0].text;
+    expect(text).toMatch(/PurchTable[.][^/\\]*[Ee]xtension/);
+    expect(text).not.toMatch(/FmMcpPurchTable|[A-Za-z]+PurchTable\.xml/);
+  });
+
   it('creates a class from custom xmlContent (hybrid scenario)', async () => {
     const xml = `<?xml version="1.0"?><AxClass><Name>MyHybridClass</Name></AxClass>`;
     const result = await handleCreateD365File(
