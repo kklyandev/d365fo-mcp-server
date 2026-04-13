@@ -53,7 +53,11 @@ afterEach(() => {
 
 // Simulate a caller at /repo/src/index.ts → callerDir = /repo/src
 // Default envPath resolves to /repo/src/../.env = /repo/.env
-const FAKE_CALLER_URL = 'file:///repo/src/index.ts';
+// On Windows, file URLs require a drive letter — use C:/repo to keep the
+// path.resolve('/repo/...') expectations consistent (same drive root).
+const FAKE_CALLER_URL = process.platform === 'win32'
+  ? 'file:///C:/repo/src/index.ts'
+  : 'file:///repo/src/index.ts';
 const REPO_ROOT_ENV = path.resolve('/repo/.env');
 
 // ── Env file path resolution ─────────────────────────────────────────────────
