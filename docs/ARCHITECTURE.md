@@ -16,38 +16,38 @@ This document provides visual diagrams and detailed explanations of the D365 F&O
 
 ## High-Level Architecture
 
-````mermaid
+```mermaid
 graph TB
     subgraph "Client Layer"
-        VS[Visual Studio 2022 17.14+ GitHub Copilot Agent Mode]
-        VS2026[Visual Studio 2026 GitHub Copilot Agent Mode]
+        VS[Visual Studio 2022 17.14+\n GitHub Copilot Agent Mode]
+        VS2026[Visual Studio 2026\n GitHub Copilot Agent Mode]
     end
 
     subgraph "Azure Cloud"
         subgraph "App Service"
-            MCP[MCP Server - Node.js 24 LTS, Express 5.x HTTP]
+            MCP[MCP Server\n Node.js 24 LTS, Express 5.x HTTP]
         end
         
         subgraph "Storage"
-            BLOB[Azure Blob Storage - Symbols and Labels DBs]
+            BLOB[Azure Blob Storage\n Symbols and Labels DBs]
         end
     end
 
     subgraph "MCP Server Components"
-        HTTP[HTTP Transport Layer - Express + Rate Limiting]
-        PROTO[MCP Protocol Handler - JSON-RPC 2.0]
-        TOOLS[Tool Handlers - 54 MCP Tools]
-        DB[(Symbols Database - FTS5, 584K+ symbols)]
-        LDB[(Labels Database - FTS5, 19M+ labels, 70 languages)]
-        CACHE[Redis Cache - Optional]
+        HTTP[HTTP Transport Layer\n Express + Rate Limiting]
+        PROTO[MCP Protocol Handler\n JSON-RPC 2.0]
+        TOOLS[Tool Handlers\n 54 MCP Tools]
+        DB[(Symbols Database\n FTS5, 584K+ symbols)]
+        LDB[(Labels Database\n FTS5, 19M+ labels, 70 languages)]
+        CACHE[Redis Cache\n Optional]
     end
 
     subgraph "C# Metadata Bridge — Windows only"
-        BRIDGE_EXE[D365MetadataBridge.exe - .NET 4.8 child process]
-        READ_SVC[MetadataReadService - Read operations]
-        WRITE_SVC[MetadataWriteService - Create/Modify via API]
-        IMETA[IMetadataProvider - Live D365FO metadata]
-        XREF[(DYNAMICSXREFDB - Cross-reference database)]
+        BRIDGE_EXE[D365MetadataBridge.exe\n .NET 4.8 child process]
+        READ_SVC[MetadataReadService\n Read operations]
+        WRITE_SVC[MetadataWriteService\n Create/Modify via API]
+        IMETA[IMetadataProvider\n Live D365FO metadata]
+        XREF[(DYNAMICSXREFDB\n Cross-reference database)]
     end
 
     VS -->|"Streamable HTTP, API Key"| MCP
@@ -83,7 +83,7 @@ graph TB
 
 ## Request Flow
 
-````mermaid
+```mermaid
 sequenceDiagram
     participant IDE as Visual Studio 2022 / 2026
     participant HTTP as HTTP Transport
@@ -142,96 +142,96 @@ sequenceDiagram
 
 ## Component Architecture
 
-````mermaid
+```mermaid
 graph LR
     subgraph "Entry Point"
-        INDEX[index.ts - Main Entry]
+        INDEX[index.ts\n Main Entry]
     end
 
     subgraph "Server Layer"
-        SERVER[mcpServer.ts - MCP Server Config]
-        TRANSPORT[transport.ts - HTTP Transport]
-        HANDLER[toolHandler.ts - Tool Router]
+        SERVER[mcpServer.ts\n MCP Server Config]
+        TRANSPORT[transport.ts\n HTTP Transport]
+        HANDLER[toolHandler.ts\n Tool Router]
     end
 
     subgraph "Tool Layer"
         subgraph "Search & Discovery"
-            SEARCH[search.ts - search]
-            BATCH[batchSearch.ts - batch_search]
-            EXT[extensionSearch.ts - search_extensions]
-            REFS[findReferences.ts - find_references]
-            COMP[completion.ts - code_completion]
+            SEARCH[search.ts\n search]
+            BATCH[batchSearch.ts\n batch_search]
+            EXT[extensionSearch.ts\n search_extensions]
+            REFS[findReferences.ts\n find_references]
+            COMP[completion.ts\n code_completion]
         end
         subgraph "Object Info"
-            CLASS[classInfo.ts - get_class_info]
-            TABLE[tableInfo.ts - get_table_info]
-            FORM[formInfo.ts - get_form_info]
-            QUERY[queryInfo.ts - get_query_info]
-            VIEW[viewInfo.ts - get_view_info]
-            ENUM[enumInfo.ts - get_enum_info]
-            EDT[edtInfo.ts - get_edt_info]
-            REPORT[reportInfo.ts - get_report_info]
-            ENTITY[dataEntityInfo.ts - get_data_entity_info]
-            SIGNATURE[methodSignature.ts - get_method_signature]
-            MSRC[getMethodSource.ts - get_method_source]
+            CLASS[classInfo.ts\n get_class_info]
+            TABLE[tableInfo.ts\n get_table_info]
+            FORM[formInfo.ts\n get_form_info]
+            QUERY[queryInfo.ts\n get_query_info]
+            VIEW[viewInfo.ts\n get_view_info]
+            ENUM[enumInfo.ts\n get_enum_info]
+            EDT[edtInfo.ts\n get_edt_info]
+            REPORT[reportInfo.ts\n get_report_info]
+            ENTITY[dataEntityInfo.ts\n get_data_entity_info]
+            SIGNATURE[methodSignature.ts\n get_method_signature]
+            MSRC[getMethodSource.ts\n get_method_source]
         end
         subgraph "Extensions & Security"
-            COCEXT[findCocExtensions.ts - find_coc_extensions]
-            EVTHDL[findEventHandlers.ts - find_event_handlers]
-            TBLEXT[tableExtensionInfo.ts - get_table_extension_info]
-            EXTPTS[analyzeExtensionPoints.ts - analyze_extension_points]
-            EXTSTRAT[extensionStrategyAdvisor.ts - recommend_extension_strategy]
-            SECART[securityArtifactInfo.ts - get_security_artifact_info]
-            SECCOV[securityCoverageInfo.ts - get_security_coverage_for_object]
-            MENU[menuItemInfo.ts - get_menu_item_info]
+            COCEXT[findCocExtensions.ts\n find_coc_extensions]
+            EVTHDL[findEventHandlers.ts\n find_event_handlers]
+            TBLEXT[tableExtensionInfo.ts\n get_table_extension_info]
+            EXTPTS[analyzeExtensionPoints.ts\n analyze_extension_points]
+            EXTSTRAT[extensionStrategyAdvisor.ts\n recommend_extension_strategy]
+            SECART[securityArtifactInfo.ts\n get_security_artifact_info]
+            SECCOV[securityCoverageInfo.ts\n get_security_coverage_for_object]
+            MENU[menuItemInfo.ts\n get_menu_item_info]
         end
         subgraph "Code Generation"
-            GEN[codeGen.ts - generate_code]
-            GENXML[generateD365Xml.ts - generate_d365fo_xml]
-            CREATE[createD365File.ts - create_d365fo_file]
-            MODIFY[modifyD365File.ts - modify_d365fo_file]
-            SMTABLE[generateSmartTable.ts - generate_smart_table]
-            SMFORM[generateSmartForm.ts - generate_smart_form]
-            SMRPT[generateSmartReport.ts - generate_smart_report]
+            GEN[codeGen.ts\n generate_code]
+            GENXML[generateD365Xml.ts\n generate_d365fo_xml]
+            CREATE[createD365File.ts\n create_d365fo_file]
+            MODIFY[modifyD365File.ts\n modify_d365fo_file]
+            SMTABLE[generateSmartTable.ts\n generate_smart_table]
+            SMFORM[generateSmartForm.ts\n generate_smart_form]
+            SMRPT[generateSmartReport.ts\n generate_smart_report]
         end
         subgraph "Analysis & Patterns"
-            PATTERN[analyzePatterns.ts - analyze_code_patterns]
-            SUGGEST[suggestImplementation.ts - suggest_method_implementation]
-            COMPLETE[analyzeCompleteness.ts - analyze_class_completeness]
-            API[apiUsagePatterns.ts - get_api_usage_patterns]
-            KNOWLEDGE[xppKnowledge.ts - get_xpp_knowledge]
-            TPAT[getTablePatterns.ts - get_table_patterns]
-            FPAT[getFormPatterns.ts - get_form_patterns]
-            SEDT[suggestEdt.ts - suggest_edt]
+            PATTERN[analyzePatterns.ts\n analyze_code_patterns]
+            SUGGEST[suggestImplementation.ts\n suggest_method_implementation]
+            COMPLETE[analyzeCompleteness.ts\n analyze_class_completeness]
+            API[apiUsagePatterns.ts\n get_api_usage_patterns]
+            KNOWLEDGE[xppKnowledge.ts\n get_xpp_knowledge]
+            TPAT[getTablePatterns.ts\n get_table_patterns]
+            FPAT[getFormPatterns.ts\n get_form_patterns]
+            SEDT[suggestEdt.ts\n suggest_edt]
         end
         subgraph "Labels"
-            SLABELS[searchLabels.ts - search_labels]
-            GLABEL[getLabelInfo.ts - get_label_info]
-            CLABEL[createLabel.ts - create_label]
-            RLABEL[renameLabel.ts - rename_label]
+            SLABELS[searchLabels.ts\n search_labels]
+            GLABEL[getLabelInfo.ts\n get_label_info]
+            CLABEL[createLabel.ts\n create_label]
+            RLABEL[renameLabel.ts\n rename_label]
         end
         subgraph "Workspace"
-            WSINFO[xppTools.ts - get_workspace_info]
-            VERIFYD[verifyD365Project.ts - verify_d365fo_project]
-            VALNAME[validateObjectNaming.ts - validate_object_naming]
+            WSINFO[xppTools.ts\n get_workspace_info]
+            VERIFYD[verifyD365Project.ts\n verify_d365fo_project]
+            VALNAME[validateObjectNaming.ts\n validate_object_naming]
         end
     end
 
     subgraph "Metadata Layer"
-        SYMBOL[symbolIndex.ts - SQLite + FTS5]
-        PARSER[xmlParser.ts - XML Metadata]
+        SYMBOL[symbolIndex.ts\n SQLite + FTS5]
+        PARSER[xmlParser.ts\n XML Metadata]
     end
 
     subgraph "Infrastructure"
-        CACHE_SVC[redisCache.ts - Cache Service]
-        RATE[rateLimiter.ts - Rate Limiting]
-        DOWNLOAD[download.ts - Azure Blob DL]
+        CACHE_SVC[redisCache.ts\n Cache Service]
+        RATE[rateLimiter.ts\n Rate Limiting]
+        DOWNLOAD[download.ts\n Azure Blob DL]
     end
 
     subgraph "C# Metadata Bridge — Windows only"
-        BCLIENT[bridgeClient.ts - JSON-RPC child process]
-        BADAPT[bridgeAdapter.ts - 12 tryBridge* read + 32 bridge* write]
-        BTYPES[bridgeTypes.ts - Response types incl. BridgeWriteResult, BridgeDeleteResult, BridgeCapabilities]
+        BCLIENT[bridgeClient.ts\n JSON-RPC child process]
+        BADAPT[bridgeAdapter.ts\n 12 tryBridge* read + 32 bridge* write]
+        BTYPES[bridgeTypes.ts\n Response types incl. BridgeWriteResult, BridgeDeleteResult, BridgeCapabilities]
     end
 
     INDEX --> SERVER
@@ -377,10 +377,10 @@ graph LR
 
 ### 1. Startup Flow
 
-````mermaid
+```mermaid
 graph TD
     START([Server Startup]) --> ENV[Load .env Config]
-    ENV --> CACHE_INIT[Initialize Redis Cache - Optional]
+    ENV --> CACHE_INIT[Initialize Redis Cache\n Optional]
     CACHE_INIT --> DB_CHECK{Database Exists?}
     
     DB_CHECK -->|Yes| DB_LOAD[Load SQLite Database]
@@ -393,7 +393,7 @@ graph TD
     INDEX_META --> DB_LOAD
     
     DB_LOAD --> FTS_INIT[Initialize FTS5 Index]
-    FTS_INIT --> COUNT[Count Symbols - 584K+]
+    FTS_INIT --> COUNT[Count Symbols\n 584K+]
     COUNT --> BRIDGE_CHECK{Windows + D365FO DLLs?}
     
     BRIDGE_CHECK -->|Yes| BRIDGE_START[Start D365MetadataBridge.exe child process]
@@ -401,7 +401,7 @@ graph TD
     
     BRIDGE_START --> BRIDGE_PING[Ping bridge — wait for 'pong']
     BRIDGE_PING --> MCP_INIT[Initialize MCP Server]
-    MCP_INIT --> HTTP_START[Start HTTP Server - Port 8080]
+    MCP_INIT --> HTTP_START[Start HTTP Server\n Port 8080]
     HTTP_START --> READY([Server Ready])
     
     style START fill:#4CAF50,color:#fff
@@ -413,9 +413,9 @@ graph TD
 
 ### 2. Search Query Flow
 
-````mermaid
+```mermaid
 graph TD
-    QUERY([User Search Query]) --> CACHE_KEY[Generate Cache Key - search:query:limit]
+    QUERY([User Search Query]) --> CACHE_KEY[Generate Cache Key\n search:query:limit]
     CACHE_KEY --> CACHE_CHECK{Cache Hit?}
     
     CACHE_CHECK -->|Yes| CACHE_RETURN[Return Cached Results]
@@ -423,7 +423,7 @@ graph TD
     
     FTS_QUERY --> RESULTS[Raw Symbol Results]
     RESULTS --> FORMAT[Format Results - TYPE: Name - Signature]
-    FORMAT --> CACHE_STORE[Store in Cache - TTL: 1 hour]
+    FORMAT --> CACHE_STORE[Store in Cache\n TTL: 1 hour]
     CACHE_STORE --> RETURN([Return Results])
     CACHE_RETURN --> RETURN
     
@@ -435,7 +435,7 @@ graph TD
 
 ### 3. Class Info Query Flow
 
-````mermaid
+```mermaid
 graph TD
     CLASS_REQ([Get Class Info]) --> BRIDGE_TRY{Bridge Available?}
     
@@ -456,8 +456,8 @@ graph TD
     
     XML_PARSE --> XML_SUCCESS{Parsing Successful?}
     
-    XML_SUCCESS -->|Yes| EXTRACT[Extract Class Details - Methods, Inheritance, etc.]
-    XML_SUCCESS -->|No| FALLBACK[Fallback to Database - Basic Symbol Info]
+    XML_SUCCESS -->|Yes| EXTRACT[Extract Class Details\n Methods, Inheritance, etc.]
+    XML_SUCCESS -->|No| FALLBACK[Fallback to Database\n Basic Symbol Info]
     
     EXTRACT --> CACHE_STORE[Store in Cache]
     FALLBACK --> RESPONSE
@@ -483,7 +483,7 @@ graph TD
 
 ### Process Lifecycle
 
-````mermaid
+```mermaid
 sequenceDiagram
     participant MCP as MCP Server (Node.js)
     participant Bridge as D365MetadataBridge.exe (.NET 4.8)
@@ -535,7 +535,7 @@ can safely create/modify D365FO objects (correct XML encoding, AOT path, `.rnrpr
 
 ### C# Components
 
-````mermaid
+```mermaid
 graph TB
     subgraph "D365MetadataBridge.exe"
         MAIN[Program.cs — stdin/stdout JSON-RPC loop]
@@ -624,7 +624,7 @@ that the bridge handles internally:
 
 ### Index Lifecycle & Cache Invalidation
 
-````mermaid
+```mermaid
 sequenceDiagram
     participant Tool as MCP Tool Handler
     participant Bridge as C# Bridge
@@ -658,27 +658,27 @@ sequenceDiagram
 
 ## Deployment Architecture
 
-````mermaid
+```mermaid
 graph TB
     subgraph "GitHub"
-        REPO[GitHub Repository - main branch]
+        REPO[GitHub Repository\n main branch]
     end
 
     subgraph "GitHub Actions CI/CD"
-        BUILD[Build Job - npm ci, test, build]
-        DEPLOY[Deploy Job - Azure App Service]
+        BUILD[Build Job\n npm ci, test, build]
+        DEPLOY[Deploy Job\n Azure App Service]
     end
 
     subgraph "Azure Resources"
         subgraph "Resource Group: rg-xpp-mcp"
-            APP[App Service - app-xpp-mcp - Linux P0v3, Node.js 24-lts]
-            STORAGE[Storage Account - st-xpp-mcp - StorageV2, Hot, LRS]
+            APP[App Service\n app-xpp-mcp\n Linux P0v3, Node.js 24-lts]
+            STORAGE[Storage Account\n st-xpp-mcp\n StorageV2, Hot, LRS]
         end
     end
 
     subgraph "Monitoring"
-        LOGS[Application Insights - Logs & Metrics]
-        HEALTH[Health Endpoint - /health Status Checks]
+        LOGS[Application Insights\n Logs & Metrics]
+        HEALTH[Health Endpoint\n /health Status Checks]
     end
 
     REPO -->|Push/PR| BUILD
@@ -705,7 +705,7 @@ graph TB
 
 ### Symbols Database
 
-````mermaid
+```mermaid
 erDiagram
     SYMBOLS {
         integer id PK
@@ -742,7 +742,7 @@ erDiagram
 
 ### Labels Database
 
-````mermaid
+```mermaid
 erDiagram
     LABELS {
         integer id PK
@@ -789,17 +789,17 @@ for the full schema.
 
 ## MCP Protocol Endpoints
 
-````mermaid
+```mermaid
 graph LR
     subgraph "MCP Protocol Methods"
-        INIT[initialize - Server Capabilities]
-        NOTIFY[notifications/initialized - Handshake Complete]
-        TOOLS_LIST[tools/list - 54 Available Tools]
-        TOOLS_CALL[tools/call - Execute Tool]
-        RES_LIST[resources/list - Empty]
-        RES_TMPL[resources/templates/list - Empty]
-        PROMPT_LIST[prompts/list - Code Review Prompt]
-        PING[ping - Health Check]
+        INIT[initialize\n Server Capabilities]
+        NOTIFY[notifications/initialized\n Handshake Complete]
+        TOOLS_LIST[tools/list\n 54 Available Tools]
+        TOOLS_CALL[tools/call\n Execute Tool]
+        RES_LIST[resources/list\n Empty]
+        RES_TMPL[resources/templates/list\n Empty]
+        PROMPT_LIST[prompts/list\n Code Review Prompt]
+        PING[ping\n Health Check]
     end
 
     INIT -.-> CAPS[Capabilities: tools, resources, prompts]
@@ -848,7 +848,7 @@ graph TD
 
 ## Performance Optimizations
 
-````mermaid
+```mermaid
 graph TD
     subgraph "Caching Strategy"
         L1[Request] --> L2{Redis Cache}
@@ -856,7 +856,7 @@ graph TD
         L2 -->|Miss| L4[Query Database]
         L4 --> L5[FTS5 Index Scan]
         L5 --> L6[Format Results]
-        L6 --> L7[Store in Cache - TTL: 1h]
+        L6 --> L7[Store in Cache\n TTL: 1h]
         L7 --> L3
     end
 
@@ -867,8 +867,8 @@ graph TD
     end
 
     subgraph "Connection Pooling"
-        C1[SQLite] --> C2[Single Connection - Read-Only Mode]
-        C3[Redis] --> C4[Connection Pool - Max 10]
+        C1[SQLite] --> C2[Single Connection\n Read-Only Mode]
+        C3[Redis] --> C4[Connection Pool\n Max 10]
     end
     
     style L3 fill:#4CAF50,color:#fff
@@ -894,7 +894,7 @@ graph TD
 
 ## Security Architecture
 
-````mermaid
+```mermaid
 graph TD
     subgraph "Authentication"
         A1[Client Request] --> A2[API Key / Bearer Token]
@@ -925,13 +925,13 @@ graph TD
 
 ## Error Handling Flow
 
-````mermaid
+```mermaid
 graph TD
     ERR([Error Occurs]) --> TYPE{Error Type?}
     
-    TYPE -->|Network| NET[Network Error - Retry 3x]
-    TYPE -->|Database| DB[Database Error - Log & Fallback]
-    TYPE -->|Validation| VAL[Validation Error - 400 Bad Request]
+    TYPE -->|Network| NET[Network Error\n Retry 3x]
+    TYPE -->|Database| DB[Database Error\n Log & Fallback]
+    TYPE -->|Validation| VAL[Validation Error\n 400 Bad Request]
     TYPE -->|Not Found| NF[404 Not Found]
     TYPE -->|Unknown| UNK[500 Internal Error]
     
@@ -969,7 +969,7 @@ graph TD
 
 ## Scalability Considerations
 
-````mermaid
+```mermaid
 graph LR
     subgraph "Vertical Scaling"
         V1[P0v3: 1 vCPU, 1.75GB] -.-> V2[P1v3: 2 vCPU, 3.5GB]
@@ -982,11 +982,11 @@ graph LR
     end
 
     subgraph "Caching"
-        C1[Redis Cache] --> C2[Shared Cache Layer - Across Instances]
+        C1[Redis Cache] --> C2[Shared Cache Layer\n Across Instances]
     end
 
     subgraph "Database"
-        D1[SQLite Read-Only] --> D2[No Locking Issues - Concurrent Reads]
+        D1[SQLite Read-Only] --> D2[No Locking Issues\n Concurrent Reads]
     end
     
     style H2 fill:#4CAF50,color:#fff
@@ -1000,31 +1000,31 @@ graph LR
 - **Memory:** 1.75GB (P0v3) - ~800MB used
 - **Throughput:** 500 req/15min per IP (configurable)
 - **Latency:** 
-  - Cache hit: <10ms
-  - Cache miss: 50-200ms
-  - Cold start: 15-30s (database download)
+ -  Cache hit: <10ms
+ -  Cache miss: 50-200ms
+ -  Cold start: 15-30s (database download)
 
 ---
 
 ## Testing Architecture
 
-````mermaid
+```mermaid
 graph TB
     subgraph "Test Pyramid"
-        UNIT[Unit Tests - Tools, Utils, Metadata Parser]
-        INT[Integration Tests - MCP Protocol, HTTP Transport]
-        E2E[End-to-End Tests - Full MCP Protocol, User Scenarios]
+        UNIT[Unit Tests\n Tools, Utils, Metadata Parser]
+        INT[Integration Tests\n MCP Protocol, HTTP Transport]
+        E2E[End-to-End Tests\n Full MCP Protocol, User Scenarios]
     end
 
     subgraph "Test Infrastructure"
         VITEST[Vitest Test Runner]
-        MOCKS[Mock Services - Cache, Parser, SymbolIndex]
-        SUPER[Supertest - HTTP Integration Testing]
+        MOCKS[Mock Services\n Cache, Parser, SymbolIndex]
+        SUPER[Supertest\n HTTP Integration Testing]
     end
 
     subgraph "CI/CD Testing"
-        CI[GitHub Actions - Run on PR/Push]
-        COV[Coverage Reports - v8 Provider]
+        CI[GitHub Actions\n Run on PR/Push]
+        COV[Coverage Reports\n v8 Provider]
     end
 
     UNIT --> VITEST
@@ -1046,7 +1046,7 @@ graph TB
 
 ## Technology Stack
 
-````mermaid
+```mermaid
 graph TB
     subgraph "Runtime"
         NODE[Node.js 24 LTS]
@@ -1060,7 +1060,7 @@ graph TB
     end
 
     subgraph "MCP Protocol"
-        SDK[MCP SDK 1.27 - modelcontextprotocol/sdk]
+        SDK[MCP SDK 1.27\n modelcontextprotocol/sdk]
         JSONRPC[JSON-RPC 2.0]
     end
 
@@ -1071,7 +1071,7 @@ graph TB
 
     subgraph "Parsing"
         XML[xml2js 0.6]
-        ZOD[zod 4.3 - Validation]
+        ZOD[zod 4.3\n Validation]
     end
 
     subgraph "Caching"
@@ -1080,8 +1080,8 @@ graph TB
     end
 
     subgraph "Azure"
-        BLOB[Azure Storage Blob - azure/storage-blob]
-        IDENTITY[Azure Identity - azure/identity]
+        BLOB[Azure Storage Blob\n azure/storage-blob]
+        IDENTITY[Azure Identity\n azure/identity]
     end
 
     subgraph "Testing"
