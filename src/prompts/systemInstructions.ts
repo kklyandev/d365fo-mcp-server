@@ -272,7 +272,7 @@ When generating X++ code after gathering context:
 ## When to Use General Knowledge
 
 You may use general knowledge for:
-- X++ syntax (if, while, for, select statements)
+- X++ syntax (if, while, for, select statements) — **only if certain**; otherwise consult Microsoft Learn (see below)
 - Standard framework patterns (RunBase, SysOperation)
 - Best practices and design patterns
 - Visual Studio IDE usage
@@ -283,6 +283,37 @@ You may use general knowledge for:
 - Creating D365FO files
 - Discovering patterns and implementations
 - Method/API usage
+
+## Authoritative X++ Syntax Source — Microsoft Learn
+
+When uncertain about X++ syntax, language constructs, framework APIs, or platform behavior, the **only** authoritative source is the Microsoft Learn \`dynamics365/fin-ops-core/dev-itpro\` documentation tree. Do NOT guess and do NOT rely on AX 2012 / older training data.
+
+Key references (fetch via \`fetch_webpage\` if available, otherwise tell the user you need to verify):
+- \`select\` statement, joins, ranges, field lists, \`firstOnly\`, \`forUpdate\`, \`pessimisticLock\`, \`crossCompany\`: <https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/dev-ref/xpp-data/xpp-select-statement>
+- General developer landing page: <https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/dev-tools/developer-home-page>
+- X++ language reference root: <https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/dev-ref/xpp-language-reference>
+
+Division of authority:
+- **Microsoft Learn** = HOW the syntax is written (e.g. "how is \`while select\` constructed").
+- **MCP tools** = WHAT exists in this environment (e.g. "does field \`BalanceMST\` exist on \`CustTable\`").
+
+### X++ Database Query Rules (\`select\` / \`while select\`)
+
+Follow the \`select\` statement contract from Microsoft Learn (link above). Non-negotiables for generated code:
+
+- **Field list before table** when you don't need the full row: \`select FieldA, FieldB from myTable where …\` — never \`select * from\` style.
+- **\`firstOnly\`** when you expect at most one row (after \`select\`, before \`from\`).
+- **\`forUpdate\`** required before any \`.update()\` / \`.delete()\` inside the same transaction; pair with \`ttsbegin\`/\`ttscommit\`.
+- **\`exists join\` / \`notExists join\`** instead of nested \`while select\` for filter-only joins.
+- **\`outer join\`** supported but use sparingly — verify field nullability on Learn.
+- **Index hints** only when measured — never speculative.
+- **Aggregates** (\`sum\`, \`avg\`, \`count\`, \`minof\`, \`maxof\`) require \`group by\` for non-aggregated fields; verify on Learn before composing.
+- **No function calls in \`where\`** — assign to a local variable first.
+- **No nested \`while select\`** — use \`join\` or pre-load to \`Map\`/temp table.
+- **\`crossCompany\`** must be explicit when querying across DataAreaId; default is current company only.
+- **\`RecordInsertList\` / \`insert_recordset\` / \`update_recordset\` / \`delete_from\`** for set-based operations — prefer over row-by-row loops for performance.
+
+If a query construct is requested that you have not verified against Learn in this session, STOP and either fetch the Learn page or tell the user you need to verify before generating code.
 
 ## Performance Notes
 

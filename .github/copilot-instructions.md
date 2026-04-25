@@ -207,6 +207,29 @@ VS 2022 shows only "ran tool_name" — no output. **Always** write 1 sentence be
 25. `get_form_info` works for ALL forms (standard + custom). If ⚠️ warning, retry with `filePath=`.
 26. **NEVER run `build_d365fo_project()` automatically.** Builds block the user. After completing changes, say *"Changes applied. Run a build when you're ready to validate."* Only build on explicit request ("build", "compile", "check errors"). If the build reports X++ errors, fix them via `modify_d365fo_file` and rebuild until clean.
 27. **"Check best practices" / "BP check" → ALWAYS call `run_bp_check()`**. NEVER manually iterate `get_method_source` to review code for BP compliance — the BP checker is authoritative.
+28. **X++ syntax authority — Microsoft Learn.** When uncertain about X++ syntax, language constructs, framework APIs, or platform behavior, the **only** authoritative source is the Microsoft Learn `dynamics365/fin-ops-core/dev-itpro` documentation tree. Do NOT guess and do NOT rely on AX 2012 / older training data. Reference (or fetch via `fetch_webpage` if a tool is available):
+    - `select` statement, joins, ranges, field lists, `firstOnly`, `forUpdate`, `pessimisticLock`, `crossCompany`: <https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/dev-ref/xpp-data/xpp-select-statement>
+    - General developer landing page (entry point to all X++ topics): <https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/dev-tools/developer-home-page>
+    - X++ language reference root: <https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/dev-ref/xpp-language-reference>
+    Combine Learn (syntax authority) with MCP tools (real metadata: table/field/method names from THIS environment). Learn for "how is `while select` written"; MCP for "does field `BalanceMST` exist on `CustTable`".
+
+### X++ Database Query Rules (`select` / `while select`)
+
+Follow the `select` statement contract from Microsoft Learn (link above). Key non-negotiables for generated code:
+
+- **Field list before table** when you don't need the full row: `select FieldA, FieldB from myTable where …` — never `select * from` style.
+- **`firstOnly`** when you expect at most one row (after `select`, before `from`): `select firstOnly custTable where …`.
+- **`forUpdate`** required before any `.update()` / `.delete()` inside the same transaction; pair with `ttsbegin`/`ttscommit`.
+- **`exists join` / `notExists join`** instead of nested `while select` for filter-only joins.
+- **`outer join`** is supported but use sparingly — verify field nullability semantics on Learn.
+- **Index hints**: only when you have measured a regression — never speculative.
+- **Aggregates** (`sum`, `avg`, `count`, `minof`, `maxof`) require `group by` for the non-aggregated fields; verify on Learn before composing.
+- **No function calls in `where`** — assign to a local variable first (rule 13).
+- **No nested `while select`** — use `join` or pre-load to `Map`/temp table (rule 15).
+- **`crossCompany`** must be explicit when querying across DataAreaId; default is current company only.
+- **`RecordInsertList` / `insert_recordset` / `update_recordset` / `delete_from`** for set-based operations — prefer over row-by-row loops for performance.
+
+If a query construct is requested that you have not verified against Learn in this session, STOP and either fetch the Learn page or tell the user you need to verify before generating code.
 
 ### AxClass sourceCode Format
 
