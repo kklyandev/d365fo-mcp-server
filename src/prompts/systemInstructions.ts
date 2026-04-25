@@ -348,8 +348,67 @@ select [FindOption…] [FieldList from] tableBuffer [index…] [order by / group
 - **\`crossCompany\`** explicit when querying across DataAreaId; default is current company only.
 - **\`validTimeState(dateFrom, dateTo)\`** for date-effective tables (\`ValidTimeStateFieldType ≠ None\`).
 - **\`RecordInsertList\` / \`insert_recordset\` / \`update_recordset\` / \`delete_from\`** for set-based operations — prefer over row-by-row loops.
+- **\`doInsert\` / \`doUpdate\` / \`doDelete\`** = bypass overridden \`insert\`/\`update\`/\`delete\` methods, framework code, and event handlers. **Reserved for data-fix / migration scenarios only.**
+- **SQL injection mitigation** — for dynamic queries from user input, use \`executeQueryWithParameters\` API. Never concatenate user input into a \`where\` clause; never use \`forceLiterals\`.
+- **SQL timeout** — interactive: 30 min; batch/services/OData: 3 h. Override via \`queryTimeout\` API. Catch \`Exception::Timeout\` for graceful retry.
 
 If a query construct is requested that you have not verified against Learn in this session, STOP and either fetch the Learn page or tell the user you need to verify before generating code.
+
+### Chain of Command (CoC) Authoring Rules
+
+Verified against [method-wrapping-coc](https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/extensibility/method-wrapping-coc).
+
+**🚨 NEVER copy default parameter values into the wrapper signature.** Even if the base method declares \`= defaultValue\`, the wrapper signature must NOT repeat it.
+
+\`\`\`xpp
+// Base
+public void salute(str message = "Hi") { … }
+
+// ✅ CORRECT
+public void salute(str message) { next salute(message); }
+
+// ❌ WRONG — copying the default
+public void salute(str message = "Hi") { next salute(message); }
+\`\`\`
+
+**Other CoC non-negotiables:**
+- Wrapper must always call \`next\` — except on \`[Replaceable]\` methods.
+- \`next\` must be at first-level statement scope: NOT in \`if\`/\`while\`/\`for\`, NOT after \`return\`, NOT inside a logical expression. PU21+: permitted inside \`try\`/\`catch\`/\`finally\`.
+- Signature otherwise matches base exactly (return type, param types & order, \`static\` modifier). Use \`get_method_signature\` first.
+- Static method wrappers must repeat \`static\`. Forms cannot have static-method CoC.
+- Cannot wrap constructors. New parameterless public methods on the extension class become the extension's own constructor.
+- Extension class shape: \`[ExtensionOf(<Str>(...))] final class <Target>_Extension\` — must be \`final\`.
+- \`[Hookable(false)]\` blocks CoC entirely. \`[Wrappable(false)]\` blocks wrapping; \`final\` methods need \`[Wrappable(true)]\` to be wrappable.
+- Form-nested wrapping uses \`formdatasourcestr\`, \`formdatafieldstr\`, \`formControlStr\`. Cannot add NEW methods on these via CoC — only wrap existing ones (init, validateWrite, clicked, …).
+- Wrappers can read/call **protected** members of the augmented class (PU9+); cannot reach \`private\`.
+
+### X++ Class & Method Rules
+
+Verified against [xpp-classes-methods](https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/dev-ref/xpp-classes-methods).
+
+- **Class default access = \`public\`.** Removing \`public\` does not make a class non-public. Use \`internal\`, \`final\`, \`abstract\` deliberately.
+- **Instance fields default = \`protected\`. NEVER make them \`public\`** — expose via \`parmFoo\` accessors.
+- **Constructor pattern:** one \`new()\` per class (compiler generates default if absent). Convention: \`new()\` is \`protected\`, exposed via \`public static construct()\` factory; \`init()\` for post-construction setup.
+- **Method modifier order:** \`[edit | display] [public | protected | private | internal] [static | abstract | final]\`.
+- **Override visibility:** must be at least as accessible as the base method. \`private\` is not overridable.
+- **Optional parameters** must come after required ones. Callers cannot skip — all preceding parameters must be supplied. Use \`prmIsDefault(_x)\` to detect "was this passed".
+- **All parameters are pass-by-value** — mutating a parameter does not affect the caller's variable.
+- **\`this\` rules:** required for instance method calls; cannot qualify class-declaration member variables (write the bare name); cannot be used in static methods; cannot qualify static methods (use \`ClassName::method()\`).
+- **Extension methods** (target Class/Table/View/Map): extension class must be \`static\`, name ends \`_Extension\`; methods are \`public static\`; first param is the target type, supplied by runtime.
+- **Constants over macros.** \`public const str FOO = 'bar';\` at class scope. Reference via \`ClassName::FOO\` (or unqualified inside the class).
+- **\`var\` keyword** only when the type is obvious from initialization. Skip when the type is ambiguous.
+- **Declare-anywhere is encouraged** — close to first use, smallest scope. Compiler rejects shadowing.
+
+### X++ Statement & Type Rules
+
+Verified against [xpp-conditional](https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/dev-ref/xpp-conditional) and [xpp-variables-data-types](https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/dev-ref/xpp-variables-data-types).
+
+- **\`switch\` \`break\` is required.** For multiple values to one branch use comma-list: \`case 13, 17, 21: …; break;\` — never empty fall-through.
+- **Ternary \`cond ? a : b\`** — both branches must have the same type.
+- **X++ has NO database null.** Each primitive has a "null-equivalent": \`int 0\`, \`real 0.0\`, \`str ""\`, \`date 1900-01-01\`, \`utcDateTime\` with date-part \`1900-01-01\`, \`enum\` value \`0\`. In SQL these compare false; in non-SQL they compare as ordinary values. Don't write \`if (myDate == null)\` — write \`if (!myDate)\` or \`if (myDate == dateNull())\`.
+- **Casting:** prefer \`as\` (returns null on mismatch) and \`is\` (boolean test) over hard down-casts. Late binding only for \`Object\` and \`FormRun\`.
+- **\`using\` blocks** for \`IDisposable\` — equivalent to \`try\`/\`finally { Dispose() }\`, exception-safe.
+- **Embedded local functions** read enclosing variables but cannot leak their own. Use only when the helper does not belong to the class API.
 
 ## Performance Notes
 
