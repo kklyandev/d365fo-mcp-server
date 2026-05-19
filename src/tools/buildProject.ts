@@ -1,18 +1,18 @@
 import { z } from 'zod';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import util from 'util';
 import path from 'path';
-import { access, writeFile, unlink, appendFile } from 'fs/promises';
+import { access, writeFile, readFile, unlink, appendFile } from 'fs/promises';
+import { openSync as openSyncFs, closeSync as closeSyncFs } from 'fs';
 import os from 'os';
 import crypto from 'crypto';
 import { getConfigManager } from '../utils/configManager.js';
-import { withOperationLock, isOperationLockHeld, forceReleaseLock } from '../utils/operationLocks.js';
+import { forceReleaseLock } from '../utils/operationLocks.js';
 
 const execFileAsync = util.promisify(execFile);
 
 // ---------------------------------------------------------------------------
 // Build-tool file logger
-// Writes structured entries to the bridge log file so stuck builds are visible.
 // ---------------------------------------------------------------------------
 
 async function buildLog(level: 'INFO' | 'WARN' | 'ERROR', message: string): Promise<void> {
@@ -40,383 +40,475 @@ function assertSafePath(value: string, label: string): void {
   }
 }
 
-function quoteCmdArg(arg: string): string {
-  return `"${arg}"`;
+// ---------------------------------------------------------------------------
+// Async build state management
+// State and log files live in os.tmpdir(), keyed by a hash of the project path.
+// ---------------------------------------------------------------------------
+
+interface BuildJobState {
+  pid: number;
+  projectPath: string;
+  tool: string;
+  startTime: string;
+  logFile: string;
+  status: 'running' | 'succeeded' | 'failed';
+  exitCode?: number;
+  endTime?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const D365_BUILD_TASKS_ASSEMBLY = 'Microsoft.Dynamics.Framework.Tools.BuildTasks';
-const VSWHERE_PATH = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe';
-
-const MSBUILD_CANDIDATES = [
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe',
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\MSBuild\\Current\\Bin\\MSBuild.exe',
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe',
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\MSBuild\\Current\\Bin\\MSBuild.exe',
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\MSBuild\\Current\\Bin\\MSBuild.exe',
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe',
-];
-
-const VS_DEV_CMD_CANDIDATES = [
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\VsDevCmd.bat',
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\Common7\\Tools\\VsDevCmd.bat',
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\Tools\\VsDevCmd.bat',
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\Common7\\Tools\\VsDevCmd.bat',
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\Common7\\Tools\\VsDevCmd.bat',
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\Common7\\Tools\\VsDevCmd.bat',
-];
-
-const DEVENV_COM_CANDIDATES = [
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\IDE\\devenv.com',
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\Common7\\IDE\\devenv.com',
-  'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\devenv.com',
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\Common7\\IDE\\devenv.com',
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\Common7\\IDE\\devenv.com',
-  'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\Common7\\IDE\\devenv.com',
-];
-
-const PACKAGES_CANDIDATES = [
-  'C:\\AOSService\\PackagesLocalDirectory',
-  'K:\\AOSService\\PackagesLocalDirectory',
-  'J:\\AOSService\\PackagesLocalDirectory',
-  'I:\\AOSService\\PackagesLocalDirectory',
-];
-
-// ---------------------------------------------------------------------------
-// Path resolution
-// ---------------------------------------------------------------------------
-
-async function killOrphanedBuildProcesses(): Promise<void> {
-  // Kills any MSBuild and devenv processes that may be stuck from a previous build.
-  // Uses taskkill /F /IM which affects ALL processes with matching image names on this machine.
-  // This is intentionally broad — only call this when force=true is explicitly requested.
-  // On a shared developer VM, this will also kill processes started by other users.
-  const targets = ['MSBuild.exe', 'devenv.com', 'devenv.exe'];
-  const results = await Promise.allSettled(
-    targets.map(name =>
-      execFileAsync('taskkill', ['/F', '/IM', name], { timeout: 10_000, windowsHide: true })
-        .then(({ stdout }) => {
-          // taskkill prints PIDs of killed processes; log them for traceability
-          console.error(`[build_d365fo_project] killed ${name}: ${stdout.trim() || '(no output)'}`);
-        })
-        .catch(() => { /* process was not running — that's fine */ }),
-    ),
-  );
-  const killed = results.filter(r => r.status === 'fulfilled').length;
-  if (killed > 0) {
-    console.error(`[build_d365fo_project] ⚠️ Killed all matching MSBuild/devenv processes on this machine (force=true)`);
-  }
+function buildJobPaths(projectPath: string): { stateFile: string; logFile: string } {
+  const hash = crypto.createHash('md5').update(projectPath.toLowerCase()).digest('hex').slice(0, 10);
+  return {
+    stateFile: path.join(os.tmpdir(), `d365build_state_${hash}.json`),
+    logFile:   path.join(os.tmpdir(), `d365build_log_${hash}.log`),
+  };
 }
 
-async function isProcessImageRunning(imageName: string): Promise<boolean> {
+async function readBuildState(projectPath: string): Promise<BuildJobState | null> {
+  const { stateFile } = buildJobPaths(projectPath);
   try {
-    const { stdout } = await execFileAsync('tasklist', [
-      '/FI', `IMAGENAME eq ${imageName}`,
-      '/FO', 'CSV',
-      '/NH',
-    ], { timeout: 10_000, windowsHide: true });
-
-    return stdout.toLowerCase().includes(`"${imageName.toLowerCase()}"`);
+    const raw = await readFile(stateFile, 'utf-8');
+    return JSON.parse(raw) as BuildJobState;
   } catch {
-    return false;
+    return null;
   }
 }
 
-async function getRunningBuildProcesses(): Promise<string[]> {
-  const targets = ['MSBuild.exe', 'devenv.com', 'devenv.exe'];
-  const states = await Promise.all(targets.map(async name => ({
-    name,
-    running: await isProcessImageRunning(name),
-  })));
-  return states.filter(state => state.running).map(state => state.name);
+async function writeBuildState(state: BuildJobState): Promise<void> {
+  const { stateFile } = buildJobPaths(state.projectPath);
+  await writeFile(stateFile, JSON.stringify(state, null, 2), 'utf-8');
 }
 
-async function resolvePackagesPath(): Promise<string | null> {
+async function clearBuildState(projectPath: string): Promise<void> {
+  const { stateFile } = buildJobPaths(projectPath);
+  await unlink(stateFile).catch(() => {});
+}
+
+function isProcessAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+async function readLogTail(logFile: string, lines = 60): Promise<string> {
   try {
-    const configManager = getConfigManager();
-    const configPath = configManager.getPackagePath();
-    if (configPath) {
-      try { await access(configPath); return configPath; } catch { /* fall through */ }
-    }
-  } catch { /* configManager not ready */ }
-
-  for (const candidate of PACKAGES_CANDIDATES) {
-    try { await access(candidate); return candidate; } catch { /* try next */ }
+    const content = await readFile(logFile, 'utf-8');
+    const all = content.split(/\r?\n/);
+    return all.slice(-lines).join('\n').trim();
+  } catch {
+    return '(log not yet available)';
   }
-  return null;
 }
 
-async function findFirstExisting(candidates: string[]): Promise<string | null> {
-  for (const c of candidates) {
-    try { await access(c); return c; } catch { /* next */ }
-  }
-  return null;
+// ---------------------------------------------------------------------------
+// Parse xppc.exe diagnostic XML (BuildModelResult.err.xml)
+// xppc.exe does not print errors to stdout — it writes them to:
+//   {customPackagesPath}/{modelName}/BuildModelResult.err.xml
+// ---------------------------------------------------------------------------
+
+interface XppcDiagnostic {
+  severity: string;
+  path: string;
+  message: string;
+  line?: string;
+  column?: string;
 }
 
-async function findVsWithVswhere(): Promise<{
-  msbuildExe: string;
-  vsDevCmdPath: string | null;
-  devenvComPath: string | null;
-} | null> {
-  try { await access(VSWHERE_PATH); } catch { return null; }
-  try {
-    const { stdout } = await execFileAsync(VSWHERE_PATH, [
-      '-latest', '-requires', 'Microsoft.Component.MSBuild', '-property', 'installationPath',
-    ], { timeout: 10_000, windowsHide: true });
-
-    const installPath = stdout.trim().split(/\r?\n/)[0];
-    if (!installPath) return null;
-
-    const msbuildExe = path.join(installPath, 'MSBuild', 'Current', 'Bin', 'MSBuild.exe');
-    try { await access(msbuildExe); } catch { return null; }
-
-    const vsDevCmdPath = path.join(installPath, 'Common7', 'Tools', 'VsDevCmd.bat');
-    const devenvComPath = path.join(installPath, 'Common7', 'IDE', 'devenv.com');
-
-    return {
-      msbuildExe,
-      vsDevCmdPath: await access(vsDevCmdPath).then(() => vsDevCmdPath, () => null),
-      devenvComPath: await access(devenvComPath).then(() => devenvComPath, () => null),
+function parseBuildDiagnostics(xml: string): XppcDiagnostic[] {
+  const diagnostics: XppcDiagnostic[] = [];
+  const itemRegex = /<Diagnostic>([\s\S]*?)<\/Diagnostic>/g;
+  let match: RegExpExecArray | null;
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const block = match[1];
+    const get = (tag: string) => {
+      const m = block.match(new RegExp(`<${tag}>([^<]*)<\/${tag}>`));
+      return m ? m[1].trim() : '';
     };
+    diagnostics.push({
+      severity: get('Severity'),
+      path:     get('Path'),
+      message:  get('Message'),
+      line:     get('Line') || undefined,
+      column:   get('Column') || undefined,
+    });
+  }
+  return diagnostics;
+}
+
+// ---------------------------------------------------------------------------
+// Parse model name from .rnrproj XML
+// ---------------------------------------------------------------------------
+
+async function getModelFromRnrproj(projectPath: string): Promise<string | null> {
+  try {
+    const content = await readFile(projectPath, 'utf-8');
+    const match = content.match(/<Model>\s*([^<]+)\s*<\/Model>/i);
+    return match ? match[1].trim() : null;
   } catch {
     return null;
   }
 }
 
 // ---------------------------------------------------------------------------
-// devenv.com /build — headless VS fallback for MSB4062
+// Locate xppc.exe from microsoftPackagesPath
 // ---------------------------------------------------------------------------
 
-async function buildWithDevenv(
-  devenvComPath: string,
-  projectPath: string,
-): Promise<{ success: boolean; output: string }> {
-  assertSafePath(devenvComPath, 'devenv.com path');
-  assertSafePath(projectPath, 'Project path');
-  await buildLog('INFO', `devenv.com fallback started — pid: ${process.pid} | devenv: ${devenvComPath}`);
+async function findXppcExe(microsoftPackagesPath: string | null): Promise<string | null> {
+  const candidates: string[] = [];
 
-  try {
-    const { stdout, stderr } = await withOperationLock(
-      `build:devenv:${projectPath}`,
-      () => execFileAsync(devenvComPath, [projectPath, '/build', 'Debug'], {
-        maxBuffer: 20 * 1024 * 1024,
-        timeout: 900_000,
-        windowsHide: true,
-      }),
-    );
-    const output = [stdout, stderr].filter(Boolean).join('\n').trim();
-    const failed = /\d+\s+failed/.test(output)
-      ? !/0\s+failed/.test(output)
-      : /\b(error|Error)\s+(CS|AX|X\+\+|MSB)\d+|Build FAILED/i.test(output);
-    await buildLog(failed ? 'ERROR' : 'INFO', `devenv.com fallback finished — success: ${!failed}`);
-    return { success: !failed, output };
-  } catch (error: any) {
-    await buildLog('ERROR', `devenv.com fallback error: ${error?.message}`);
-    return { success: false, output: [error.stdout, error.stderr, error.message].filter(Boolean).join('\n') };
+  if (microsoftPackagesPath) {
+    candidates.push(path.join(microsoftPackagesPath, 'bin', 'xppc.exe'));
   }
-}
 
-function isMSB4062(output: string): boolean {
-  return output.includes('MSB4062') && output.includes(D365_BUILD_TASKS_ASSEMBLY);
+  // Search AppData for any installed UDE version
+  const appDataLocal = process.env.LOCALAPPDATA ||
+    path.join(process.env.USERPROFILE || 'C:\\Users\\Default', 'AppData', 'Local');
+  const d365Base = path.join(appDataLocal, 'Microsoft', 'Dynamics365');
+  try {
+    const { readdir } = await import('fs/promises');
+    const versions = await readdir(d365Base);
+    for (const ver of versions.sort().reverse()) {
+      candidates.push(path.join(d365Base, ver, 'PackagesLocalDirectory', 'bin', 'xppc.exe'));
+    }
+  } catch { /* ignore */ }
+
+  // CHE well-known locations
+  candidates.push(
+    'C:\\AOSService\\PackagesLocalDirectory\\bin\\xppc.exe',
+    'K:\\AOSService\\PackagesLocalDirectory\\bin\\xppc.exe',
+    'J:\\AOSService\\PackagesLocalDirectory\\bin\\xppc.exe',
+    'I:\\AOSService\\PackagesLocalDirectory\\bin\\xppc.exe',
+  );
+
+  for (const c of candidates) {
+    try { await access(c); return c; } catch { /* next */ }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
-// Tool definition + handler
+// Background xppc.exe launch
+// ---------------------------------------------------------------------------
+
+async function launchXppcBackground(
+  xppcExe: string,
+  projectPath: string,
+  modelName: string,
+  customPackagesPath: string,
+  microsoftPackagesPath: string,
+): Promise<BuildJobState> {
+  assertSafePath(xppcExe, 'xppc.exe path');
+  assertSafePath(projectPath, 'Project path');
+  assertSafePath(modelName, 'Model name');
+  assertSafePath(customPackagesPath, 'Custom packages path');
+  assertSafePath(microsoftPackagesPath, 'Microsoft packages path');
+
+  const { logFile } = buildJobPaths(projectPath);
+  const outputPath = path.join(customPackagesPath, modelName, 'bin');
+
+  const xppcArgs = [
+    `-metadata=${customPackagesPath}`,
+    `-compilermetadata=${microsoftPackagesPath}`,
+    `-modelmodule=${modelName}`,
+    `-referenceFolder=${microsoftPackagesPath}`,
+    `-referenceFolder=${customPackagesPath}`,
+    `-output=${outputPath}`,
+    '-incremental',
+  ];
+
+  await buildLog('INFO', `xppc.exe args: ${xppcArgs.join(' ')}`);
+
+  // xppc.exe is a normal console app — file descriptor redirect works fine
+  const logFd = openSyncFs(logFile, 'w');
+
+  const child = spawn(xppcExe, xppcArgs, {
+    detached: false,
+    windowsHide: true,
+    stdio: ['ignore', logFd, logFd],
+  });
+  // Prevent the MCP server process from waiting for the child to exit.
+  // Without unref(), a long-running xppc.exe build would block a clean server shutdown.
+  child.unref();
+
+  const state: BuildJobState = {
+    pid: child.pid!,
+    projectPath,
+    tool: 'xppc.exe',
+    startTime: new Date().toISOString(),
+    logFile,
+    status: 'running',
+  };
+
+  await writeBuildState(state);
+  await buildLog('INFO', `xppc.exe launched — PID: ${child.pid} | model: ${modelName} | log: ${logFile}`);
+
+  child.on('close', async (code) => {
+    closeSyncFs(logFd);
+    const exitCode = code ?? -1;
+    const succeeded = exitCode === 0;
+
+    // xppc.exe writes diagnostics to {customPackagesPath}/{modelName}/BuildModelResult.err.xml
+    // rather than stdout. Append a formatted summary so the caller sees actual error messages.
+    try {
+      const errXmlPath = path.join(customPackagesPath, modelName, 'BuildModelResult.err.xml');
+      const errXml = await readFile(errXmlPath, 'utf-8');
+      const diagnostics = parseBuildDiagnostics(errXml);
+      if (diagnostics.length > 0) {
+        const lines = ['\n--- Compiler diagnostics ---'];
+        for (const d of diagnostics) {
+          const loc = d.line ? ` (line ${d.line}${d.column ? `, col ${d.column}` : ''})` : '';
+          lines.push(`[${d.severity}] ${d.path}${loc}: ${d.message}`);
+        }
+        await appendFile(logFile, lines.join('\n') + '\n', 'utf-8');
+      }
+    } catch { /* file may not exist on clean builds */ }
+
+    const updated: BuildJobState = {
+      ...state,
+      status: succeeded ? 'succeeded' : 'failed',
+      exitCode,
+      endTime: new Date().toISOString(),
+    };
+    await writeBuildState(updated).catch(() => {});
+    await buildLog(succeeded ? 'INFO' : 'ERROR', `xppc.exe finished — PID: ${child.pid} | exit: ${exitCode}`);
+  });
+
+  child.on('error', async (err) => {
+    closeSyncFs(logFd);
+    const updated: BuildJobState = { ...state, status: 'failed', exitCode: -1, endTime: new Date().toISOString() };
+    await writeBuildState(updated).catch(() => {});
+    await buildLog('ERROR', `xppc.exe error — PID: ${child.pid}: ${err.message}`);
+  });
+
+  return state;
+}
+
+// ---------------------------------------------------------------------------
+// Kill orphaned build processes
+// ---------------------------------------------------------------------------
+
+async function killOrphanedBuildProcesses(): Promise<void> {
+  await execFileAsync('taskkill', ['/F', '/IM', 'xppc.exe'], { timeout: 10_000, windowsHide: true })
+    .then(({ stdout }) => console.error(`[build_d365fo_project] killed xppc.exe: ${stdout.trim() || '(no output)'}`))
+    .catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Tool definition
 // ---------------------------------------------------------------------------
 
 export const buildProjectToolDefinition = {
   name: 'build_d365fo_project',
-  description: 'Triggers a local MSBuild process on the .rnrproj to catch compiler errors.',
+  description: [
+    'Builds a D365FO .rnrproj project using the X++ compiler (xppc.exe) and returns compiler errors.',
+    'Because compilation can take several minutes, the build runs in the background.',
+    'First call: starts the build and returns immediately.',
+    'Subsequent calls on the same project: return current status + latest log output.',
+    'Use force:true to kill a stuck build and restart.',
+  ].join(' '),
   parameters: z.object({
-    projectPath: z.string().optional().describe('The absolute path to the .rnrproj file. Auto-detected from .mcp.json if omitted.'),
-    force: z.boolean().optional().describe('Kill any running MSBuild/devenv.com processes and clear a stuck build lock before starting. Use when a previous build is stuck.'),
-  })
+    projectPath: z.string().optional().describe('Absolute path to the .rnrproj file. Auto-detected from .mcp.json if omitted.'),
+    force: z.boolean().optional().describe('Kill any running build processes and restart.'),
+  }),
 };
+
+// ---------------------------------------------------------------------------
+// Tool handler
+// ---------------------------------------------------------------------------
 
 export const buildProjectTool = async (params: any, _context: any) => {
-  let resolvedProjectPath: string | undefined;
-  let devenvComPath: string | null = null;
-  const force = params.force === true;
   try {
-    const configManager = getConfigManager();
-    await configManager.ensureLoaded();
+  const force = params.force === true;
 
-    resolvedProjectPath = params.projectPath || await configManager.getProjectPath();
-    if (!resolvedProjectPath) {
-      return { content: [{ type: 'text', text: '❌ Cannot determine project path.\n\nProvide projectPath parameter or set it in .mcp.json.' }], isError: true };
-    }
+  const configManager = getConfigManager();
+  await configManager.ensureLoaded();
 
-    const buildLockKey = `build:${resolvedProjectPath}`;
-    const devenvLockKey = `build:devenv:${resolvedProjectPath}`;
-
-    if (force) {
-      // Kill orphaned build processes and clear any stale lock so we can proceed.
-      await buildLog('WARN', `force=true requested — killing orphaned build processes and clearing lock for: ${resolvedProjectPath}`);
-      await killOrphanedBuildProcesses();
-      await forceReleaseLock(buildLockKey);
-      await forceReleaseLock(devenvLockKey);
-    } else {
-      // Fail fast rather than queueing behind a potentially-stuck build.
-      // Check BOTH the main MSBuild lock and the devenv.com fallback lock —
-      // the devenv lock survives even after the main lock is released (it's
-      // acquired inside formatResult's MSB4062 fallback, outside the main lock).
-      const [mainLocked, devenvLocked] = await Promise.all([
-        isOperationLockHeld(buildLockKey),
-        isOperationLockHeld(devenvLockKey),
-      ]);
-      if (mainLocked || devenvLocked) {
-        const runningProcesses = await getRunningBuildProcesses();
-
-        if (runningProcesses.length === 0) {
-          await buildLog('WARN', `Detected stale build lock with no active build processes for: ${resolvedProjectPath} — clearing locks`);
-          await forceReleaseLock(buildLockKey);
-          await forceReleaseLock(devenvLockKey);
-        } else {
-          const which = mainLocked ? 'MSBuild' : 'devenv.com fallback';
-          await buildLog('WARN', `Build already in progress (${which} lock held, active processes: ${runningProcesses.join(', ')}) for: ${resolvedProjectPath} — rejecting new request`);
-          return {
-            content: [{
-              type: 'text',
-              text: `⚠️ A build is already in progress (${which}) for this project.\n\n` +
-                `Active processes: ${runningProcesses.join(', ')}\n\n` +
-                'Wait for it to finish, or call `build_d365fo_project` with `force: true` to kill the stuck build and start fresh.',
-            }],
-            isError: true,
-          };
-        }
-      }
-    }
-
-    // --- Locate tools ---
-    const vsInfo = await findVsWithVswhere();
-    let msbuildExe: string | null = vsInfo?.msbuildExe ?? null;
-    let vsDevCmdPath: string | null = vsInfo?.vsDevCmdPath ?? null;
-    devenvComPath = vsInfo?.devenvComPath ?? null;
-
-    if (!msbuildExe) msbuildExe = await findFirstExisting(MSBUILD_CANDIDATES) ?? 'msbuild';
-    if (!vsDevCmdPath) vsDevCmdPath = await findFirstExisting(VS_DEV_CMD_CANDIDATES);
-    if (!devenvComPath) devenvComPath = await findFirstExisting(DEVENV_COM_CANDIDATES);
-
-    const packagesPath = await resolvePackagesPath();
-
-    // --- Build args ---
-    const buildArgs = [
-      resolvedProjectPath,
-      '/p:Configuration=Debug',
-      '/p:Platform=AnyCPU',
-      '/m', '/v:minimal', '/nologo',
-    ];
-    if (packagesPath) {
-      assertSafePath(packagesPath, 'PackagesLocalDirectory path');
-      buildArgs.push(`/p:PackagesFolder=${packagesPath}`);
-      buildArgs.push(`/p:MetadataDir=${packagesPath}`);
-    }
-
-    // --- Execute ---
-    let stdout: string;
-    let stderr: string;
-
-    await buildLog('INFO', `Build started — project: ${resolvedProjectPath} | pid: ${process.pid}`);
-
-    if (vsDevCmdPath) {
-      assertSafePath(vsDevCmdPath, 'VsDevCmd.bat path');
-      assertSafePath(msbuildExe, 'MSBuild.exe path');
-      for (const arg of buildArgs) assertSafePath(arg, 'MSBuild argument');
-
-      const batLines = ['@echo off'];
-      if (packagesPath) {
-        batLines.push(`set "PackagesFolder=${packagesPath}"`);
-        batLines.push(`set "MetadataDir=${packagesPath}"`);
-        batLines.push(`set "PATH=%PATH%;${packagesPath}\\bin"`);
-      }
-      batLines.push(`call ${quoteCmdArg(vsDevCmdPath)}`);
-      batLines.push('if errorlevel 1 exit /b 1');
-      batLines.push(`${quoteCmdArg(msbuildExe)} ${buildArgs.map(a => quoteCmdArg(a)).join(' ')}`);
-
-      const tempBat = path.join(os.tmpdir(), `d365build_${crypto.randomBytes(4).toString('hex')}.cmd`);
-      await buildLog('INFO', `VsDevCmd: ${vsDevCmdPath} | MSBuild: ${msbuildExe} | bat: ${tempBat}`);
-      await writeFile(tempBat, batLines.join('\r\n') + '\r\n', 'utf-8');
-
-      try {
-        ({ stdout, stderr } = await withOperationLock(
-          buildLockKey,
-          () => execFileAsync('cmd.exe', ['/C', tempBat], {
-            maxBuffer: 20 * 1024 * 1024,
-            timeout: 600_000,
-            windowsHide: true,
-          }),
-        ));
-      } finally {
-        await unlink(tempBat).catch(() => {});
-      }
-    } else {
-      await buildLog('INFO', `Running MSBuild directly: ${msbuildExe}`);
-      ({ stdout, stderr } = await withOperationLock(
-        buildLockKey,
-        () => execFileAsync(msbuildExe!, buildArgs, {
-          maxBuffer: 20 * 1024 * 1024,
-          timeout: 600_000,
-          windowsHide: true,
-        }),
-      ));
-    }
-
-    const output = [stdout, stderr].filter(Boolean).join('\n').trim();
-    await buildLog('INFO', `Build finished — project: ${resolvedProjectPath}`);
-    return formatResult(output, resolvedProjectPath, devenvComPath);
-  } catch (error: any) {
-    await buildLog('ERROR', `Build error — project: ${resolvedProjectPath ?? '(unknown)'}: ${error?.message}`);
-    const rawOutput = [error.stdout, error.stderr, error.message].filter(Boolean).join('\n');
-    return formatResult(rawOutput, resolvedProjectPath ?? '(unknown)', devenvComPath);
+  const resolvedProjectPath: string = params.projectPath || await configManager.getProjectPath() || '';
+  if (!resolvedProjectPath) {
+    return { content: [{ type: 'text', text: '❌ Cannot determine project path.\n\nProvide projectPath parameter or set it in .mcp.json.' }], isError: true };
   }
-};
 
-// ---------------------------------------------------------------------------
-// Result formatting + MSB4062 fallback
-// ---------------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // Check for an existing background build for this project
+  // ------------------------------------------------------------------
+  const existingState = await readBuildState(resolvedProjectPath);
 
-async function formatResult(
-  output: string,
-  projectPath: string,
-  devenvComPath: string | null,
-): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
-  if (isMSB4062(output)) {
-    if (devenvComPath) {
-      console.error('[build_d365fo_project] MSB4062 detected — falling back to devenv.com /build');
-      const result = await buildWithDevenv(devenvComPath, projectPath);
-      const status = result.success ? '✅ Build succeeded (via devenv.com)' : '❌ Build FAILED (via devenv.com)';
+  if (existingState && !force) {
+    const alive = isProcessAlive(existingState.pid);
+    const logTail = await readLogTail(existingState.logFile);
+
+    if (existingState.status === 'running' && alive) {
+      const elapsed = Math.round((Date.now() - new Date(existingState.startTime).getTime()) / 1000);
       return {
         content: [{
           type: 'text',
-          text: `${status}\n\nProject: ${projectPath}\n\n` +
-            `ℹ️ MSBuild could not load D365FO build tasks (MSB4062). Retried with devenv.com /build.\n\n` +
-            `${result.output || '(no output)'}`
+          text: `⏳ Build in progress (${existingState.tool} PID: ${existingState.pid}, running ${elapsed}s)\n\nProject: ${resolvedProjectPath}\n\nCall again to refresh status.\n\n--- Latest log ---\n${logTail}`,
         }],
-        isError: !result.success,
       };
     }
+
+    if (existingState.status === 'running' && !alive) {
+      await clearBuildState(resolvedProjectPath);
+      return {
+        content: [{
+          type: 'text',
+          text: `❌ Build process (PID: ${existingState.pid}) exited unexpectedly without reporting a result.\n\nProject: ${resolvedProjectPath}\n\n--- Log ---\n${logTail}`,
+        }],
+        isError: true,
+      };
+    }
+
+    // Build finished — return result and clear state
+    await clearBuildState(resolvedProjectPath);
+    const succeeded = existingState.status === 'succeeded';
+    const hasErrors = !succeeded || /\b(error|Error)\s+(CS|AX|X\+\+|MSB)\d+|Build FAILED|\berror\s*:/i.test(logTail);
+    const hasWarnings = !hasErrors && /\b(warning)\s+(CS|AX|X\+\+|MSB|BP)\d+|\bwarning\s*:/i.test(logTail);
+    const statusIcon = hasErrors ? '❌ Build FAILED' : hasWarnings ? '⚠️ Build succeeded with warnings' : '✅ Build succeeded';
+    const duration = existingState.endTime
+      ? Math.round((new Date(existingState.endTime).getTime() - new Date(existingState.startTime).getTime()) / 1000)
+      : '?';
     return {
       content: [{
         type: 'text',
-        text: `❌ Build FAILED — D365FO MSBuild task assembly not found (MSB4062)\n\n` +
-          `Project: ${projectPath}\n\n` +
-          `The assembly \`${D365_BUILD_TASKS_ASSEMBLY}\` could not be loaded and devenv.com was not found.\n\n` +
-          `**How to fix:** Build from **Visual Studio 2022** directly (Ctrl+Shift+B).\n\n` +
-          `Raw output:\n${output}`
+        text: `${statusIcon} (${existingState.tool}, ${duration}s)\n\nProject: ${resolvedProjectPath}\n\n${logTail || '(no output)'}`,
+      }],
+      ...(hasErrors ? { isError: true } : {}),
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // force=true: kill existing processes and clear state
+  // ------------------------------------------------------------------
+  if (force) {
+    await buildLog('WARN', `force=true — killing orphaned build processes for: ${resolvedProjectPath}`);
+    if (existingState?.pid) {
+      try { process.kill(existingState.pid, 'SIGTERM'); } catch { /* already gone */ }
+    }
+    await killOrphanedBuildProcesses();
+    await clearBuildState(resolvedProjectPath);
+    await forceReleaseLock(`build:${resolvedProjectPath}`);
+  }
+
+  // ------------------------------------------------------------------
+  // Resolve paths — supports both UDE and CHE environments
+  //
+  // UDE (Unified Developer Experience):
+  //   - XPP config JSON present in %LOCALAPPDATA%\Microsoft\Dynamics365\XPPConfig\
+  //   - customPackagesPath  = ModelStoreFolder  (git repo metadata, e.g. src\Metadata)
+  //   - microsoftPackagesPath = FrameworkDirectory (AppData UDE packages)
+  //
+  // CHE (Cloud-Hosted Environment):
+  //   - No XPP config; all packages in a single PackagesLocalDirectory
+  //   - Both customPackagesPath and microsoftPackagesPath = PackagesLocalDirectory
+  //   - Typical locations: C:\AOSService\PackagesLocalDirectory or K:\, J:\, I:\
+  // ------------------------------------------------------------------
+  let customPackagesPath: string | null = null;
+  let microsoftPackagesPath: string | null = null;
+
+  // Priority 1: configManager typed methods — cover both UDE (via ensureXppConfig) and CHE
+  customPackagesPath = await configManager.getCustomPackagesPath();
+  microsoftPackagesPath = await configManager.getMicrosoftPackagesPath();
+  if (!microsoftPackagesPath) {
+    microsoftPackagesPath = configManager.getPackagePath();
+  }
+
+  // Priority 3: CHE fallback — probe well-known PackagesLocalDirectory locations
+  if (!microsoftPackagesPath) {
+    const cheCandidates = [
+      'C:\\AOSService\\PackagesLocalDirectory',
+      'K:\\AOSService\\PackagesLocalDirectory',
+      'J:\\AOSService\\PackagesLocalDirectory',
+      'I:\\AOSService\\PackagesLocalDirectory',
+    ];
+    for (const candidate of cheCandidates) {
+      try { await access(candidate); microsoftPackagesPath = candidate; break; } catch { /* next */ }
+    }
+  }
+
+  // In CHE, custom and Microsoft packages share the same PackagesLocalDirectory
+  if (!customPackagesPath && microsoftPackagesPath) {
+    customPackagesPath = microsoftPackagesPath;
+  }
+
+  if (!customPackagesPath || !microsoftPackagesPath) {
+    return {
+      content: [{
+        type: 'text',
+        text: [
+          `❌ Cannot resolve D365FO package paths.`,
+          ``,
+          `Custom packages path:    ${customPackagesPath ?? '(not found)'}`,
+          `Microsoft packages path: ${microsoftPackagesPath ?? '(not found)'}`,
+          ``,
+          `For UDE: ensure an XPP config is present at %LOCALAPPDATA%\\Microsoft\\Dynamics365\\XPPConfig\\`,
+          `For CHE: ensure PackagesLocalDirectory exists at C:\\AOSService\\PackagesLocalDirectory (or K:\\, J:\\, I:\\)`,
+        ].join('\n'),
       }],
       isError: true,
     };
   }
 
-  const hasErrors = /\b(error|Error)\s+(CS|AX|X\+\+|MSB)\d+|Build FAILED/i.test(output);
-  const hasWarnings = /\b(warning)\s+(CS|AX|X\+\+|MSB|BP)\d+/i.test(output);
-  const status = hasErrors ? '❌ Build FAILED' : hasWarnings ? '⚠️ Build succeeded with warnings' : '✅ Build succeeded';
+  // ------------------------------------------------------------------
+  // Get model name from .rnrproj
+  // ------------------------------------------------------------------
+  const modelName = await getModelFromRnrproj(resolvedProjectPath);
+  if (!modelName) {
+    return {
+      content: [{
+        type: 'text',
+        text: `❌ Cannot read model name from .rnrproj: ${resolvedProjectPath}`,
+      }],
+      isError: true,
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Find xppc.exe
+  // ------------------------------------------------------------------
+  const xppcExe = await findXppcExe(microsoftPackagesPath);
+  if (!xppcExe) {
+    return {
+      content: [{
+        type: 'text',
+        text: `❌ Cannot find xppc.exe.\n\nLooked in: ${microsoftPackagesPath}\\bin\\xppc.exe\n\nEnsure the D365FO UDE tools are installed.`,
+      }],
+      isError: true,
+    };
+  }
+
+  await buildLog('INFO', `Starting xppc.exe build — model: ${modelName} | project: ${resolvedProjectPath}`);
+  await buildLog('INFO', `  xppc.exe:              ${xppcExe}`);
+  await buildLog('INFO', `  customPackagesPath:    ${customPackagesPath}`);
+  await buildLog('INFO', `  microsoftPackagesPath: ${microsoftPackagesPath}`);
+
+  // ------------------------------------------------------------------
+  // Launch xppc.exe in background
+  // ------------------------------------------------------------------
+  const jobState = await launchXppcBackground(
+    xppcExe,
+    resolvedProjectPath,
+    modelName,
+    customPackagesPath,
+    microsoftPackagesPath,
+  );
 
   return {
-    content: [{ type: 'text', text: `${status}\n\nProject: ${projectPath}\n\n${output || '(no output)'}` }],
-    ...(hasErrors ? { isError: true } : {}),
+    content: [{
+      type: 'text',
+      text: [
+        `🔨 Build started (xppc.exe PID: ${jobState.pid})`,
+        ``,
+        `Project: ${resolvedProjectPath}`,
+        `Model:   ${modelName}`,
+        `Log:     ${jobState.logFile}`,
+        ``,
+        `Call **build_d365fo_project** again (same project path) to check status and see output.`,
+      ].join('\n'),
+    }],
   };
-}
+  } catch (error: any) {
+    await buildLog('ERROR', `Unhandled error in build_d365fo_project: ${error?.message}`);
+    return {
+      content: [{ type: 'text', text: `❌ Internal error: ${error?.message ?? String(error)}` }],
+      isError: true,
+    };
+  }
+};
