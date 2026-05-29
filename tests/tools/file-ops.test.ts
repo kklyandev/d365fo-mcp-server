@@ -4,8 +4,9 @@
  *         validate_object_naming, verify_d365fo_project
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { validateObjectNamingTool } from '../../src/tools/validateObjectNaming';
+import { getExtensionNamingStyle } from '../../src/utils/modelClassifier';
 import { verifyD365ProjectTool } from '../../src/tools/verifyD365Project';
 import { handleCreateD365File } from '../../src/tools/createD365File';
 import { modifyD365FileTool } from '../../src/tools/modifyD365File';
@@ -227,6 +228,91 @@ describe('validate_object_naming', () => {
   });
 });
 
+// ─── validate_object_naming — EXTENSION_NAMING_STYLE=model-name ───────────────
+// Under the model-name style the extension token is the MODEL NAME (VS default),
+// not the prefix infix. The validator must accept Base_ModelName_Extension /
+// Base.ModelName and must NOT demand the prefix infix or a "…Extension" element token.
+describe('validate_object_naming — model-name style', () => {
+  let ctx: XppServerContext;
+
+  beforeEach(() => {
+    ctx = buildContext();
+    (ctx.symbolIndex.db as any).stmt.get.mockReturnValue(undefined);
+    (ctx.symbolIndex.db as any).stmt.all.mockReturnValue([]);
+    vi.mocked(getExtensionNamingStyle).mockReturnValue('model-name');
+  });
+
+  afterEach(() => {
+    vi.mocked(getExtensionNamingStyle).mockReturnValue('prefix');
+  });
+
+  it('accepts a model-name class extension without errors', async () => {
+    const result = await validateObjectNamingTool(
+      req('validate_object_naming', {
+        proposedName: 'CustTable_ContosoRobotics_Extension',
+        objectType: 'class-extension',
+        baseObjectName: 'CustTable',
+        modelName: 'ContosoRobotics',
+        modelPrefix: 'CR',
+      }),
+      ctx,
+    );
+    expect(result.isError).toBeFalsy();
+    // The model-name token is correct → no prefix-infix warning, no errors.
+    expect(result.content[0].text).not.toMatch(/ERRORS \(\d/);
+    expect(result.content[0].text).not.toMatch(/does not include model prefix/);
+    expect(result.content[0].text).toMatch(/Extension Style: model-name/);
+  });
+
+  it('warns when a class extension uses the prefix infix instead of the model name', async () => {
+    const result = await validateObjectNamingTool(
+      req('validate_object_naming', {
+        proposedName: 'CustTableCR_Extension',
+        objectType: 'class-extension',
+        baseObjectName: 'CustTable',
+        modelName: 'ContosoRobotics',
+        modelPrefix: 'CR',
+      }),
+      ctx,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toMatch(/does not embed the model name "ContosoRobotics"/);
+    expect(result.content[0].text).toMatch(/CustTable_ContosoRobotics_Extension/);
+  });
+
+  it('accepts a model-name element extension (Base.ModelName, no "Extension" word)', async () => {
+    const result = await validateObjectNamingTool(
+      req('validate_object_naming', {
+        proposedName: 'CustTable.ContosoRobotics',
+        objectType: 'table-extension',
+        baseObjectName: 'CustTable',
+        modelName: 'ContosoRobotics',
+        modelPrefix: 'CR',
+      }),
+      ctx,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).not.toMatch(/ERRORS \(\d/);
+    // Must NOT demand a "…Extension" suffix under model-name style.
+    expect(result.content[0].text).not.toMatch(/must end with 'Extension'/);
+  });
+
+  it('warns when an element extension uses the prefix token instead of the model name', async () => {
+    const result = await validateObjectNamingTool(
+      req('validate_object_naming', {
+        proposedName: 'CustTable.CRExtension',
+        objectType: 'table-extension',
+        baseObjectName: 'CustTable',
+        modelName: 'ContosoRobotics',
+        modelPrefix: 'CR',
+      }),
+      ctx,
+    );
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toMatch(/should be the model name "ContosoRobotics"/);
+  });
+});
+
 // ─── verify_d365fo_project ───────────────────────────────────────────────────
 
 describe('verify_d365fo_project', () => {
@@ -375,6 +461,68 @@ describe('create_d365fo_file', () => {
     const text: string = result.content[0].text;
     expect(text).toMatch(/PurchTable[.][^/\\]*[Ee]xtension/);
     expect(text).not.toMatch(/FmMcpPurchTable|[A-Za-z]+PurchTable\.xml/);
+  });
+
+  it('auto-converts bare class-extension name to _Extension form (Case D fix)', async () => {
+    // Bug: objectType="class-extension", objectName="SalesFormLetter" (no "_Extension"
+    // suffix) used to have no dot and not end in "_Extension", so it fell into
+    // applyObjectPrefix's NORMAL CASE and was treated as a brand-new object — wrongly
+    // producing "<Prefix>SalesFormLetter" (e.g. "CrSalesFormLetter"). class-extension
+    // was the only extension type missing the bare-name normalisation that the
+    // dot-notation types got in Case C.
+    // Fix: Case D appends "_Extension" so applyObjectPrefix routes it through the
+    // extension-class branch.
+    const result = await handleCreateD365File(
+      req('create_d365fo_file', {
+        objectType: 'class-extension',
+        objectName: 'SalesFormLetter',
+        modelName: 'FmMcp',
+        packageName: 'FmMcp',
+        packagePath: 'K:\\PackagesLocalDirectory',
+        addToProject: false,
+      }),
+    );
+    // applyObjectPrefix is mocked to identity here, so the message path reflects the
+    // effectiveObjectName transformation only: it must be "SalesFormLetter_Extension.xml"
+    // and NOT the bare "SalesFormLetter.xml" (which would prove Case D did not fire and
+    // the name would later be mangled by the real applyObjectPrefix NORMAL CASE).
+    const text: string = result.content[0].text;
+    expect(text).toMatch(/SalesFormLetter_Extension\.xml/);
+    expect(text).not.toMatch(/[\\/]SalesFormLetter\.xml/);
+  });
+
+  it('Case D × model-name style: bare class-extension name produces Base_ModelName_Extension', async () => {
+    // Verify that Case D (append _Extension) + Case B (strip model-name infix) +
+    // applyObjectPrefix (model-name branch) all compose correctly when
+    // EXTENSION_NAMING_STYLE=model-name.
+    // Input:  objectType="class-extension", objectName="SalesFormLetter" (bare, no suffix)
+    // Expected output file: SalesFormLetter_ContosoRobotics_Extension.xml
+    //   1. Case D: "SalesFormLetter" → "SalesFormLetter_Extension"
+    //   2. applyObjectPrefix (model-name branch): injects model name →
+    //      "SalesFormLetter_ContosoRobotics_Extension"
+    // applyObjectPrefix is mocked to identity, so we can only confirm Case D fired
+    // (name ends with _Extension and is not the bare name). The configManager mock
+    // returns 'MyModel' as model name, so we verify the _Extension suffix is present.
+    vi.mocked(getExtensionNamingStyle).mockReturnValue('model-name');
+    try {
+      const result = await handleCreateD365File(
+        req('create_d365fo_file', {
+          objectType: 'class-extension',
+          objectName: 'SalesFormLetter',
+          modelName: 'ContosoRobotics',
+          packageName: 'ContosoRobotics',
+          packagePath: 'K:\\PackagesLocalDirectory',
+          addToProject: false,
+        }),
+      );
+      const text: string = result.content[0].text;
+      // Case D must have fired: _Extension suffix present
+      expect(text).toMatch(/SalesFormLetter_Extension\.xml/);
+      // Must NOT fall into the NORMAL CASE (prefix-prepend on bare name)
+      expect(text).not.toMatch(/[\\/]SalesFormLetter\.xml/);
+    } finally {
+      vi.mocked(getExtensionNamingStyle).mockReturnValue('prefix');
+    }
   });
 
   it('creates a class from custom xmlContent (hybrid scenario)', async () => {
