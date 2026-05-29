@@ -5,13 +5,13 @@ When you ask GitHub Copilot a question about D365FO code, it automatically calls
 just ask in plain English.
 
 > **C# Metadata Bridge (Windows D365FO VMs only):** On a Windows VM with D365FO installed,
-> 20 tools automatically try the C# metadata bridge first — providing always-fresh,
+> 16 tools automatically try the C# metadata bridge first — providing always-fresh,
 > runtime-resolved metadata via `IMetadataProvider` and compiler-resolved cross-references
 > via `DYNAMICSXREFDB`. If the bridge is unavailable (Azure, Linux, CI) or the object is
 > not found, the tools transparently fall back to the SQLite database.
 > Bridge-sourced results include a `_Source: C# bridge_` marker.
 >
-> **Cross-reference enrichment (P1-P5):** `find_references` returns categorized reference
+> **Cross-reference enrichment:** `find_references` returns categorized reference
 > types (call/extends/field-access) and caller details. `find_coc_extensions` shows which
 > methods each extension class wraps. `find_event_handlers` supports eventName/handlerType
 > filtering. `get_api_usage_patterns` returns compiler-resolved callers grouped by class.
@@ -467,7 +467,7 @@ Show me patterns for financial dimension handling
 Shows how a specific API class or method is actually used in your codebase: typical
 initialization code, common method call sequences, and related APIs.
 
-> **Bridge-first (P5):** When the C# bridge is connected, this tool queries
+> **Bridge-first:** When the C# bridge is connected, this tool queries
 > `DYNAMICSXREFDB` for compiler-resolved callers of the API, grouped by class with
 > method list and call count. Falls back to SQLite pattern analysis when the bridge
 > is unavailable.

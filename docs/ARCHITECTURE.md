@@ -107,7 +107,7 @@ sequenceDiagram
         MCP->>Handler: Route to Handler
         Handler->>Tool: Execute Tool
         alt Read Operation (get_table_info, get_class_info, ...)
-            Tool->>Bridge: tryBridge*() — bridge-primary (12 tools)
+            Tool->>Bridge: tryBridge*() — bridge-primary (16 tools)
             alt Bridge Available & Object Found
                 Bridge-->>Tool: Live Metadata Result
             else Bridge Unavailable
