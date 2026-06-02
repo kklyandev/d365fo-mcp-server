@@ -382,9 +382,10 @@ export class BridgeClient extends EventEmitter {
     return this.call<BridgeMethodSource>('getMethodSource', { className, methodName });
   }
 
-  async searchObjects(query: string, objectType?: string): Promise<BridgeSearchResult> {
+  async searchObjects(query: string, objectType?: string, maxResults?: number): Promise<BridgeSearchResult> {
     const params: Record<string, unknown> = { query };
     if (objectType) params.objectType = objectType;
+    if (maxResults != null) params.maxResults = maxResults;
     return this.call<BridgeSearchResult>('searchObjects', params);
   }
 
