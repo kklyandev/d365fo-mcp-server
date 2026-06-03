@@ -214,6 +214,7 @@ locally. Suitable for individual developers who do not want to use Azure.
 git clone https://github.com/dynamics365ninja/d365fo-mcp-server.git K:\d365fo-mcp-server
 cd K:\d365fo-mcp-server
 npm install
+npm run build
 cd bridge\D365MetadataBridge && dotnet build -c Release && cd ..\..  # Build the C# bridge
 copy .env.example .env
 ```
