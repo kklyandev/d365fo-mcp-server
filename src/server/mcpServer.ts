@@ -1983,6 +1983,76 @@ SourceCode format for classes: class declaration with member vars inside { }, me
           required: ['topic'],
         },
       },
+      {
+        name: 'validate_xpp',
+        description:
+          'Offline X++ / XML best-practice validator (<50 ms, all-platform, no xppbp.exe needed). ' +
+          'Returns structured violations {rule, severity, line, excerpt, fix}. ' +
+          'Call AFTER generating code and BEFORE write operations to catch BP issues in the same turn. ' +
+          'Rules: today() deprecated (SEL001), forceLiterals banned (SEL002), crossCompany placement (SEL003), ' +
+          'nested while-select (SEL004), function in where clause (SEL005), ' +
+          '[ExtensionOf] class not final (COC002), class not ending _Extension (COC003), ' +
+          'CoC default param values (COC001), hardcoded strings in info/warning/error (BP001), ' +
+          'doInsert/doUpdate/doDelete misuse (BP002), generic doc-comments (BP003), ' +
+          'missing AlternateKey on table XML (XML001).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            code: {
+              type: 'string',
+              description: 'X++ source code or XML metadata to validate. Paste the full generated text.',
+            },
+            codeType: {
+              type: 'string',
+              enum: ['xpp', 'xml-table', 'xml-any'],
+              default: 'xpp',
+              description: '"xpp" for X++ source (default), "xml-table" for AxTable XML, "xml-any" for other XML.',
+            },
+            context: {
+              type: 'string',
+              description: 'Optional: owning class/table name, used in diagnostic messages.',
+            },
+          },
+          required: ['code'],
+        },
+      },
+      {
+        name: 'prepare_change',
+        description:
+          'Single-round context aggregator for D365FO extension work. ' +
+          'Returns in ONE call: exact method signature, existing CoC wrappers, CoC eligibility, ' +
+          'recommended extension strategy, naming validation, and code patterns from the index. ' +
+          'Replaces the 4-step analyze→search→info→generate workflow with a single parallel call. ' +
+          'Returns a grounding token (30-min TTL) that proves the AI used real codebase data. ' +
+          'When GROUNDING_ENFORCE=true the token is required for extension generate_code and create_d365fo_file calls.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            goal: {
+              type: 'string',
+              description: 'One-sentence description of the intended change. Example: "Add CoC on CustTable.validateWrite to enforce a custom rule."',
+            },
+            objectName: {
+              type: 'string',
+              description: 'Name of the D365FO object to extend or modify. Example: "CustTable", "SalesFormLetter".',
+            },
+            methodName: {
+              type: 'string',
+              description: 'Target method name when the change involves a specific method (CoC or event handlers). Example: "validateWrite".',
+            },
+            objectType: {
+              type: 'string',
+              enum: ['class', 'table', 'form', 'query', 'view', 'enum', 'edt', 'data-entity', 'map', 'report'],
+              description: 'D365FO object type. Auto-detected from the symbol index when omitted.',
+            },
+            proposedName: {
+              type: 'string',
+              description: 'Proposed name for the new extension class/object. When provided, naming validation runs.',
+            },
+          },
+          required: ['goal', 'objectName'],
+        },
+      },
     ],
     };
 

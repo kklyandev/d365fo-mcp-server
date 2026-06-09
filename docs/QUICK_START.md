@@ -229,7 +229,7 @@ All available parameters in one block with comments:
       "args": ["K:\\d365fo-mcp-server\\dist\\index.js"],
       "env": {
         // ── Server mode ──────────────────────────────────────────────
-        // "full"       — all 54 tools (default for local)
+        // "full"       — all 56 tools (default for local)
         // "read-only"  — search/analysis tools only (Azure deployment)
         // "write-only" — file operations only (local companion in hybrid)
         "MCP_SERVER_MODE": "write-only",
@@ -376,7 +376,7 @@ After starting, check the server log for:
 
 | Topic | Documentation |
 |-------|--------------|
-| All 54 tools with parameters | [MCP_TOOLS.md](MCP_TOOLS.md) |
+| All 56 tools with parameters | [MCP_TOOLS.md](MCP_TOOLS.md) |
 | Practical usage examples (CoC, reports, security) | [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) |
 | Complete `.mcp.json` reference (all properties) | [MCP_CONFIG.md](MCP_CONFIG.md) |
 | Server deployment to Azure | [SETUP.md](SETUP.md) / [SETUP_AZURE.md](SETUP_AZURE.md) |

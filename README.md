@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**54 AI tools that know every X++ class, table, method, and EDT in your D365FO codebase**
+**56 AI tools that know every X++ class, table, method, and EDT in your D365FO codebase**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen.svg)](https://nodejs.org/)
@@ -20,7 +20,7 @@ AI coding assistants excel at C#, Python, and JavaScript — languages with rich
 
 The result is AI that confidently generates code that doesn't compile: wrong method signatures, missing parameters, fields that don't exist on the table, CoC chains broken because the AI didn't know an extension already wrapped the method.
 
-This MCP server solves that by pre-indexing your entire D365FO installation — hundreds of thousands of symbols across standard and custom models — and exposing it as 54 specialized tools. Works with **GitHub Copilot** and **Claude Code CLI**. Before generating any X++ code, the AI can look up exact method signatures, check what CoC extensions already exist, trace security hierarchies, find label translations, and understand the full shape of your data model. The result is code that compiles on the first try and integrates correctly with your existing customizations.
+This MCP server solves that by pre-indexing your entire D365FO installation — hundreds of thousands of symbols across standard and custom models — and exposing it as 56 specialized tools. Works with **GitHub Copilot** and **Claude Code CLI**. Before generating any X++ code, the AI can look up exact method signatures, check what CoC extensions already exist, trace security hierarchies, find label translations, and understand the full shape of your data model. The result is code that compiles on the first try and integrates correctly with your existing customizations.
 
 ![Solution Architecture](docs/img/solution-architecture-diagram.png)
 
@@ -173,7 +173,7 @@ Setup guide: [docs/SETUP.md](docs/SETUP.md) · CI/CD pipeline: [docs/PIPELINES.m
 | [docs/QUICK_START.md](docs/QUICK_START.md) | **Start here** — 5 steps to get running, all `.mcp.json` parameters, logging |
 | [docs/SETUP.md](docs/SETUP.md) | Detailed installation, configuration, all deployment scenarios A–F |
 | [docs/MCP_CONFIG.md](docs/MCP_CONFIG.md) | `.mcp.json` reference — workspace paths, UDE, project settings, all env vars |
-| [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) | All 54 tools with parameters and example prompts |
+| [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) | All 56 tools with parameters and example prompts |
 | [docs/USAGE_EXAMPLES.md](docs/USAGE_EXAMPLES.md) | Practical examples: search, CoC, SysOperation, security |
 | [docs/CUSTOM_EXTENSIONS.md](docs/CUSTOM_EXTENSIONS.md) | ISV / custom model configuration and multi-model extraction |
 | [docs/WORKSPACE_DETECTION.md](docs/WORKSPACE_DETECTION.md) | How the server auto-detects your D365FO project, model, and package path |

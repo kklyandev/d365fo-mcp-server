@@ -31,6 +31,8 @@ PowerShell / any terminal command **WILL HANG** in VS 2022 / VS 2026 MCP integra
 | Search objects | `search()` / `batch_search()` |
 | Read class/table/form | `get_class_info` / `get_table_info` / `get_form_info` |
 | Method signature (for CoC) | `get_method_signature` |
+| **Before any extension** | `prepare_change(goal, objectName)` — returns signature, CoC wrappers, strategy + grounding token |
+| Validate X++ before write | `validate_xpp(code)` — offline BP check, <50 ms, 13 rules |
 | Build/BP/Sync | `build_d365fo_project` / `run_bp_check` / `trigger_db_sync` |
 | Error diagnosis | `get_d365fo_error_help(errorText)` |
 

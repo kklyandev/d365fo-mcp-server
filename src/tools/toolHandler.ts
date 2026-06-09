@@ -58,6 +58,8 @@ import { extensionStrategyAdvisorTool } from './extensionStrategyAdvisor.js';
 import { undoLastModificationTool } from './undoLastModification.js';
 import { xppKnowledgeTool } from './xppKnowledge.js';
 import { d365foErrorHelpTool } from './d365foErrorHelp.js';
+import { validateXppTool } from './validateXpp.js';
+import { prepareChangeTool } from './prepareChange.js';
 import { recordToolStart, startMetricsLogging } from '../utils/toolMetrics.js';
 import { buildProgressMessage } from '../utils/toolProgressMessage.js';
 
@@ -388,6 +390,10 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         return d365foErrorHelpTool(request);
       case 'get_xpp_knowledge':
         return xppKnowledgeTool(request);
+      case 'validate_xpp':
+        return validateXppTool(request);
+      case 'prepare_change':
+        return prepareChangeTool(request, context);
       case 'get_workspace_info': {
         const args = (request as any).params?.arguments || {};
 

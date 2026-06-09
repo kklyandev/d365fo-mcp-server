@@ -1,7 +1,7 @@
 # All Available Tools
 
 When you ask GitHub Copilot a question about D365FO code, it automatically calls one of these
-54 tools to look up the answer or generate code. You do not need to name the tools yourself —
+56 tools to look up the answer or generate code. You do not need to name the tools yourself —
 just ask in plain English.
 
 > **C# Metadata Bridge (Windows D365FO VMs only):** On a Windows VM with D365FO installed,
@@ -143,6 +143,15 @@ The following tools empower Copilot to trigger X++ compilation, testing, and db 
 | **get_label_info** | All translations for a label ID, or list label files | "Show all translations of MyFeature in MyModel" |
 | **create_label** | Add a new label to all language files in a model (or only the locales listed in `languages`) | "Create label MyNewField in MyModel" |
 | **rename_label** | Rename a label ID in .label.txt, X++ source and XML metadata | "Rename label OldName to NewName in MyModel" |
+
+### Code Quality & Grounding (2 tools)
+
+| Tool | What it does | Example prompt |
+|------|-------------|---------------|
+| **validate_xpp** | Offline X++/XML BP validator — <50 ms, all-platform, no xppbp.exe needed. Returns `{rule, severity, line, excerpt, fix}[]`. Call after generating code, before write operations. | "Validate this generated class for BP issues" |
+| **prepare_change** | Single-round context aggregator for extension work. Returns method signature, existing CoC wrappers, eligibility, strategy, naming validation, and a grounding token in one parallel call. | "Prepare context for extending CustTable.validateWrite" |
+
+> **Grounding enforcement:** `prepare_change` issues a SHA-256 provenance token (30-min TTL). When `GROUNDING_ENFORCE=true` is set in `.env`, extension patterns in `generate_code` and extension objectTypes in `create_d365fo_file` require a valid token — ensuring generated code is grounded in your actual codebase, not AI training data.
 
 ---
 
