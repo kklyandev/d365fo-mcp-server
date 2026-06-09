@@ -141,7 +141,7 @@ The following tools empower Copilot to trigger X++ compilation, testing, and db 
 |------|-------------|---------------|
 | **search_labels** | Full-text search across all AxLabelFile labels | "Find a label for 'customer account'" |
 | **get_label_info** | All translations for a label ID, or list label files | "Show all translations of MyFeature in MyModel" |
-| **create_label** | Add a new label to all language files in a model | "Create label MyNewField in MyModel" |
+| **create_label** | Add a new label to all language files in a model (or only the locales listed in `languages`) | "Create label MyNewField in MyModel" |
 | **rename_label** | Rename a label ID in .label.txt, X++ source and XML metadata | "Rename label OldName to NewName in MyModel" |
 
 ---

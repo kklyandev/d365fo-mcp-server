@@ -564,6 +564,45 @@ describe('create_label', () => {
     expect(writes.some(w => w.path.endsWith('MyModel.fi.label.txt'))).toBe(false);
   });
 
+  it('resolves to on-disk casing when `languages` locale differs in case (Linux unzip)', async () => {
+    // Scenario: MS packages were unzipped on Linux — locale directories are lowercase (en-us, de).
+    // The caller passes standard BCP-47 values (en-US, de).
+    // The tool must write to the existing on-disk paths, NOT create new en-US/ de/ sibling folders.
+    const fsMock = await import('fs');
+    const writes: { path: string; content: string }[] = [];
+    (fsMock.promises.writeFile as any).mockImplementation(async (p: string, content: string) => {
+      writes.push({ path: p, content });
+    });
+    // On-disk the folders are lowercase (Linux unzip behaviour)
+    (fsMock.promises.readdir as any).mockResolvedValue(['en-us', 'de']);
+    (fsMock.promises.readFile as any).mockResolvedValue('\uFEFF');
+
+    const result = await createLabelTool(
+      req('create_label', {
+        labelId: 'CaseMismatchLabel',
+        labelFileId: 'MyModel',
+        model: 'MyModel',
+        updateIndex: false,
+        addToProject: false,
+        // Caller uses standard BCP-47 casing
+        languages: ['en-US', 'de'],
+        translations: [
+          { language: 'en-US', text: 'Case test' },
+          { language: 'de', text: 'Groß-Klein-Test' },
+        ],
+      }),
+      ctx,
+    );
+    expect(result.isError).toBeFalsy();
+
+    // Must write into the existing lowercase directory names, not create new mixed-case ones
+    expect(writes.some(w => /[/\\]en-us[/\\]/.test(w.path))).toBe(true);
+    expect(writes.some(w => /[/\\]de[/\\]/.test(w.path))).toBe(true);
+
+    // Must NOT create a second en-US/ folder alongside en-us/
+    expect(writes.some(w => /[/\\]en-US[/\\]/.test(w.path))).toBe(false);
+  });
+
   it('defaults description to VS project name when no comment is provided', async () => {
     const fsMock = await import('fs');
     const writeCalls: string[] = [];

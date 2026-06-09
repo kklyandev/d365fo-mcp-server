@@ -385,13 +385,22 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
     if (requestedLanguages.length > 0) {
       // Explicit scope: write ONLY to the requested locales, creating folders as needed.
       // Prevents the label from leaking into locales owned by sibling label files.
-      const discoveredSet = new Set(discoveredLanguages.map(l => l.toLowerCase()));
+      //
+      // Use a case-insensitive map from lowercase → actual on-disk name so that
+      // callers passing BCP-47 standard casing (en-US) match Linux-unzipped
+      // directories stored in lowercase (en-us). Without this, the write path
+      // would build LabelResources/en-US/... next to an existing en-us/ folder,
+      // creating a duplicate locale tree on case-sensitive filesystems.
+      const discoveredMap = new Map(discoveredLanguages.map(l => [l.toLowerCase(), l]));
       for (const lang of requestedLanguages) {
-        if (!discoveredSet.has(lang.toLowerCase())) {
+        if (!discoveredMap.has(lang.toLowerCase())) {
           await createLangDirectory(lang);
+          discoveredMap.set(lang.toLowerCase(), lang);
         }
       }
-      existingLanguages = [...requestedLanguages];
+      // Resolve each requested locale to its actual on-disk name; fall back to the
+      // caller-provided value for newly-created folders (not yet on disk).
+      existingLanguages = requestedLanguages.map(l => discoveredMap.get(l.toLowerCase()) ?? l);
     } else if (labelFileMissing) {
       // No explicit scope and nothing exists yet — seed the folders from the translations.
       existingLanguages = [];
