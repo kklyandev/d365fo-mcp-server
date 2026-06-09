@@ -73,7 +73,8 @@ function normalizeLocale(locale: string): string {
 }
 
 function parseLabelFileName(filePath: string): { labelFileId: string; language: string } | null {
-  const baseName = path.basename(filePath);
+  const parts = filePath.split(/[\\/]/);
+  const baseName = parts[parts.length - 1] ?? '';
   const withoutSuffix = baseName.replace(/\.label\.txt$/i, '');
   const dotIdx = withoutSuffix.lastIndexOf('.');
   if (dotIdx < 0) return null;
@@ -92,7 +93,9 @@ export const updateSymbolIndexTool = async (params: any, context: XppServerConte
   const { filePath } = params;
   try {
     const { symbolIndex, cache } = context;
-    const objectName = path.parse(filePath).name;
+    const pathParts = filePath.split(/[\\/]/);
+    const fileName = pathParts[pathParts.length - 1] ?? filePath;
+    const objectName = fileName.replace(/\.[^.]+$/, '');
     const parts = filePath.replace(/\//g, '\\').split('\\');
     const aotFolder = parts.find((p: string) => p.toLowerCase() in AOT_FOLDER_TYPE_MAP) ?? '';
     const objectType: XppSymbol['type'] = AOT_FOLDER_TYPE_MAP[aotFolder.toLowerCase()] ?? 'class';
