@@ -570,10 +570,6 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
           );
         } else {
           lines.push(`✅ Configuration looks valid. Proceed with D365FO operations using model "${modelName}".`);
-          const customModels = context.symbolIndex.getCustomModels?.() ?? [];
-          if (customModels.length > 0) {
-            lines.push(`Custom models in index: ${customModels.join(', ')}`);
-          }
         }
 
         // List all projects found under D365FO_SOLUTIONS_PATH so the user can switch
