@@ -1968,7 +1968,7 @@ export class XppSymbolIndex {
    * batch. Call once at the end of each model's transaction. The buffer is
    * cleared after flushing so repeated calls are safe.
    */
-  private flushPropertyStats(): void {
+  flushPropertyStats(): void {
     if (this.propStatBuffer.size === 0) return;
     let stmt = this.stmtCache.get('flushPropertyStat');
     if (!stmt) {

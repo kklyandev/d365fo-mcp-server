@@ -20,6 +20,7 @@ describe('recordPropertyStat / getPropertyPresenceRatio', () => {
     for (let i = 0; i < 9; i++) index.recordPropertyStat('AxTable', 'Label', '(present)', 'ApplicationSuite');
     index.recordPropertyStat('AxTable', 'Label', '(absent)', 'ApplicationSuite');
 
+    index.flushPropertyStats();
     const r = index.getPropertyPresenceRatio('AxTable', 'Label');
     expect(r.total).toBe(10);
     expect(r.present).toBe(9);
@@ -35,6 +36,7 @@ describe('recordPropertyStat / getPropertyPresenceRatio', () => {
   it('aggregates across models', () => {
     index.recordPropertyStat('AxView', 'Label', '(present)', 'ApplicationSuite');
     index.recordPropertyStat('AxView', 'Label', '(present)', 'ApplicationPlatform');
+    index.flushPropertyStats();
     const r = index.getPropertyPresenceRatio('AxView', 'Label');
     expect(r.total).toBe(2);
     expect(r.present).toBe(2);
@@ -47,6 +49,7 @@ describe('getPropertyValueDistribution', () => {
     for (let i = 0; i < 3; i++) index.recordPropertyStat('AxTable', 'TableGroup', 'Transaction', 'ApplicationSuite');
     index.recordPropertyStat('AxTable', 'TableGroup', 'Parameter', 'ApplicationSuite');
     index.recordPropertyStat('AxTable', 'TableGroup', '(absent)', 'ApplicationSuite');
+    index.flushPropertyStats();
 
     const dist = index.getPropertyValueDistribution('AxTable', 'TableGroup');
     expect(dist[0]).toEqual({ value: 'Main', count: 5 });
@@ -59,6 +62,7 @@ describe('clearModels removes property stats for the cleared model', () => {
   it('deletes per-model rows', () => {
     index.recordPropertyStat('AxQuery', 'Title', '(present)', 'ContosoModel');
     index.recordPropertyStat('AxQuery', 'Title', '(present)', 'ApplicationSuite');
+    index.flushPropertyStats();
     index.clearModels(['ContosoModel']);
     const r = index.getPropertyPresenceRatio('AxQuery', 'Title');
     expect(r.total).toBe(1);
