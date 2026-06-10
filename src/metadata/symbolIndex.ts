@@ -23,6 +23,9 @@ export class XppSymbolIndex {
   private standardModels: string[] = [];
   private stmtCache: Map<string, Database.Statement> = new Map();
   private labelsStmtCache: Map<string, Database.Statement> = new Map();
+  // Buffer for property_stats observations — flushed once per model (batch INSERT)
+  // Key: "nodeType|property|value|model", Value: accumulated count
+  private propStatBuffer: Map<string, number> = new Map();
 
   // ─── Read-only connection pool ───────────────────────────────────────────────
   // SQLite WAL mode allows N concurrent readers + 1 writer without blocking each
@@ -1177,6 +1180,10 @@ export class XppSymbolIndex {
         const deExtPath = path.join(modelPath, 'data-entity-extensions');
         if (fs.existsSync(deExtPath)) this.indexExtensions(deExtPath, model, 'data-entity-extension');
 
+        // Flush buffered property_stats observations (batch write — much faster than
+        // per-field upserts scattered across the transaction)
+        this.flushPropertyStats();
+
         // Mark model as done atomically with its data (same transaction)
         markProgress?.run(model, Date.now());
       });
@@ -1227,23 +1234,20 @@ export class XppSymbolIndex {
    * Sort models by JSON file count descending.
    * Ensures the largest models (e.g. Foundation with 56K files) are indexed first,
    * so the most data is committed to disk before any CI pipeline timeout.
+   *
+   * Uses a single recursive readdirSync per model (Node 18.17+) instead of
+   * 20 separate readdirSync calls per subdirectory — ~20× fewer syscalls.
    */
   private sortModelsBySize(metadataPath: string, models: string[]): string[] {
-    const subdirs = [
-      'classes', 'tables', 'forms', 'queries', 'views', 'enums', 'edts', 'reports',
-      'security-privileges', 'security-duties', 'security-roles',
-      'menu-item-displays', 'menu-item-actions', 'menu-item-outputs',
-      'table-extensions', 'class-extensions', 'form-extensions',
-      'enum-extensions', 'edt-extensions', 'data-entity-extensions',
-    ];
     const sized = models.map(model => {
-      let count = 0;
       const modelPath = path.join(metadataPath, model);
-      for (const sub of subdirs) {
-        const p = path.join(modelPath, sub);
-        if (fs.existsSync(p)) {
-          count += fs.readdirSync(p).filter(f => f.endsWith('.json')).length;
-        }
+      let count = 0;
+      try {
+        // readdirSync with recursive:true returns all entries in one call (Node 18.17+)
+        const entries = fs.readdirSync(modelPath, { recursive: true }) as string[];
+        count = entries.filter(f => (f as string).endsWith('.json')).length;
+      } catch {
+        // Unreadable model directory — treat as empty (will be sorted last)
       }
       return { model, count };
     });
@@ -1954,16 +1958,32 @@ export class XppSymbolIndex {
    * Presence checks use the special values '(present)' / '(absent)'.
    */
   recordPropertyStat(nodeType: string, property: string, value: string, model: string): void {
-    let stmt = this.stmtCache.get('recordPropertyStat');
+    // Buffer observations in memory; flushed to DB in batch by flushPropertyStats()
+    const key = `${nodeType}|${property}|${value}|${model}`;
+    this.propStatBuffer.set(key, (this.propStatBuffer.get(key) ?? 0) + 1);
+  }
+
+  /**
+   * Flush all buffered property_stats observations to the database in a single
+   * batch. Call once at the end of each model's transaction. The buffer is
+   * cleared after flushing so repeated calls are safe.
+   */
+  private flushPropertyStats(): void {
+    if (this.propStatBuffer.size === 0) return;
+    let stmt = this.stmtCache.get('flushPropertyStat');
     if (!stmt) {
       stmt = this.db.prepare(`
         INSERT INTO property_stats (node_type, property, value, model, count)
-        VALUES (?, ?, ?, ?, 1)
-        ON CONFLICT(node_type, property, value, model) DO UPDATE SET count = count + 1
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(node_type, property, value, model) DO UPDATE SET count = count + excluded.count
       `);
-      this.stmtCache.set('recordPropertyStat', stmt);
+      this.stmtCache.set('flushPropertyStat', stmt);
     }
-    stmt.run(nodeType, property, value, model);
+    for (const [key, count] of this.propStatBuffer) {
+      const [nodeType, property, value, model] = key.split('|');
+      stmt.run(nodeType, property, value, model, count);
+    }
+    this.propStatBuffer.clear();
   }
 
   /**
