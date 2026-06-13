@@ -171,5 +171,5 @@ If a file appears on disk, the C# bridge is working.
 
 - [QUICK_START.md](QUICK_START.md) — Full Copilot scenario guide (Scenarios A–F); env var reference applies to Claude Code too
 - [MCP_CONFIG.md](MCP_CONFIG.md) — Complete env var reference for D365FO workspace paths
-- [MCP_TOOLS.md](MCP_TOOLS.md) — All 61 tools with example prompts
+- [MCP_TOOLS.md](MCP_TOOLS.md) — All 52 tools with example prompts
 - [BRIDGE.md](BRIDGE.md) — C# Metadata Bridge (required for file create/modify on Windows VMs)

@@ -21,7 +21,7 @@ const GetFormInfoArgsSchema = z.object({
   modelName: z.string().optional().describe('Model name (auto-detected if not provided)'),
   filePath: z.string().optional().describe(
     'Absolute path to the form XML file on disk. ' +
-    'Use this when get_form_info previously returned a "could not be read from disk" warning with a guessed path. ' +
+    'Use this when get_object_info(objectType="form") previously returned a "could not be read from disk" warning with a guessed path. ' +
     'Bypasses the DB path lookup entirely. ' +
     'Example: filePath="K:\\AOSService\\PackagesLocalDirectory\\ContosoCore\\ContosoCore\\AxForm\\MyForm.xml"'
   ),
@@ -90,7 +90,7 @@ export async function getFormInfoTool(request: CallToolRequest, context: XppServ
       if (!containment.ok) {
         return {
           content: [{ type: 'text', text:
-            `❌ get_form_info: filePath rejected — ${containment.reason}`,
+            `❌ get_object_info(form): filePath rejected — ${containment.reason}`,
           }],
           isError: true,
         };
@@ -101,7 +101,7 @@ export async function getFormInfoTool(request: CallToolRequest, context: XppServ
       } catch (e) {
         return {
           content: [{ type: 'text', text:
-            `❌ get_form_info: cannot read form XML at explicit filePath="${explicitFilePath}": ` +
+            `❌ get_object_info(form): cannot read form XML at explicit filePath="${explicitFilePath}": ` +
             `${e instanceof Error ? e.message : String(e)}\n\n` +
             `Check the path is correct and accessible. DO NOT use PowerShell — fix the filePath parameter.`,
           }],
@@ -132,7 +132,7 @@ export async function getFormInfoTool(request: CallToolRequest, context: XppServ
         `The bridge is connected and metadata is available, but form "${formName}" was not found ` +
         `in either the primary or reference packages path. Verify the form name spelling or ` +
         `pass the explicit filePath parameter:\n` +
-        `  get_form_info(formName="${formName}", filePath="<absolute path to .xml>")`;
+        `  get_object_info(objectType="form", name="${formName}", options={filePath:"<absolute path to .xml>"})`;
     }
 
     return {
@@ -254,7 +254,7 @@ function formatControlSearchResults(
 
   if (results.length === 0) {
     out += `No controls found matching "${query}".\n\n`;
-    out += `Tip: call get_form_info without searchControl to browse the full control hierarchy.\n`;
+    out += `Tip: call get_object_info(objectType="form", name=...) without searchControl to browse the full control hierarchy.\n`;
     return out;
   }
 

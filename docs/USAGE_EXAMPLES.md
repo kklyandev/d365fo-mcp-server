@@ -45,7 +45,7 @@ flowchart LR
     A[get_workspace_info] --> B["find_coc_extensions +<br/>analyze_extension_points"]
     B --> C[prepare_change<br/>signature + token]
     C --> D["search_labels →<br/>create_label ×6"]
-    D --> E[generate_smart_table<br/>+ get_table_info verify]
+    D --> E[generate_smart_table<br/>+ get_object_info table verify]
     E --> F["resolve_references<br/>+ validate_xpp"]
     F --> G["create_d365fo_file<br/>(CoC class)"]
     G --> H[verify_d365fo_project ✅]
@@ -53,7 +53,7 @@ flowchart LR
 
 **Key takeaways**
 - `find_coc_extensions` before writing prevents silent duplicate wrappers — the #1 CoC mistake.
-- `get_table_info` right after generation verifies what was *actually* written (EDTs may differ from the request).
+- `get_object_info(objectType="table")` right after generation verifies what was *actually* written (EDTs may differ from the request).
 - The grounding token from `prepare_change` is required by the write tools — ungrounded code never reaches disk.
 
 ---
@@ -72,7 +72,7 @@ Follow the patterns of existing batch jobs in this codebase.
 flowchart LR
     A[analyze_code_patterns<br/>+ search_extensions] --> B["batch_search<br/>framework classes + EDTs"]
     B --> C["generate_code<br/>pattern: sysoperation"]
-    C --> D["get_table_info + get_edt_info<br/>parameter types"]
+    C --> D["get_object_info table + edt<br/>parameter types"]
     D --> E["search_labels →<br/>create_label ×2"]
     E --> F["create_d365fo_file ×3<br/>Contract / Controller / Service"]
     F --> G[verify_d365fo_project ✅]
@@ -98,13 +98,13 @@ then add the field to the General tab of the CustTable form.
 flowchart LR
     A["search_labels →<br/>create_label"] --> B["create_d365fo_file<br/>(enum)"]
     B --> C["create_d365fo_file<br/>(table extension)"]
-    C --> D["get_form_info<br/>exact tab names"]
+    C --> D["get_object_info form<br/>exact tab names"]
     D --> E["modify_d365fo_file<br/>add-control → TabGeneral"]
     E --> F[verify_d365fo_project ✅]
 ```
 
 **Key takeaways**
-- `get_form_info` resolves the *exact* parent control name before `add-control` — no guessed names, no corrupted XML.
+- `get_object_info(objectType="form", options={searchControl})` resolves the *exact* parent control name before `add-control` — no guessed names, no corrupted XML.
 - `add-control` checks the new control's type against the parent container's sub-pattern (e.g. FieldsFieldGroups rejects static text).
 
 ---
@@ -146,7 +146,7 @@ MyLedgerInventAdjustmentService with create-header, add-lines, and post methods.
 
 ```mermaid
 flowchart LR
-    A["get_table_info ×3<br/>journal + invent tables"] --> B["get_api_usage_patterns<br/>real call sequences"]
+    A["get_object_info table ×3<br/>journal + invent tables"] --> B["get_api_usage_patterns<br/>real call sequences"]
     B --> C["get_method_signature ×7<br/>exact parameter order"]
     C --> D["search_extensions<br/>existing My* service template"]
     D --> E["create_label ×3 →<br/>create_d365fo_file"]
@@ -171,10 +171,10 @@ Include a Controller so we can attach a menu item.
 
 ```mermaid
 flowchart LR
-    A["get_report_info<br/>study existing report"] --> B["search_labels →<br/>create_label ×3"]
+    A["get_object_info report<br/>study existing report"] --> B["search_labels →<br/>create_label ×3"]
     B --> C["generate_smart_report<br/>5 objects in one call"]
     C --> D["create_d365fo_file ×5<br/>Tmp → Contract → DP → Controller → Report"]
-    D --> E["get_table_info<br/>InventSum + WHSZone"]
+    D --> E["get_object_info table<br/>InventSum + WHSZone"]
     E --> F["modify_d365fo_file<br/>processReport() body"]
     F --> G[verify_d365fo_project ✅]
 ```

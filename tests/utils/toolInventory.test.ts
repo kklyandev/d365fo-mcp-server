@@ -30,8 +30,8 @@ describe('tool inventory contract', () => {
   });
 
   it('exposes the expected total tool count', () => {
-    expect(mcpServerToolNames).toHaveLength(61);
-    expect(startupCatalogToolNames).toHaveLength(61);
+    expect(mcpServerToolNames).toHaveLength(52);
+    expect(startupCatalogToolNames).toHaveLength(52);
   });
 
   it('keeps local-only tool set aligned with the published tool inventory', () => {
@@ -40,8 +40,8 @@ describe('tool inventory contract', () => {
       expect(publishedTools.has(toolName)).toBe(true);
     }
 
-    expect(LOCAL_TOOLS.size).toBe(25);
-    expect(mcpServerToolNames.filter(name => !LOCAL_TOOLS.has(name))).toHaveLength(36);
+    expect(LOCAL_TOOLS.size).toBe(15);
+    expect(mcpServerToolNames.filter(name => !LOCAL_TOOLS.has(name))).toHaveLength(37);
   });
 
   it('has a tool annotation (title + hints) for every published tool', () => {

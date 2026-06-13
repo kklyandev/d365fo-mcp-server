@@ -15,7 +15,7 @@ graph TB
 
     subgraph "MCP Server — Node.js 24, TypeScript"
         TRANSPORT[Transport: stdio / Express HTTP\n+ rate limiting, dedup cache]
-        TOOLS[61 tool handlers]
+        TOOLS[52 tool handlers]
         GATES[Quality gates\n grounding · references · BP · form patterns]
     end
 
@@ -174,7 +174,7 @@ graph LR
 
 | Mode | `MCP_SERVER_MODE` | Tools exposed | Typical host |
 |------|-------------------|---------------|--------------|
-| Full | `full` (default) | all 61 | developer VM |
+| Full | `full` (default) | all 52 | developer VM |
 | Read-only | `read-only` | search/analysis | Azure App Service |
 | Write-only | `write-only` | file ops + bridge reads | hybrid local companion |
 

@@ -252,7 +252,7 @@ export async function readViewMetadata(
  *
  * We extract the relative part after "PackagesLocalDirectory" and combine it with
  * the locally configured packagePath (from .mcp.json / env).  This allows
- * get_form_info and other tools to read standard Microsoft model XML on a local
+ * get_object_info and other tools to read standard Microsoft model XML on a local
  * D365FO installation even though the DB path points to a non-existent CI machine.
  *
  * Returns null when the path cannot be remapped or the remapped file does not exist.
@@ -351,19 +351,19 @@ export function buildObjectTypeMismatchMessage(
   for (const entry of uniqueTypes) {
     switch (entry.type) {
       case 'form':
-        section += `- \`get_form_info(formName="${name}")\` — inspect form datasources, controls, and methods\n`;
+        section += `- \`get_object_info(objectType="form", name="${name}")\` — inspect form datasources, controls, and methods\n`;
         break;
       case 'table':
-        section += `- \`get_table_info(tableName="${name}")\` — inspect table fields and methods\n`;
+        section += `- \`get_object_info(objectType="table", name="${name}")\` — inspect table fields and methods\n`;
         break;
       case 'view':
-        section += `- \`get_view_info(viewName="${name}")\` — inspect view fields and methods\n`;
+        section += `- \`get_object_info(objectType="view", name="${name}")\` — inspect view fields and methods\n`;
         break;
       case 'query':
-        section += `- \`get_query_info(queryName="${name}")\` — inspect query datasources\n`;
+        section += `- \`get_object_info(objectType="query", name="${name}")\` — inspect query datasources\n`;
         break;
       case 'enum':
-        section += `- \`get_enum_info(enumName="${name}")\` — inspect enum values\n`;
+        section += `- \`get_object_info(objectType="enum", name="${name}")\` — inspect enum values\n`;
         break;
     }
   }

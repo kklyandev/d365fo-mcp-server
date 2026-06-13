@@ -122,7 +122,7 @@ internal final class ${name}
 //   }
 //
 // Workflow:
-//   1. get_data_entity_info("similar entity")  → study structure
+//   1. get_object_info(objectType="data-entity", name="similar entity")  → study structure
 //   2. generate_d365fo_xml(objectType="data-entity", ...)  → preview XML
 //   3. create_d365fo_file(objectType="view", ...)  → create file
 //   4. After deployment: refresh entity list in Data Management workspace
@@ -396,7 +396,7 @@ function formControlExtensionTemplate(formName: string, prefix: string, controlN
 /// Form control extension class for ${formName}.${ctrlName} (prefix: ${prefix})
 /// Naming: {FormName}_{ControlName}{Prefix}Ctrl_Extension per MS naming guidelines
 /// Use this to wrap a specific control's methods (modified, validate, lookup, gotFocus, …).
-/// IMPORTANT: Use get_form_info("${formName}", searchControl="${ctrlName}") first to verify the exact control name.
+/// IMPORTANT: Use get_object_info(objectType="form", name="${formName}", options={searchControl:"${ctrlName}"}) first to verify the exact control name.
 /// </summary>
 [ExtensionOf(formControlStr(${formName}, ${ctrlName}))]
 final class ${className}
@@ -1683,7 +1683,7 @@ public class ${name}Service
         catch (Exception::Error)
         {
             response.parmSuccess(false);
-            response.parmMessage(infologLine(infologLine()));
+            response.parmMessage(infolog.text());
         }
 
         return response;
@@ -1700,31 +1700,41 @@ public class ${name}Service
 }
 
 // ── 3. AOT objects (create via create_d365fo_file) ──────────────────────
-// a) AxService XML:
-//    <AxService>
+// Verify the result afterwards with get_object_info(objectType="service", name="${name}Service").
+// a) AxService XML (real schema: ServiceOperations / AxServiceOperation / Method):
+//    <AxService xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
 //      <Name>${name}Service</Name>
 //      <Class>${name}Service</Class>
-//      <Operations>
+//      <ExternalName>${name}Service</ExternalName>
+//      <Namespace>http://schemas.microsoft.com/dynamics/2011/01/services</Namespace>
+//      <ServiceOperations>
 //        <AxServiceOperation>
 //          <Name>processRequest</Name>
-//          <Enabled>Yes</Enabled>
+//          <EnableIdempotence>Yes</EnableIdempotence>
+//          <Method>processRequest</Method>
 //        </AxServiceOperation>
 //        <AxServiceOperation>
 //          <Name>ping</Name>
-//          <Enabled>Yes</Enabled>
+//          <EnableIdempotence>Yes</EnableIdempotence>
+//          <Method>ping</Method>
 //        </AxServiceOperation>
-//      </Operations>
+//      </ServiceOperations>
 //    </AxService>
 //
-// b) AxServiceGroup XML:
-//    <AxServiceGroup>
+// b) AxServiceGroup XML (real schema: Services / AxServiceGroupService):
+//    <AxServiceGroup xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
 //      <Name>${name}ServiceGroup</Name>
 //      <AutoDeploy>Yes</AutoDeploy>
 //      <Services>
-//        <Name>${name}Service</Name>
+//        <AxServiceGroupService>
+//          <Name>${name}Service</Name>
+//          <Service>${name}Service</Service>
+//        </AxServiceGroupService>
 //      </Services>
 //    </AxServiceGroup>
 //
+// JSON request body wraps the payload in the operation parameter name (_request):
+//   { "_request": { "RecordId": "...", "Operation": "..." } }
 // Endpoint URL after deploy:
 //   https://{env}.operations.dynamics.com/api/services/${name}ServiceGroup/${name}Service/processRequest`;
 }

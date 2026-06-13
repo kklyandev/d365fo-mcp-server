@@ -6,8 +6,7 @@ import { SERVER_MODE, LOCAL_TOOLS } from '../server/serverMode.js';
 import { searchTool } from './search.js';
 import { batchSearchTool } from './batchSearch.js';
 import { batchGetInfoTool } from './batchGetInfo.js';
-import { classInfoTool } from './classInfo.js';
-import { tableInfoTool } from './tableInfo.js';
+import { getObjectInfoTool } from './getObjectInfo.js';
 import { completionTool } from './completion.js';
 import { codeGenTool } from './codeGen.js';
 import { extensionSearchTool } from './extensionSearch.js';
@@ -21,12 +20,6 @@ import { findReferencesTool } from './findReferences.js';
 import { modifyD365FileTool } from './modifyD365File.js';
 import { getMethodSignatureTool } from './methodSignature.js';
 import { getMethodSourceTool } from './getMethodSource.js';
-import { getFormInfoTool } from './formInfo.js';
-import { getQueryInfoTool } from './queryInfo.js';
-import { getViewInfoTool } from './viewInfo.js';
-import { getEnumInfoTool } from './enumInfo.js';
-import { getEdtInfoTool } from './edtInfo.js';
-import { getReportInfoTool } from './reportInfo.js';
 import { searchLabelsTool } from './searchLabels.js';
 import { getLabelInfoTool } from './getLabelInfo.js';
 import { createLabelTool } from './createLabel.js';
@@ -38,10 +31,8 @@ import { handleGenerateSmartForm } from './generateSmartForm.js';
 import { handleGenerateSmartReport } from './generateSmartReport.js';
 import { handleSuggestEdt } from './suggestEdt.js';
 import { securityArtifactInfoTool } from './securityArtifactInfo.js';
-import { menuItemInfoTool } from './menuItemInfo.js';
 import { findCocExtensionsTool } from './findCocExtensions.js';
 import { tableExtensionInfoTool } from './tableExtensionInfo.js';
-import { dataEntityInfoTool } from './dataEntityInfo.js';
 import { findEventHandlersTool } from './findEventHandlers.js';
 import { securityCoverageInfoTool } from './securityCoverageInfo.js';
 import { analyzeExtensionPointsTool } from './analyzeExtensionPoints.js';
@@ -130,7 +121,8 @@ const TOOL_CAP_SIZES: Record<string, number | 'uncapped'> = {
   generate_smart_report:            'uncapped',
   create_d365fo_file:               'uncapped',
   generate_d365fo_xml:              'uncapped',
-  get_report_info:                  'uncapped',
+  // get_object_info can return reports (RDL) and full class bodies — never truncate
+  get_object_info:                  'uncapped',
   // Method source must never be truncated — partial code is useless
   get_method_source:                'uncapped',
   // New tools with longer output
@@ -141,10 +133,6 @@ const TOOL_CAP_SIZES: Record<string, number | 'uncapped'> = {
   recommend_extension_strategy:     6000,
   find_coc_extensions:              5000,
   find_event_handlers:              5000,
-  get_data_entity_info:             5000,
-  get_class_info:                   6000,
-  get_table_info:                   6000,
-  get_form_info:                    5000,
   // Default for everything else
   default:                          5000,
 };
@@ -288,10 +276,8 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         return batchGetInfoTool(request, context);
       case 'search_extensions':
         return extensionSearchTool(request, context);
-      case 'get_class_info':
-        return classInfoTool(request, context);
-      case 'get_table_info':
-        return tableInfoTool(request, context);
+      case 'get_object_info':
+        return getObjectInfoTool(request, context);
       case 'code_completion':
         return completionTool(request, context);
       case 'generate_code':
@@ -316,18 +302,6 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         return getMethodSignatureTool(request, context);
       case 'get_method_source':
         return getMethodSourceTool(request, context);
-      case 'get_form_info':
-        return getFormInfoTool(request, context);
-      case 'get_query_info':
-        return getQueryInfoTool(request, context);
-      case 'get_view_info':
-        return getViewInfoTool(request, context);
-      case 'get_enum_info':
-        return getEnumInfoTool(request, context);
-      case 'get_edt_info':
-        return getEdtInfoTool(request, context);
-      case 'get_report_info':
-        return getReportInfoTool(request, context);
       case 'search_labels':
         return searchLabelsTool(request, context);
       case 'get_label_info':
@@ -381,14 +355,10 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
       }
       case 'get_security_artifact_info':
         return securityArtifactInfoTool(request, context);
-      case 'get_menu_item_info':
-        return menuItemInfoTool(request, context);
       case 'find_coc_extensions':
         return findCocExtensionsTool(request, context);
       case 'get_table_extension_info':
         return tableExtensionInfoTool(request, context);
-      case 'get_data_entity_info':
-        return dataEntityInfoTool(request, context);
       case 'find_event_handlers':
         return findEventHandlersTool(request, context);
       case 'get_security_coverage_for_object':

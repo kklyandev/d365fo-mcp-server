@@ -13,28 +13,12 @@ export function buildProgressMessage(toolName: string, args: Record<string, any>
       return `🔍 Batch search: ${Array.isArray(a.queries) ? a.queries.map((q: any) => `"${q.query ?? q}"`).join(', ') : ''}`;
     case 'search_extensions':
       return `🔍 Searching custom extensions: "${a.query ?? ''}"`;
-    case 'get_class_info':
-      return `📦 Reading class ${a.className ?? ''}${a.compact === false ? ' (full bodies)' : ''}`;
-    case 'get_table_info':
-      return `📋 Reading table ${a.tableName ?? ''}`;
+    case 'get_object_info':
+      return `📦 Reading ${a.objectType ?? 'object'} ${a.name ?? ''}`;
     case 'get_method_source':
       return `📖 Reading source of ${a.className ?? ''}.${a.methodName ?? ''}`;
     case 'get_method_signature':
       return `🔑 Reading signature of ${a.className ?? ''}.${a.methodName ?? ''}`;
-    case 'get_form_info':
-      return `🖼️ Reading form ${a.formName ?? ''}${a.searchControl ? ` (control: "${a.searchControl}")` : ''}`;
-    case 'get_query_info':
-      return `🗃️ Reading query ${a.queryName ?? ''}`;
-    case 'get_view_info':
-      return `👁️ Reading view ${a.viewName ?? ''}`;
-    case 'get_enum_info':
-      return `📝 Reading enum ${a.enumName ?? ''}`;
-    case 'get_edt_info':
-      return `📐 Reading EDT ${a.edtName ?? ''}`;
-    case 'get_report_info':
-      return `📊 Reading report ${a.reportName ?? ''}`;
-    case 'get_data_entity_info':
-      return `📡 Reading data entity ${a.entityName ?? ''}`;
     case 'find_references':
       return `🔗 Finding references to ${a.targetName ?? ''}`;
     case 'find_coc_extensions':
@@ -45,8 +29,6 @@ export function buildProgressMessage(toolName: string, args: Record<string, any>
       return `🔒 Reading security artifact ${a.name ?? ''}`;
     case 'get_security_coverage_for_object':
       return `🔒 Reading security coverage for ${a.objectName ?? ''}`;
-    case 'get_menu_item_info':
-      return `📋 Reading menu item ${a.name ?? ''}`;
     case 'get_table_extension_info':
       return `🔧 Reading extensions of table ${a.tableName ?? ''}`;
     case 'analyze_extension_points':

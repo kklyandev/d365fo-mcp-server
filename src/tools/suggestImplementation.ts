@@ -150,7 +150,7 @@ function formatSuggestion(similarMethods: any[], args: any): string {
   
   output += `**Next Steps:**\n`;
   output += `1. Review the similar implementations above\n`;
-  output += `2. Use \`get_class_info\` on example classes to see full context\n`;
+  output += `2. Use \`get_object_info(objectType="class", name=...)\` on example classes to see full context\n`;
   output += `3. Adapt the patterns to your specific needs\n`;
   
   return output;

@@ -17,7 +17,12 @@
  *   BP001   Hardcoded string literal in info/warning/error/checkFailed
  *   BP002   doInsert/doUpdate/doDelete outside explicit migration comment
  *   BP003   Generic doc-comment (/// Foo class. / /// methodName.)
+ *   BP004   Developer-only statements left in code (pause / print)
+ *   TTS001  Unbalanced ttsbegin / ttscommit
  *   XML001  AxTable XML missing an index with <AlternateKey>Yes</AlternateKey>
+ *
+ * Keyword scans run against a comment/string-masked copy of the source
+ * (maskStringsAndComments) to avoid false positives inside literals/comments.
  *
  * Data-driven property rules (thresholds mined from STANDARD models into the
  * property_stats table during build-database; static defaults when no stats):
@@ -60,6 +65,44 @@ export interface ValidationViolation {
 
 function lineNumber(code: string, index: number): number {
   return code.slice(0, index).split('\n').length;
+}
+
+/**
+ * Lightweight tokenizer-lite: returns a copy of `code` with the CONTENT of string
+ * literals, line comments (//…) and block comments (/* … *\/) replaced by spaces,
+ * preserving every newline (so line numbers stay correct) and overall length (so
+ * offsets stay correct). Keyword/regex scans run against this masked text to avoid
+ * false positives from keywords that appear inside strings or comments.
+ */
+export function maskStringsAndComments(code: string): string {
+  const out = code.split('');
+  const n = code.length;
+  let i = 0;
+  type State = 'code' | 'line' | 'block' | 'string';
+  let state: State = 'code';
+  while (i < n) {
+    const c = code[i];
+    const c2 = i + 1 < n ? code[i + 1] : '';
+    if (state === 'code') {
+      if (c === '/' && c2 === '/') { state = 'line'; i += 2; continue; }
+      if (c === '/' && c2 === '*') { state = 'block'; i += 2; continue; }
+      if (c === '"') { state = 'string'; i++; continue; }
+      i++;
+    } else if (state === 'line') {
+      if (c === '\n') { state = 'code'; i++; continue; }
+      out[i] = ' '; i++;
+    } else if (state === 'block') {
+      if (c === '*' && c2 === '/') { out[i] = ' '; out[i + 1] = ' '; state = 'code'; i += 2; continue; }
+      if (c !== '\n') out[i] = ' ';
+      i++;
+    } else { // string
+      if (c === '\\') { out[i] = ' '; if (c2 && c2 !== '\n') out[i + 1] = ' '; i += 2; continue; }
+      if (c === '"') { state = 'code'; i++; continue; }
+      if (c !== '\n') out[i] = ' ';
+      i++;
+    }
+  }
+  return out.join('');
 }
 
 /**
@@ -141,7 +184,8 @@ function checkCrossCompanyPlacement(code: string): ValidationViolation[] {
  */
 function checkNestedWhileSelect(code: string): ValidationViolation[] {
   const violations: ValidationViolation[] = [];
-  const lines = code.split('\n');
+  const masked = maskStringsAndComments(code);
+  const lines = masked.split('\n');
   // Collect line numbers of all while-select occurrences
   const whileSelectLines: number[] = [];
   lines.forEach((l, i) => {
@@ -151,7 +195,7 @@ function checkNestedWhileSelect(code: string): ValidationViolation[] {
   });
   if (whileSelectLines.length >= 2) {
     // Only flag if there is no "join" keyword nearby (rough heuristic)
-    const hasJoin = /\bjoin\b/i.test(code);
+    const hasJoin = /\bjoin\b/i.test(masked);
     if (!hasJoin) {
       violations.push({
         rule: 'SEL004',
@@ -184,7 +228,8 @@ const INTRINSIC_FUNCTIONS = new Set([
 
 function checkFunctionInWhere(code: string): ValidationViolation[] {
   const violations: ValidationViolation[] = [];
-  const lines = code.split('\n');
+  // Scan masked text so function-like tokens inside strings/comments aren't flagged.
+  const lines = maskStringsAndComments(code).split('\n');
   let inWhere = false;
   lines.forEach((rawLine, i) => {
     const line = rawLine.trimStart();
@@ -428,6 +473,44 @@ function checkMissingAlternateKey(code: string): ValidationViolation[] {
   return violations;
 }
 
+/**
+ * TTS001 — Unbalanced ttsbegin / ttscommit.
+ * Counts (on masked code) ttsbegin vs ttscommit. A mismatch usually means a
+ * missing commit (transaction left open) or a stray commit. ttsabort lives in
+ * catch blocks and is not required to balance the static count.
+ */
+function checkUnbalancedTts(code: string): ValidationViolation[] {
+  const masked = maskStringsAndComments(code);
+  const begins = (masked.match(/\bttsbegin\b/gi) ?? []).length;
+  const commits = (masked.match(/\bttscommit\b/gi) ?? []).length;
+  if (begins === 0 && commits === 0) return [];
+  if (begins === commits) return [];
+  const firstIdx = masked.search(/\bttsbegin\b/i);
+  return [{
+    rule: 'TTS001',
+    severity: 'warning',
+    line: firstIdx >= 0 ? lineNumber(code, firstIdx) : undefined,
+    excerpt: `ttsbegin × ${begins}, ttscommit × ${commits}`,
+    fix: 'Balance every ttsbegin with a matching ttscommit (and ttsabort in the catch). ' +
+      'An unmatched ttsbegin leaves the transaction open; an unmatched ttscommit will throw at runtime.',
+  }];
+}
+
+/**
+ * BP004 — Developer-only statements left in code (pause / print).
+ * These block the AOS / write to the console and must not ship.
+ */
+function checkDevArtifacts(code: string): ValidationViolation[] {
+  return matchAll(
+    maskStringsAndComments(code),
+    /\b(?:pause|print)\b/g,
+    'BP004',
+    'warning',
+    'Remove developer-only statements (pause / print) before shipping. ' +
+    'Use the Infolog (info/warning) or telemetry for diagnostics instead.',
+  );
+}
+
 // ── Data-driven property rules (XML002–XML005) ──────────────────────────────
 
 /**
@@ -569,6 +652,8 @@ const XPP_RULES = [
   checkHardcodedStrings,
   checkDoMethods,
   checkGenericDocComment,
+  checkUnbalancedTts,
+  checkDevArtifacts,
 ];
 
 const XML_RULES = [

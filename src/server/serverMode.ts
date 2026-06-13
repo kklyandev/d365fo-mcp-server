@@ -19,8 +19,8 @@
  *  2. They do NOT need the symbol database — they skip the dbReady await.
  *  3. They are the tools available in 'write-only' (local companion) mode.
  *
- * The set also includes bridge-backed READ tools (get_class_info, get_table_info, …)
- * which work in write-only mode via IMetadataProvider — no SQLite needed.
+ * The set also includes the bridge-backed READ surface (get_object_info, get_method_source,
+ * get_method_signature) which works in write-only mode via IMetadataProvider — no SQLite needed.
  * This allows Copilot to verify objects it just created without an Azure re-deploy.
  *
  * - Excluded in 'read-only' mode (Azure deployment can't access local K:\ paths)
@@ -51,22 +51,27 @@ export const LOCAL_TOOLS = new Set([
   'review_workspace_changes',
   'undo_last_modification',
   'get_workspace_info',
-  // Bridge-backed read tools: work in write-only mode via IMetadataProvider
+  // Bridge-backed member readers: work in write-only mode via IMetadataProvider
   // (no SQLite needed — bridge reads directly from disk).
-  // Allows Copilot to verify objects it just created/modified without waiting
-  // for an Azure DB re-deploy or an explicit update_symbol_index call.
-  'get_class_info',
-  'get_table_info',
-  'get_form_info',
-  'get_enum_info',
-  'get_edt_info',
-  'get_query_info',
-  'get_view_info',
-  'get_report_info',
-  'get_data_entity_info',
+  // The bridge-backed OBJECT readers (class/table/form/…) are now reached through
+  // get_object_info, which is in ALWAYS_TOOLS so it stays available in every mode.
   'get_method_source',
   'get_method_signature',
-  'get_menu_item_info',
+]);
+
+/**
+ * Tools exposed in EVERY server mode (full / read-only / write-only), bypassing
+ * the LOCAL_TOOLS partition.
+ *
+ * get_object_info dispatches to both bridge-backed types (class/table/… — usable
+ * on the local VM / write-only companion) and SQLite-backed types
+ * (service/map/config-key/security-policy/macro — usable on Azure read-only).
+ * Because it spans both localities it cannot live in a single partition, so it is
+ * always published; per-type it returns a clear message when its backing source
+ * is unavailable in the current mode.
+ */
+export const ALWAYS_TOOLS = new Set([
+  'get_object_info',
 ]);
 
 /**

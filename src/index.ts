@@ -580,13 +580,13 @@ async function main() {
     });
 
     // Log tool count immediately (transport is already connected)
-    const totalTools = 61;
+    const totalTools = 52;
     const localToolCount = LOCAL_TOOLS.size;
     const toolCount = SERVER_MODE === 'write-only' ? localToolCount :
                      SERVER_MODE === 'read-only' ? totalTools - localToolCount : totalTools;
     const toolDesc = SERVER_MODE === 'write-only' ? `(${Array.from(LOCAL_TOOLS).join(', ')})` :
                     SERVER_MODE === 'read-only' ? '(all except local tools)' :
-                    '(9 discovery + 7 object-info + 6 intelligent + 4 smart-gen + 3 pattern-analysis + 10 security-ext + 4 file-ops + 7 sdlc-build + 4 labels + 6 code-quality)';
+                    '(5 discovery + 4 object-info + 6 intelligent + 4 smart-gen + 3 pattern-analysis + 9 security-ext + 4 file-ops + 7 sdlc-build + 4 labels + 6 code-quality)';
     console.log(`🎯 Registered ${toolCount} X++ MCP tools ${toolDesc}`);
     serverState.isReady = true;
     serverState.isHealthy = true;
@@ -679,10 +679,6 @@ async function main() {
           { name: 'batch_search',                 desc: 'Execute multiple searches in parallel (3x faster)' },
           { name: 'batch_get_info',               desc: 'Get detailed info for up to 10 objects in one parallel call' },
           { name: 'search_extensions',            desc: 'Search only custom/ISV models (filters out standard code)' },
-          { name: 'get_class_info',               desc: 'Full class: all methods with source, inheritance, attributes' },
-          { name: 'get_table_info',               desc: 'Full table: fields, indexes, relations, methods' },
-          { name: 'get_enum_info',                desc: 'Enum values with integer values and labels' },
-          { name: 'get_edt_info',                 desc: 'Extended Data Type: base type, labels, properties' },
           { name: 'code_completion',              desc: 'IntelliSense-style method/field listing on any object' },
         ]},
         { icon: '🏷️ ', category: 'Label Management', tools: [
@@ -692,10 +688,7 @@ async function main() {
           { name: 'rename_label',                 desc: 'Rename a label ID in .label.txt, X++ and XML metadata' },
         ]},
         { icon: '📊', category: 'Advanced Object Info', tools: [
-          { name: 'get_form_info',                desc: 'Form datasources, control hierarchy, and methods' },
-          { name: 'get_query_info',               desc: 'Query datasources, joins, field lists, and ranges' },
-          { name: 'get_view_info',                desc: 'View/data entity fields, relations, computed columns' },
-          { name: 'get_report_info',              desc: 'AxReport datasets, fields, designs and RDL summary' },
+          { name: 'get_object_info',              desc: 'Read any object by objectType: class/table/form/query/view/enum/edt/report/data-entity/menu-item/service/map/config-key/security-policy/macro' },
           { name: 'get_method_signature',         desc: 'Exact method signature (required before CoC extensions)' },
           { name: 'get_method_source',            desc: 'Full X++ source code of a method (complete business logic)' },
           { name: 'find_references',              desc: 'Where-used analysis across the entire codebase' },
@@ -727,11 +720,9 @@ async function main() {
         { icon: '🔐', category: 'Security & Extensions', tools: [
           { name: 'get_security_artifact_info',   desc: 'Privilege/Duty/Role details and full hierarchy chain' },
           { name: 'get_security_coverage_for_object', desc: 'Which roles can access a form/table/class?' },
-          { name: 'get_menu_item_info',           desc: 'Menu item target, type, and security privilege chain' },
           { name: 'find_coc_extensions',          desc: 'Which classes use CoC to wrap a given method?' },
           { name: 'find_event_handlers',          desc: 'Find all [SubscribesTo] handlers for a table or class event' },
           { name: 'get_table_extension_info',     desc: 'All extensions of a table: added fields, indexes, methods' },
-          { name: 'get_data_entity_info',         desc: 'Data entity: category, OData settings, data sources, keys' },
           { name: 'analyze_extension_points',     desc: 'CoC-eligible methods, delegates, events — what can be extended?' },
           { name: 'recommend_extension_strategy',  desc: 'Recommends the best extensibility mechanism for a given scenario' },
           { name: 'validate_object_naming',       desc: 'Validate proposed extensions and object names against D365FO conventions' },
@@ -750,7 +741,7 @@ async function main() {
           { name: 'undo_last_modification',       desc: 'Safely revert last file change: checkout HEAD or delete untracked file' },
         ]},
         { icon: '✅', category: 'Code Quality & Grounding', tools: [
-          { name: 'validate_xpp',                 desc: 'Offline BP validator: 13 rules (SEL/COC/BP/XML), <50 ms, no Windows required' },
+          { name: 'validate_xpp',                 desc: 'Offline BP validator: 18 rules (SEL/COC/BP/TTS/XML), <50 ms, no Windows required' },
           { name: 'validate_form_pattern',        desc: 'Form pattern validator: control hierarchy/order, sub-patterns, versions (FP001-FP010)' },
           { name: 'get_form_pattern_spec',        desc: 'Form pattern spec: required structure, sub-patterns, reference forms to clone, lifecycle guidance' },
           { name: 'resolve_references',           desc: 'Semantic resolver: every type/field/method/label in generated code proven against the index' },

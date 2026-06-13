@@ -736,7 +736,7 @@ export async function handleGenerateSmartTable(
         `⚠️ Table "${finalName}" already exists at:\n${bridgeTargetPath}\n\n` +
         `\`generate_smart_table\` is for **NEW** tables only.\n` +
         `Use \`modify_d365fo_file\` to add fields, methods, or indexes to an existing table.\n` +
-        `Use \`get_table_info("${finalName}")\` to inspect the current structure.`
+        `Use \`get_object_info(objectType="table", name="${finalName}")\` to inspect the current structure.`
       );
     }
   }
@@ -901,7 +901,7 @@ export async function handleGenerateSmartTable(
       `⚠️ Table "${finalName}" already exists at:\n${normalizedPath}\n\n` +
       `\`generate_smart_table\` is for **NEW** tables only.\n` +
       `Use \`modify_d365fo_file\` to add fields, methods, or indexes to an existing table.\n` +
-      `Use \`get_table_info("${finalName}")\` to inspect the current structure.`
+      `Use \`get_object_info(objectType="table", name="${finalName}")\` to inspect the current structure.`
     );
   }
 

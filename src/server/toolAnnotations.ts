@@ -57,16 +57,7 @@ export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   search_labels:                    read('Search labels'),
 
   // ── Object inspection ─────────────────────────────────────────────────────
-  get_class_info:                   read('Read class info'),
-  get_table_info:                   read('Read table info'),
-  get_form_info:                    read('Read form info'),
-  get_query_info:                   read('Read query info'),
-  get_view_info:                    read('Read view info'),
-  get_enum_info:                    read('Read enum info'),
-  get_edt_info:                     read('Read EDT info'),
-  get_report_info:                  read('Read report info'),
-  get_data_entity_info:             read('Read data entity info'),
-  get_menu_item_info:               read('Read menu item info'),
+  get_object_info:                  read('Read object info'),
   get_method_signature:             read('Read method signature'),
   get_method_source:                read('Read method source'),
   get_label_info:                   read('Read label info'),

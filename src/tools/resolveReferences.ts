@@ -576,7 +576,7 @@ export function resolveXppReferences(code: string, deps: ResolverDeps): ResolveR
             severity: 'error',
             line,
             identifier: `${target}.${member}`,
-            detail: `Field "${member}" not found on ${target} (checked fields, system fields, table extensions). Use get_table_info("${target}").`,
+            detail: `Field "${member}" not found on ${target} (checked fields, system fields, table extensions). Use get_object_info(objectType="table", name="${target}").`,
           });
         }
       } else if (fn === 'methodstr' || fn === 'staticmethodstr') {
@@ -588,7 +588,7 @@ export function resolveXppReferences(code: string, deps: ResolverDeps): ResolveR
             severity: 'error',
             line,
             identifier: `${target}.${member}`,
-            detail: `Method "${member}" not found on ${target} (checked inheritance chain and extensions). Use get_class_info("${target}").`,
+            detail: `Method "${member}" not found on ${target} (checked inheritance chain and extensions). Use get_object_info(objectType="class", name="${target}").`,
           });
         }
       } else {
@@ -634,7 +634,7 @@ export function resolveXppReferences(code: string, deps: ResolverDeps): ResolveR
         severity: 'error',
         line,
         identifier: `${typeName}::${member}`,
-        detail: `Static method "${member}" not found on ${typeName} (checked inheritance chain and extensions). Use get_class_info("${typeName}") or get_method_signature.`,
+        detail: `Static method "${member}" not found on ${typeName} (checked inheritance chain and extensions). Use get_object_info(objectType="class", name="${typeName}") or get_method_signature.`,
       });
       continue;
     }
@@ -728,7 +728,7 @@ export function resolveXppReferences(code: string, deps: ResolverDeps): ResolveR
             severity: 'error',
             line,
             identifier: `${typeName}.${member}`,
-            detail: `Field "${member}" not found on ${typeName} (checked fields, system fields, table extensions). Use get_table_info("${typeName}").`,
+            detail: `Field "${member}" not found on ${typeName} (checked fields, system fields, table extensions). Use get_object_info(objectType="table", name="${typeName}").`,
           });
         }
       }

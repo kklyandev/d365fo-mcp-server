@@ -1,10 +1,10 @@
-# Tool Reference — 61 Tools
+# Tool Reference — 52 Tools
 
 Every tool the server exposes, grouped by purpose. The AI agent picks tools automatically — the *example prompts* show what to ask to trigger them; you never name tools yourself.
 
 > **C# bridge first:** on Windows D365FO VMs, 16 read tools query the live `IMetadataProvider` (always-fresh metadata) and `DYNAMICSXREFDB` (compiler-resolved cross-references), falling back to SQLite transparently on Azure/Linux. All write operations go exclusively through the bridge. See [BRIDGE.md](BRIDGE.md) and [SQLITE_DEPENDENCY.md](SQLITE_DEPENDENCY.md).
 >
-> **Server modes:** `full` = all 61 tools · `read-only` (Azure) = search/analysis only · `write-only` (hybrid companion) = file operations + bridge-backed reads. See [MCP_CONFIG.md](MCP_CONFIG.md).
+> **Server modes:** `full` = all 52 tools · `read-only` (Azure) = search/analysis only · `write-only` (hybrid companion) = file operations + bridge-backed reads. See [MCP_CONFIG.md](MCP_CONFIG.md).
 
 ---
 
@@ -40,30 +40,25 @@ flowchart LR
 
 ---
 
-## 🔍 Search & Discovery (9)
+## 🔍 Search & Discovery (5)
 
 | Tool | What it does | Example prompt |
 |------|--------------|----------------|
 | `search` † | Search 580K+ symbols by name or keyword (FTS5, < 10 ms) | *"Find classes related to sales order posting"* |
 | `batch_search` | Multiple searches in one round-trip (3× faster) | *"Look up CustTable, SalesLine and PaymTerm at once"* |
-| `batch_get_info` | Detailed info for up to 10 known objects in one parallel call | *"Get full details of CustTable, SalesLine and CustInvoiceJour"* |
+| `batch_get_info` | Detailed info for up to 10 known objects (any type) in one parallel call | *"Get full details of CustTable, SalesLine and CustInvoiceJour"* |
 | `search_extensions` | Search only custom/ISV models (filters out Microsoft code) | *"What extensions do we have on VendTable?"* |
-| `get_class_info` † | Full class: methods with source, inheritance, attributes | *"Show me the structure of SalesFormLetter"* |
-| `get_table_info` † | Full table: fields, indexes, relations, methods | *"What fields and indexes does CustTrans have?"* |
-| `get_enum_info` † | Enum values with integers and labels | *"List the values of SalesStatus"* |
-| `get_edt_info` † | EDT base type, extends chain, labels, properties | *"What does the AmountCur EDT extend?"* |
 | `code_completion` | IntelliSense-style member listing with prefix filter | *"Methods on SalesTable starting with calc"* |
 
 † = bridge-first on Windows D365FO VMs
 
-## 📊 Advanced Object Info (7)
+## 📊 Advanced Object Info (4)
+
+One unified reader covers every object type via `objectType`; type-specific flags go in `options`.
 
 | Tool | What it does | Example prompt |
 |------|--------------|----------------|
-| `get_form_info` † | Form datasources, control hierarchy, methods | *"Show the control tree of the CustTable form"* |
-| `get_query_info` † | Query datasources, joins, ranges | *"How is the CustTableListPage query built?"* |
-| `get_view_info` † | View / data entity fields, relations, computed columns | *"Structure of CustTransOpenView?"* |
-| `get_report_info` † | SSRS report datasets, designs, RDL summary | *"Datasets of the SalesInvoice report?"* |
+| `get_object_info` † | Read one object's metadata by `objectType`: `class`, `table`, `form`, `query`, `view`, `enum`, `edt`, `report`, `data-entity`, `menu-item`, `service`, `map`, `config-key`, `security-policy`, `macro`. Options: `{includeRdl}` (report), `{searchControl}` (form), `{compact:false}` (class), `{mode:"hierarchy"}` (edt), `{filter}` (macro). | *"Show the structure of SalesFormLetter"* · *"Operations of AifUserSessionService"* · *"Datasets of the SalesInvoice report"* |
 | `get_method_signature` † | Exact signature — **mandatory before CoC** | *"Signature of SalesFormLetter.run?"* |
 | `get_method_source` † | Full X++ source of a method | *"Show me the body of CustTable.validateWrite"* |
 | `find_references` † | Where-used analysis, xref-enriched (reference type, caller class/method) | *"Where is updateInventory called from?"* |
@@ -121,17 +116,15 @@ flowchart LR
 | `modify_d365fo_file` | Safe metadata edits via the C# bridge — 25 operations: add-field, add-control, add-method, replace-code, modify-property, … | *"Add the field to the General tab of the form extension"* |
 | `undo_last_modification` | Revert the last write: checkout HEAD or delete untracked file | *"Undo that last change"* |
 
-## 🔐 Security & Extensions (12)
+## 🔐 Security & Extensions (10)
 
 | Tool | What it does | Example prompt |
 |------|--------------|----------------|
 | `get_security_artifact_info` | Privilege / duty / role details + full hierarchy | *"What does the duty VendPaymentTermsMaintain contain?"* |
-| `get_security_coverage_for_object` | Which roles reach a form/table/menu item (Role → Duty → Privilege → Entry Point) | *"Who has access to the VendPaymTerms form?"* |
-| `get_menu_item_info` | Menu item target, type, security chain | *"Where does menu item CustTable lead?"* |
+| `get_security_coverage_for_object` | Which roles reach a form/table/menu item (Role → Duty → Privilege → Entry Point) + OLS policies | *"Who has access to the VendPaymTerms form?"* |
 | `find_coc_extensions` † | Existing CoC wrappers of a method — **check before writing a new one** | *"Is SalesFormLetter.run already wrapped by CoC?"* |
 | `find_event_handlers` † | All `[SubscribesTo]` handlers for an event | *"What subscribes to CustTable onInserted?"* |
 | `get_table_extension_info` † | All extensions of a table: fields, indexes, methods | *"What fields have we added to CustTable?"* |
-| `get_data_entity_info` † | Entity category, OData settings, data sources, keys | *"Details of the CustCustomerV3 entity"* |
 | `analyze_extension_points` † | CoC-eligible methods, delegates, events on an object | *"What can I extend on SalesFormLetter?"* |
 | `recommend_extension_strategy` | Best extensibility mechanism for a goal | *"How should I customize sales confirmation posting?"* |
 | `validate_object_naming` | Naming conventions + symbol-index collision check | *"Is MY_VendPaymTermsMaintain a valid name?"* |

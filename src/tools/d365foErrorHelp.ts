@@ -250,7 +250,7 @@ ttscommit;`,
       'Referencing a field that does not exist on the table. ' +
       'Common when guessing field names or using AX2012 field names that were renamed in D365FO.',
     fix: [
-      'Call get_table_info("TableName") to see the exact field list',
+      'Call get_object_info(objectType="table", name="TableName") to see the exact field list',
       'Search for the field: search("balance", types=["field"]) to find the exact name',
       'Use fieldNum(TableName, FieldName) only — it compiles to a constant at build time',
       'If the field is on an extension table: use get_table_extension_info() to check',

@@ -289,8 +289,8 @@ export function generateContextualTips(
     const firstClass = classResults[0];
     
     tips.push({
-      tip: `Use get_class_info("${firstClass.name}") for full method signatures and inheritance chain`,
-      tool: 'get_class_info'
+      tip: `Use get_object_info(objectType="class", name="${firstClass.name}") for full method signatures and inheritance chain`,
+      tool: 'get_object_info'
     });
 
     tips.push({
@@ -309,7 +309,7 @@ export function generateContextualTips(
   // Tips for method results
   if (methodResults.length > 0) {
     tips.push({
-      tip: 'Use get_class_info() to see full method implementation and parameters'
+      tip: 'Use get_object_info(objectType="class", name=...) to see full method implementation and parameters'
     });
   }
 

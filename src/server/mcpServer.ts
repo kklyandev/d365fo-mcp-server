@@ -15,7 +15,7 @@ import { registerClassResource } from '../resources/classResource.js';
 import { registerWorkspaceResources } from '../resources/workspaceResource.js';
 import { registerCodeReviewPrompt } from '../prompts/codeReview.js';
 import type { XppServerContext } from '../types/context.js';
-import { SERVER_MODE, LOCAL_TOOLS } from './serverMode.js';
+import { SERVER_MODE, LOCAL_TOOLS, ALWAYS_TOOLS } from './serverMode.js';
 import { TOOL_ANNOTATIONS } from './toolAnnotations.js';
 import { getConfigManager } from '../utils/configManager.js';
 import { setLastRoots, recordRootsListChanged } from '../utils/stdioSessionInfo.js';
@@ -199,7 +199,7 @@ export function createXppMcpServer(context: XppServerContext): Server {
       tools: [
         {
           name: 'search',
-          description: 'Search pre-indexed D365FO objects by name or keywords. Returns name, type, model. Use batch_search for multiple queries. Use get_class_info/get_table_info when you already know the exact name and need full details.',
+          description: 'Search pre-indexed D365FO objects by name or keywords. Returns name, type, model. Use batch_search for multiple queries. Use get_object_info(objectType, name) when you already know the exact name and need full details.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -314,7 +314,7 @@ export function createXppMcpServer(context: XppServerContext): Server {
         },
         {
           name: 'batch_get_info',
-          description: 'Get detailed metadata for multiple D365FO objects in ONE call — the batch counterpart of get_class_info/get_table_info/get_form_info/etc. All lookups run in parallel. Use when you already know 2+ exact object names instead of calling the individual get_*_info tools one by one.',
+          description: 'Get detailed metadata for multiple D365FO objects in ONE call — the batch counterpart of get_object_info. All lookups run in parallel. Use when you already know 2+ exact object names instead of calling get_object_info one by one.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -356,35 +356,8 @@ export function createXppMcpServer(context: XppServerContext): Server {
           },
         },
         {
-          name: 'get_class_info',
-          description: 'Get class definition: methods (signatures or full source), inheritance, attributes. Default compact=true returns signatures only. Use get_method_source for specific method bodies. Use code_completion for name-only listing.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              className: { type: 'string', description: 'Name of the X++ class' },
-              includeWorkspace: { type: 'boolean', default: false, description: 'Whether to search in workspace first' },
-              workspacePath: { type: 'string', description: 'Workspace path to search for class' },
-              methodOffset: { type: 'number', default: 0, description: 'Offset for paginating methods (use multiples of 15)' },
-              compact: { type: 'boolean', default: true, description: 'Signatures only, no source bodies (default true). Set false only when you need to read method bodies' },
-            },
-            required: ['className'],
-          },
-        },
-        {
-          name: 'get_table_info',
-          description: 'Get complete table schema: fields (with EDT info), indexes, relations, methods, and properties. Primary tool for any table-related query. Do NOT use code_completion for tables.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              tableName: { type: 'string', description: 'Name of the X++ table' },
-              methodOffset: { type: 'number', default: 0, description: 'Offset for paginating methods (use multiples of 25)' },
-            },
-            required: ['tableName'],
-          },
-        },
-        {
           name: 'code_completion',
-          description: 'IntelliSense-like member name completions for CLASSES only. Returns method/field names with basic signatures. Faster than get_class_info when you only need names. For tables, use get_table_info instead.',
+          description: 'IntelliSense-like member name completions for CLASSES only. Returns method/field names with basic signatures. Faster than get_object_info when you only need names. For tables, use get_object_info(objectType="table", ...) instead.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -428,7 +401,7 @@ export function createXppMcpServer(context: XppServerContext): Server {
                 type: 'string',
                 description: 'For event-handler: base class or table name. ' +
                   'For form-datasource-extension: data source name within the form (defaults to form name if omitted). ' +
-                  'For form-control-extension: exact control name — use get_form_info() to find the correct name.',
+                  'For form-control-extension: exact control name — use get_object_info(objectType="form", name=...) to find the correct name.',
               },
               targetObject: {
                 type: 'string',
@@ -835,7 +808,7 @@ Extensions: objectName="BaseObject.PrefixExtension" (e.g. "CustTable.ContosoExte
                 description:
                   '[add-control only] Name of the existing parent tab/group in the base form. ' +
                   'e.g. "TabGeneral", "TabPageSales", "HeaderGroup". ' +
-                  'Use get_form_info(formName, searchControl="General") to find the exact name.'
+                  'Use get_object_info(objectType="form", name=formName, options={searchControl:"General"}) to find the exact name.'
               },
               controlDataSource: {
                 type: 'string',
@@ -908,7 +881,7 @@ Extensions: objectName="BaseObject.PrefixExtension" (e.g. "CustTable.ContosoExte
         },
         {
           name: 'get_method_source',
-          description: 'Get the full X++ source code of a specific method. Only call for methods confirmed to exist via get_class_info — never guess method names.',
+          description: 'Get the full X++ source code of a specific method. Only call for methods confirmed to exist via get_object_info(objectType="class", ...) or get_method_signature — never guess method names.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -925,151 +898,26 @@ Extensions: objectName="BaseObject.PrefixExtension" (e.g. "CustTable.ContosoExte
           },
         },
         {
-          name: 'get_form_info',
-          description: 'Get form structure: datasources, control hierarchy, methods, properties. Use searchControl parameter for fast control name lookup (e.g. searchControl="General" to find tab names). Retry with filePath if disk-read warning occurs.',
+          name: 'get_object_info',
+          description: 'Read one D365FO object\'s metadata. Pick the kind via objectType: class, table, form, query, view, enum, edt, report, data-entity, menu-item, service, map, config-key, security-policy, macro. Type-specific flags go in options, e.g. {"includeRdl":true} (report), {"searchControl":"General"} (form), {"compact":false} (class), {"filter":"Path"} (macro), {"mode":"hierarchy"} (edt). For 2+ objects use batch_get_info. Replaces the former get_<type>_info tools.',
           inputSchema: {
             type: 'object',
             properties: {
-              formName: {
+              objectType: {
                 type: 'string',
-                description: 'Name of the form (e.g., SalesTable, CustTable, InventTable)'
+                enum: ['class', 'table', 'form', 'query', 'view', 'enum', 'edt', 'report', 'data-entity', 'menu-item', 'service', 'map', 'config-key', 'security-policy', 'macro'],
+                description: 'Kind of object to read',
               },
-              filePath: {
+              name: {
                 type: 'string',
-                description:
-                  'Absolute path to the form XML \u2014 pass the exact path from a "could not be read from disk" warning; ' +
-                  'bypasses the DB path lookup.',
+                description: 'Exact object name (use search/batch_search first if unsure)',
               },
-              searchControl: {
-                type: 'string',
-                description: 'Case-insensitive substring to search for in control names. ' +
-                  'Returns matching controls with path, parent name, and children. ' +
-                  'Use this to find exact tab/group names for form extensions. ' +
-                  'NEVER use PowerShell to search form XML \u2014 use this instead.',
-              },
-              includeWorkspace: {
-                type: 'boolean',
-                description: 'Whether to include workspace files in search',
-                default: false
-              },
-              workspacePath: {
-                type: 'string',
-                description: 'Optional workspace path to search local files'
+              options: {
+                type: 'object',
+                description: 'Optional type-specific flags forwarded to the reader (e.g. includeRdl, includeFields, searchControl, compact, includeOperations, filter, mode, modelName).',
               },
             },
-            required: ['formName'],
-          },
-        },
-        {
-          name: 'get_query_info',
-          description: 'Get query structure: datasources, joins, ranges, field lists, sorting. Essential for understanding queries used by forms, reports, and data entities.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              queryName: {
-                type: 'string',
-                description: 'Name of the query (e.g., CustTransOpenQuery, InventTransQuery)'
-              },
-              includeWorkspace: {
-                type: 'boolean',
-                description: 'Whether to include workspace files in search',
-                default: false
-              },
-              workspacePath: {
-                type: 'string',
-                description: 'Optional workspace path to search local files'
-              },
-            },
-            required: ['queryName'],
-          },
-        },
-        {
-          name: 'get_view_info',
-          description: 'Get view or data entity structure: mapped fields, data sources, computed columns, relations, OData/DMF configuration. Use get_data_entity_info for OData-specific metadata.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              viewName: {
-                type: 'string',
-                description: 'Name of the view or data entity (e.g., GeneralJournalAccountEntryView, CustInvoiceJourView)'
-              },
-              includeWorkspace: {
-                type: 'boolean',
-                description: 'Whether to include workspace files in search',
-                default: false
-              },
-              workspacePath: {
-                type: 'string',
-                description: 'Optional workspace path to search local files'
-              },
-            },
-            required: ['viewName'],
-          },
-        },
-        {
-          name: 'get_enum_info',
-          description: 'Get enum definition: all values with names, integer values, and labels. Use for understanding available options before writing code or extending enums.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              enumName: {
-                type: 'string',
-                description: 'Name of the enum (e.g., CustAccountType, SalesStatus, NoYes)'
-              },
-            },
-            required: ['enumName'],
-          },
-        },
-        {
-          name: 'get_edt_info',
-          description: 'Get EDT definition: base type, extends, reference table, labels, string size. EDT names are globally unique — omit modelName if lookup fails. Use mode="hierarchy" for ancestor chain and field usages.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              edtName: {
-                type: 'string',
-                description: 'Name of the Extended Data Type (EDT)'
-              },
-              modelName: {
-                type: 'string',
-                description: 'Model name (optional). CAUTION: If EDT not found with specific modelName, omit this and retry - EDT names are globally unique'
-              },
-              mode: {
-                type: 'string',
-                enum: ['standard', 'hierarchy'],
-                description: 'standard=normal EDT details (default), hierarchy=show full ancestor chain + direct children + field usages',
-                default: 'standard',
-              },
-            },
-            required: ['edtName'],
-          },
-        },
-        {
-          name: 'get_report_info',
-          description: 'Read AxReport XML: datasets, fields, designs, RDL summary. Use includeRdl=true for full RDL content. Use instead of PowerShell when studying existing SSRS reports.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              reportName: {
-                type: 'string',
-                description: 'Name of the AxReport object (e.g. "InventValue", "ContosoInventByZone")',
-              },
-              modelName: {
-                type: 'string',
-                description: 'Model name — auto-detected from .mcp.json if not provided',
-              },
-              includeFields: {
-                type: 'boolean',
-                description: 'Include AxReportDataSetField entries (default: true)',
-                default: true,
-              },
-              includeRdl: {
-                type: 'boolean',
-                description: 'Include full embedded RDL content — can be large (default: false; use true only when you need to read/modify the RDL)',
-                default: false,
-              },
-            },
-            required: ['reportName'],
+            required: ['objectType', 'name'],
           },
         },
         {
@@ -1578,23 +1426,6 @@ Extensions: objectName="BaseObject.PrefixExtension" (e.g. "CustTable.ContosoExte
         },
       },
       {
-        name: 'get_menu_item_info',
-        description: 'Get details for a D365FO menu item including target object and full security chain (privilege → duty → role).',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'Name of the menu item' },
-            itemType: {
-              type: 'string',
-              enum: ['display', 'action', 'output', 'any'],
-              description: 'Menu item type filter (default: any)',
-              default: 'any',
-            },
-          },
-          required: ['name'],
-        },
-      },
-      {
         name: 'find_coc_extensions',
         description: 'Find all Chain of Command (CoC) extensions and event handler subscriptions for a D365FO class or table. Use before writing a CoC extension to check for conflicts.',
         inputSchema: {
@@ -1625,17 +1456,6 @@ Extensions: objectName="BaseObject.PrefixExtension" (e.g. "CustTable.ContosoExte
             },
           },
           required: ['tableName'],
-        },
-      },
-      {
-        name: 'get_data_entity_info',
-        description: 'Get D365FO data entity metadata: OData settings, DMF configuration, staging table, data sources, and keys. Use instead of get_view_info for OData/DMF work.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            entityName: { type: 'string', description: 'Name of the data entity (AxDataEntityView name)' },
-          },
-          required: ['entityName'],
         },
       },
       {
@@ -1917,7 +1737,7 @@ Extensions: objectName="BaseObject.PrefixExtension" (e.g. "CustTable.ContosoExte
       {
         name: 'review_workspace_changes',
         description: 'Code review of uncommitted X++ changes (git diff HEAD): BP violations, missing labels, CoC patterns. ' +
-          'Windows/local mode only. NOT for verifying writes (use verify_d365fo_project + get_class_info instead). ' +
+          'Windows/local mode only. NOT for verifying writes (use verify_d365fo_project + get_object_info instead). ' +
           'If the diff looks truncated, do NOT read .xml/.xpp via built-in tools — proceed with the visible portion or narrow the scope.',
         inputSchema: {
           type: 'object',
@@ -2156,12 +1976,13 @@ Extensions: objectName="BaseObject.PrefixExtension" (e.g. "CustTable.ContosoExte
       annotations: TOOL_ANNOTATIONS[t.name],
     })) as typeof allTools.tools;
 
-    // Apply server mode filter
+    // Apply server mode filter. ALWAYS_TOOLS bypass the partition and stay
+    // published in every mode.
     if (SERVER_MODE === 'read-only') {
-      allTools.tools = allTools.tools.filter(t => !LOCAL_TOOLS.has(t.name));
+      allTools.tools = allTools.tools.filter(t => !LOCAL_TOOLS.has(t.name) || ALWAYS_TOOLS.has(t.name));
       console.error(`[MCP Server] Tool list filtered for read-only mode: ${allTools.tools.length} tools (local tools excluded)`);
     } else if (SERVER_MODE === 'write-only') {
-      allTools.tools = allTools.tools.filter(t => LOCAL_TOOLS.has(t.name));
+      allTools.tools = allTools.tools.filter(t => LOCAL_TOOLS.has(t.name) || ALWAYS_TOOLS.has(t.name));
       console.error(`[MCP Server] Tool list filtered for write-only mode: ${allTools.tools.length} tools (${Array.from(LOCAL_TOOLS).join(', ')})`);
     } else {
       console.error(`[MCP Server] Tool list in full mode: ${allTools.tools.length} tools (no filtering)`);

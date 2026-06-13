@@ -18,7 +18,7 @@ For D365FO and X++ work, **always use `d365fo-mcp-tools`** — never semantic co
 | File / task | Required tool |
 |-------------|--------------|
 | .xpp, .xml, .rnrproj, .label.txt | `d365fo-mcp-tools` only |
-| X++ symbol lookup (class/table/method/enum/EDT) | `d365fo-mcp-tools` only (`search`, `get_class_info`, `get_table_info`, …) |
+| X++ symbol lookup (class/table/method/enum/EDT) | `d365fo-mcp-tools` only (`search`, `get_object_info`, …) |
 | .cs, .json, .yml, .md, .config | Built-in tools OK |
 | General codebase search (non-D365FO) | Other connected tools OK |
 
@@ -43,7 +43,7 @@ Call `get_workspace_info()` before doing anything with D365FO objects.
 | Create D365FO object | `create_d365fo_file` (never built-in file tools) |
 | Edit existing object | Describe change + confirm in chat, then `modify_d365fo_file` (applies immediately) |
 | Search objects | `search()` / `batch_search()` |
-| Read class/table/form | `get_class_info` / `get_table_info` / `get_form_info` — 2+ known names: `batch_get_info(objects[])` |
+| Read any object | `get_object_info(objectType, name, options?)` — objectType ∈ class/table/form/query/view/enum/edt/report/data-entity/menu-item/service/map/config-key/security-policy/macro. 2+ known names: `batch_get_info(objects[])` |
 | Validate before write | `resolve_references(code)` + `validate_xpp(code)` |
 | X++ rules & patterns | `get_xpp_knowledge(topic)` |
 | Build/BP/Sync | `build_d365fo_project` / `run_bp_check` / `trigger_db_sync` |

@@ -243,7 +243,7 @@ const STRATEGY_RULES: readonly StrategyRule[] = [
       { mechanism: 'New standalone form', when: 'The change is too large for an extension (new document type, new workspace)' },
     ],
     nextSteps: [
-      'get_form_info("FormName", searchControl="General") — find exact control names and hierarchy',
+      'get_object_info(objectType="form", name="FormName", options={searchControl:"General"}) — find exact control names and hierarchy',
       'analyze_extension_points("FormName") — check form extension points',
       'create_d365fo_file(objectType="form-extension") — create the extension',
     ],
@@ -276,7 +276,7 @@ const STRATEGY_RULES: readonly StrategyRule[] = [
       { mechanism: 'Report DP extension', when: 'Adding fields to an existing SSRS temp table via table extension + DP CoC' },
     ],
     nextSteps: [
-      'get_report_info("ReportName") — inspect existing report structure',
+      'get_object_info(objectType="report", name="ReportName") — inspect existing report structure',
       'get_xpp_knowledge("ssrs-reports") — patterns for SSRS',
       'generate_smart_report(name="MyReport") — generate full SSRS stack',
     ],

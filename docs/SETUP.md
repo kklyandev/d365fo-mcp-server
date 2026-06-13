@@ -100,7 +100,7 @@ npm run build
 }
 ```
 
-The local companion also exposes bridge-backed read tools (`get_class_info`, `get_form_info`, …), so freshly created objects are immediately readable without waiting for an Azure index refresh.
+The local companion also exposes the bridge-backed reader `get_object_info` (and `get_method_source`/`get_method_signature`), so freshly created objects are immediately readable without waiting for an Azure index refresh.
 
 **Update:** `git pull && npm install && npm run build` whenever a new version ships.
 
@@ -243,4 +243,4 @@ The server searches from the working directory up to 5 parent levels.
 
 ## Next steps
 
-[MCP_CONFIG.md](MCP_CONFIG.md) — every option · [MCP_TOOLS.md](MCP_TOOLS.md) — all 61 tools · [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) — real workflows · [CUSTOM_EXTENSIONS.md](CUSTOM_EXTENSIONS.md) — ISV/multi-model · [PIPELINES.md](PIPELINES.md) — automated index refresh
+[MCP_CONFIG.md](MCP_CONFIG.md) — every option · [MCP_TOOLS.md](MCP_TOOLS.md) — all 52 tools · [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md) — real workflows · [CUSTOM_EXTENSIONS.md](CUSTOM_EXTENSIONS.md) — ISV/multi-model · [PIPELINES.md](PIPELINES.md) — automated index refresh

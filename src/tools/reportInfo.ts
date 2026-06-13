@@ -86,7 +86,7 @@ export async function getReportInfoTool(request: CallToolRequest, context: XppSe
       const containment = await assertWritePathAllowed(explicitFilePath);
       if (!containment.ok) {
         return {
-          content: [{ type: 'text', text: `❌ get_report_info: filePath rejected — ${containment.reason}` }],
+          content: [{ type: 'text', text: `❌ get_object_info(report): filePath rejected — ${containment.reason}` }],
           isError: true,
         };
       }
@@ -101,7 +101,7 @@ export async function getReportInfoTool(request: CallToolRequest, context: XppSe
             const srcContainment = await assertWritePathAllowed(meta.sourcePath);
             if (!srcContainment.ok) {
               return {
-                content: [{ type: 'text', text: `❌ get_report_info: sourcePath rejected — ${srcContainment.reason}` }],
+                content: [{ type: 'text', text: `❌ get_object_info(report): sourcePath rejected — ${srcContainment.reason}` }],
                 isError: true,
               };
             }
@@ -147,7 +147,7 @@ export async function getReportInfoTool(request: CallToolRequest, context: XppSe
         type: 'text',
         text: `❌ Report "${reportName}" not found via bridge.\n\n` +
           `If this is a newly-created report, pass the explicit \`filePath\` parameter:\n` +
-          `  get_report_info(reportName="${reportName}", filePath="<absolute path to .xml>")`,
+          `  get_object_info(objectType="report", name="${reportName}", options={filePath:"<absolute path to .xml>"})`,
       }],
       isError: true,
     };

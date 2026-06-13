@@ -76,7 +76,7 @@ function formatPatternAnalysis(analysis: any): string {
       output += `- ${cls}\n`;
     }
     output += '\n';
-    output += `**Tip:** Use \`get_class_info\` on these classes to see their implementation details.\n`;
+    output += `**Tip:** Use \`get_object_info(objectType="class", name=...)\` on these classes to see their implementation details.\n`;
   }
   
   return output;

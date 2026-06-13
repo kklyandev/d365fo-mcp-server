@@ -570,7 +570,7 @@ MyOperationController::main(new Args());
 
 ## Checking Existing Entities
 \`\`\`
-get_data_entity_info(entityName: "CustCustomerV3Entity")
+get_object_info(objectType: "data-entity", name: "CustCustomerV3Entity")
 \`\`\`
 
 ## Structure Pattern
@@ -619,10 +619,10 @@ private static server str computePartyName()
 - After adding fields, run **Refresh entity list** in Data Management workspace
 - Computed columns must return a valid SQL expression string, not an X++ value
 - Mandatory fields on staging table must have defaults or be mapped from source
-- Use \`get_view_info\` to inspect the current entity's data sources and fields
+- Use \`get_object_info(objectType: "view", name: ...)\` to inspect the current entity's data sources and fields
 
 ## Workflow
-1. \`get_data_entity_info(entityName: "...")\` — check if entity already exists
+1. \`get_object_info(objectType: "data-entity", name: "...")\` — check if entity already exists
 2. \`generate_smart_table\` — for the staging table if needed
 3. \`create_d365fo_file(objectType: "view", ...)\` — create the entity file
 4. After deployment: refresh entity list in Data Management
