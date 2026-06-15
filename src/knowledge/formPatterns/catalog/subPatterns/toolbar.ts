@@ -9,7 +9,8 @@ import type { SubPatternSpec } from '../../types.js';
 
 export const toolbarAndList: SubPatternSpec = {
   id: 'ToolbarAndList',
-  xmlName: 'ToolbarAndList',
+  xmlName: 'ToolbarList',
+  xmlAliases: ['ToolbarAndList'],
   displayName: 'Toolbar and List',
   versions: ['1.1', '1.0'],
   appliesToControlTypes: ['Group', 'TabPage'],
@@ -33,7 +34,8 @@ export const toolbarAndList: SubPatternSpec = {
 
 export const toolbarAndFields: SubPatternSpec = {
   id: 'ToolbarAndFields',
-  xmlName: 'ToolbarAndFields',
+  xmlName: 'ToolbarFields',
+  xmlAliases: ['ToolbarAndFields'],
   displayName: 'Toolbar and Fields',
   versions: ['1.1', '1.0'],
   appliesToControlTypes: ['Group', 'TabPage'],
@@ -65,8 +67,8 @@ export const nestedSimpleListDetails: SubPatternSpec = {
 
 export const toolbarAndListDouble: SubPatternSpec = {
   id: 'ToolbarAndListDouble',
-  xmlName: 'ToolbarAndListDouble',
-  xmlAliases: ['ToolbarAndList2', 'ToolbarAndListsDouble'],
+  xmlName: 'ToolbarListDouble',
+  xmlAliases: ['ToolbarAndListDouble', 'ToolbarAndList2', 'ToolbarAndListsDouble'],
   displayName: 'Toolbar and List - Double',
   versions: ['1.0'],
   appliesToControlTypes: ['Group', 'TabPage'],
@@ -78,7 +80,6 @@ export const toolbarAndListDouble: SubPatternSpec = {
     { id: 'SecondList', controlTypes: ['Grid'], occurrence: 'required', extraChildren: 'any' },
   ],
   extraRootChildren: 'any',
-  notes: ['xmlName to be confirmed by mining.'],
 };
 
 export const listPanel: SubPatternSpec = {

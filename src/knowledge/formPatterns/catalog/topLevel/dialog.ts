@@ -66,7 +66,7 @@ export const dropDialog: FormPatternSpec = {
   xmlName: 'DropDialog',
   variantOf: 'Dialog',
   displayName: 'Drop Dialog',
-  versions: ['1.1', '1.0'],
+  versions: ['1.2', '1.1', '1.0'],
   purpose:
     'Lightweight dialog dropped from a button to gather a small set of inputs (<5 fields) ' +
     'that provide context for an action.',
@@ -84,6 +84,116 @@ export const dropDialog: FormPatternSpec = {
       extraChildren: 'any',
     },
     commitButtons,
+  ],
+  extraRootChildren: 'none',
+};
+
+export const dialogFastTabs: FormPatternSpec = {
+  id: 'DialogFastTabs',
+  xmlName: 'DialogFastTabs',
+  variantOf: 'Dialog',
+  displayName: 'Dialog w/ FastTabs',
+  versions: ['1.2', '1.1', '1.0'],
+  purpose: 'Modal dialog whose content is organized into FastTabs — for dialogs with many fields grouped by topic.',
+  whenToUse: ['Dialog with >5 fields that benefit from FastTab grouping'],
+  whenNotToUse: ['Few flat fields → Dialog - Basic', 'Standard tabs → Dialog w/ Tabs'],
+  referenceForms: [],
+  designProperties: { Style: 'Dialog' },
+  requiresDataSource: 'none',
+  root: [
+    {
+      id: 'FastTabBody',
+      controlTypes: ['Tab'],
+      occurrence: 'required',
+      properties: { Style: 'FastTabs' },
+      extraChildren: 'any',
+    },
+    commitButtons,
+  ],
+  extraRootChildren: 'none',
+};
+
+export const dialogTabs: FormPatternSpec = {
+  id: 'DialogTabs',
+  xmlName: 'DialogTabs',
+  variantOf: 'Dialog',
+  displayName: 'Dialog w/ Tabs',
+  versions: ['1.3', '1.2', '1.1', '1.0'],
+  purpose: 'Modal dialog whose content is organized into standard tabs.',
+  whenToUse: ['Dialog that requires tabbed navigation with standard (non-collapsible) tabs'],
+  whenNotToUse: ['Use FastTabs for most dialogs'],
+  referenceForms: [],
+  designProperties: { Style: 'Dialog' },
+  requiresDataSource: 'none',
+  root: [
+    {
+      id: 'TabBody',
+      controlTypes: ['Tab'],
+      occurrence: 'required',
+      extraChildren: 'any',
+    },
+    commitButtons,
+  ],
+  extraRootChildren: 'none',
+};
+
+export const dialogReadOnly: FormPatternSpec = {
+  id: 'DialogReadOnly',
+  xmlName: 'DialogReadOnly',
+  variantOf: 'Dialog',
+  displayName: 'Dialog - Read Only',
+  versions: ['1.2', '1.1', '1.0'],
+  purpose: 'Read-only modal dialog that presents information without allowing edits — no commit button required.',
+  whenToUse: ['Displaying a summary or details that require user acknowledgment only'],
+  whenNotToUse: ['User needs to enter data → Dialog - Basic'],
+  referenceForms: [],
+  designProperties: { Style: 'Dialog' },
+  requiresDataSource: 'none',
+  root: [dialogBody],
+  extraRootChildren: 'none',
+};
+
+export const dialogDoubleTabs: FormPatternSpec = {
+  id: 'DialogDoubleTabs',
+  xmlName: 'DialogDoubleTabs',
+  variantOf: 'Dialog',
+  displayName: 'Dialog w/ Double Tabs',
+  versions: ['1.3', '1.2', '1.1', '1.0'],
+  purpose: 'Modal dialog with two independent tab controls — typically a header group of tabs and a details group.',
+  whenToUse: ['Dialog content that requires two separate tab groups at the same level'],
+  whenNotToUse: ['Single tab group → Dialog w/ Tabs or Dialog w/ FastTabs'],
+  referenceForms: [],
+  designProperties: { Style: 'Dialog' },
+  requiresDataSource: 'none',
+  root: [
+    { id: 'FirstTabGroup', controlTypes: ['Tab'], occurrence: 'required', extraChildren: 'any' },
+    { id: 'SecondTabGroup', controlTypes: ['Tab'], occurrence: 'required', extraChildren: 'any' },
+    commitButtons,
+  ],
+  extraRootChildren: 'none',
+};
+
+export const dropDialogReadOnly: FormPatternSpec = {
+  id: 'DropDialogReadOnly',
+  xmlName: 'DropDialogReadOnly',
+  variantOf: 'Dialog',
+  displayName: 'Drop Dialog - Read Only',
+  versions: ['1.2', '1.1', '1.0'],
+  purpose: 'Read-only drop dialog anchored to a button — shows summary info without allowing edits.',
+  whenToUse: ['Read-only preview/summary dropped from a button'],
+  whenNotToUse: ['User needs to enter data → Drop Dialog'],
+  referenceForms: [],
+  designProperties: { Style: 'DropDialog' },
+  requiresDataSource: 'none',
+  root: [
+    {
+      id: 'DialogBody',
+      controlTypes: ['Group'],
+      occurrence: 'required',
+      requiresSubPattern: true,
+      allowedSubPatterns: ['FieldsFieldGroups', 'TabularFields'],
+      extraChildren: 'any',
+    },
   ],
   extraRootChildren: 'none',
 };

@@ -65,8 +65,8 @@ export const fillText: SubPatternSpec = {
 
 export const horizontalFieldsButtonGroup: SubPatternSpec = {
   id: 'HorizontalFieldsButtonGroup',
-  xmlName: 'HorizontalFieldsButtonGroup',
-  xmlAliases: ['HorizontalFieldsAndButtonGroup', 'FieldsAndButtonGroup'],
+  xmlName: 'HorizontalFieldsButtonsGroup',
+  xmlAliases: ['HorizontalFieldsButtonGroup', 'HorizontalFieldsAndButtonGroup', 'FieldsAndButtonGroup'],
   displayName: 'Horizontal Fields and Button Group',
   versions: ['1.0'],
   appliesToControlTypes: ['Group'],
@@ -74,7 +74,6 @@ export const horizontalFieldsButtonGroup: SubPatternSpec = {
   referenceForms: ['SalesTable (GroupHeaderAddressHeaderOverview)'],
   root: [],
   extraRootChildren: 'any',
-  notes: ['xmlName to be confirmed by mining.'],
 };
 
 export const imagePreview: SubPatternSpec = {
@@ -98,4 +97,88 @@ export const fieldsSubPatterns: SubPatternSpec[] = [
   fillText,
   horizontalFieldsButtonGroup,
   imagePreview,
+];
+
+// ── Additional mined sub-patterns ─────────────────────────────────────────────
+
+/** Sentinel for containers with no standard sub-pattern. Suppresses FP001. */
+export const customSubPattern: SubPatternSpec = {
+  id: 'Custom',
+  xmlName: 'Custom',
+  displayName: 'Custom (no standard sub-pattern)',
+  versions: [],
+  appliesToControlTypes: ['Group', 'TabPage', '*'],
+  purpose: 'Container that does not follow a Microsoft-defined sub-pattern.',
+  root: [],
+  extraRootChildren: 'any',
+};
+
+export const businessCardThreeFields: SubPatternSpec = {
+  id: 'BusinessCardThreeFields',
+  xmlName: 'BusinessCardThreeFields',
+  displayName: 'Business Card - Three Fields',
+  versions: ['1.0'],
+  appliesToControlTypes: ['Group', 'TabPage'],
+  purpose: 'Compact card layout displaying three identifying fields for a record.',
+  referenceForms: [],
+  root: [],
+  extraRootChildren: 'any',
+};
+
+export const businessCardStatus: SubPatternSpec = {
+  id: 'BusinessCardStatus',
+  xmlName: 'BusinessCardStatus',
+  displayName: 'Business Card - Status',
+  versions: ['1.0'],
+  appliesToControlTypes: ['Group', 'TabPage'],
+  purpose: 'Card layout highlighting a status indicator alongside identifying fields.',
+  referenceForms: [],
+  root: [],
+  extraRootChildren: 'any',
+};
+
+export const businessCardIndicator: SubPatternSpec = {
+  id: 'BusinessCardIndicator',
+  xmlName: 'BusinessCardIndicator',
+  displayName: 'Business Card - Indicator',
+  versions: ['1.0'],
+  appliesToControlTypes: ['Group', 'TabPage'],
+  purpose: 'Card layout with a graphical indicator (e.g. traffic light) alongside fields.',
+  referenceForms: [],
+  root: [],
+  extraRootChildren: 'any',
+};
+
+export const tabPageTabularFields: SubPatternSpec = {
+  id: 'TabPageTabularFields',
+  xmlName: 'TabPageTabularFields',
+  displayName: 'Tab Page - Tabular Fields',
+  versions: ['1.0'],
+  appliesToControlTypes: ['TabPage'],
+  purpose: 'Tab page containing a structured tabular layout of fields (similar to TabularFields but scoped to a tab page).',
+  referenceForms: [],
+  root: [],
+  extraRootChildren: 'any',
+};
+
+export const entityHeader: SubPatternSpec = {
+  id: 'EntityHeader',
+  xmlName: 'EntityHeader',
+  displayName: 'Entity Header',
+  versions: ['1.0'],
+  appliesToControlTypes: ['Group', 'TabPage'],
+  purpose: 'Header area of an entity form showing key identifying fields above the FastTabs.',
+  referenceForms: [],
+  root: [],
+  extraRootChildren: 'any',
+};
+
+export const allFieldsSubPatterns: SubPatternSpec[] = [
+  ...fieldsSubPatterns,
+  customSubPattern,
+  businessCardThreeFields,
+  businessCardStatus,
+  businessCardIndicator,
+  tabPageTabularFields,
+  entityHeader,
 ];

@@ -104,32 +104,32 @@ export function crossCheckPatternCatalog(db: ReadDbLike): CrossCheckReport | nul
 
 export function formatCrossCheckReport(report: CrossCheckReport): string {
   const lines: string[] = [];
-  lines.push(`🧭 Form pattern catalog cross-check (${report.minedFormCount} patterned forms mined):`);
+  lines.push(`Form pattern catalog cross-check (${report.minedFormCount} patterned forms mined):`);
 
   if (report.catalogGaps.length === 0 && report.subPatternGaps.length === 0 && report.versionDrift.length === 0) {
-    lines.push('   ✅ All mined patterns and versions are covered by the catalog.');
+    lines.push('   OK  All mined patterns and versions are covered by the catalog.');
   }
   if (report.catalogGaps.length > 0) {
-    lines.push(`   ⚠️ Patterns missing from the catalog (top ${Math.min(10, report.catalogGaps.length)}):`);
+    lines.push(`   [!] Patterns missing from the catalog (top ${Math.min(10, report.catalogGaps.length)}):`);
     for (const gap of report.catalogGaps.slice(0, 10)) {
       lines.push(`      - ${gap.pattern} (${gap.forms} forms)`);
     }
   }
   if (report.subPatternGaps.length > 0) {
-    lines.push(`   ⚠️ Sub-patterns missing from the catalog (top ${Math.min(10, report.subPatternGaps.length)}):`);
+    lines.push(`   [!] Sub-patterns missing from the catalog (top ${Math.min(10, report.subPatternGaps.length)}):`);
     for (const gap of report.subPatternGaps.slice(0, 10)) {
       lines.push(`      - ${gap.pattern} (${gap.containers} containers)`);
     }
   }
   if (report.versionDrift.length > 0) {
-    lines.push('   ⚠️ Version drift (mined version not in catalog — update versions[] after verifying):');
+    lines.push('   [!] Version drift (mined version not in catalog -- update versions[] after verifying):');
     for (const drift of report.versionDrift.slice(0, 10)) {
       lines.push(`      - ${drift.pattern} v${drift.version} (${drift.forms} forms)`);
     }
   }
   if (report.unusedCatalogEntries.length > 0) {
     lines.push(
-      `   ℹ️ Catalog entries with zero mined usage (possible xmlName mismatch or unused area): ` +
+      `   [i] Catalog entries with zero mined usage (possible xmlName mismatch or unused area): ` +
       report.unusedCatalogEntries.join(', '),
     );
   }

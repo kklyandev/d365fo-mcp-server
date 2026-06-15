@@ -55,3 +55,43 @@ export const tableOfContents: FormPatternSpec = {
     'Override form init() + datasource executeQuery() when sections load related tables.',
   ],
 };
+
+export const advancedSelection: FormPatternSpec = {
+  id: 'AdvancedSelection',
+  xmlName: 'AdvancedSelection',
+  displayName: 'Advanced Selection',
+  versions: ['1.1', '1.0'],
+  purpose:
+    'Multi-select dialog allowing users to choose from a list with optional filtering — the "Add" ' +
+    'dialog pattern used when selecting multiple records (e.g. adding items to a group).',
+  whenToUse: [
+    'Multi-select scenarios where users pick several records from a list before confirming',
+    '"Add/Remove" style selection dialogs',
+  ],
+  whenNotToUse: ['Single-value pick → Lookup patterns'],
+  referenceForms: [],
+  requiresDataSource: 'one',
+  root: [
+    {
+      id: 'FilterGroup',
+      controlTypes: ['Group'],
+      occurrence: 'optional',
+      requiresSubPattern: true,
+      allowedSubPatterns: ['CustomAndQuickFilters', 'CustomFilters'],
+      extraChildren: 'any',
+    },
+    {
+      id: 'SelectionGrid',
+      controlTypes: ['Grid'],
+      occurrence: 'required',
+      extraChildren: 'any',
+    },
+    {
+      id: 'CommitButtonGroup',
+      controlTypes: ['ButtonGroup'],
+      occurrence: 'required',
+      extraChildren: 'any',
+    },
+  ],
+  extraRootChildren: 'none',
+};

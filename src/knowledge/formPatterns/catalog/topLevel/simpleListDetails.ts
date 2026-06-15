@@ -31,8 +31,9 @@ const detailsPanel: NodeSpec = {
 export const simpleListDetailsListGrid: FormPatternSpec = {
   id: 'SimpleListDetails',
   xmlName: 'SimpleListDetails',
+  xmlAliases: ['SimpleListDetails-Grid'],
   displayName: 'Simple List & Details - List Grid',
-  versions: ['1.3', '1.2', '1.1', '1.0'],
+  versions: ['1.4', '1.3', '1.2', '1.1', '1.0'],
   purpose:
     'Maintains data for entities of medium complexity: a left navigation list (2-3 fields) ' +
     'plus a right details panel. The default Simple List & Details variant.',
@@ -58,5 +59,40 @@ export const simpleListDetailsListGrid: FormPatternSpec = {
   notes: [
     'Tabular Grid and Tree variants share the SimpleListDetails xmlName in metadata — ' +
       'the variant is determined by the list panel content (tabular grid / tree control).',
+    'Mining confirmed: newer forms serialize as SimpleListDetails-Grid; both forms resolve to this entry.',
   ],
 };
+
+export const simpleListDetailsTree: FormPatternSpec = {
+  id: 'SimpleListDetailsTree',
+  xmlName: 'SimpleListDetails-Tree',
+  variantOf: 'SimpleListDetails',
+  displayName: 'Simple List & Details - Tree',
+  versions: ['1.3', '1.2', '1.1', '1.0'],
+  purpose:
+    'Simple List & Details variant where the left navigation panel contains a tree control ' +
+    'instead of a flat grid (for hierarchical entities).',
+  whenToUse: ['Hierarchical entity where records are organized in a tree (e.g. category hierarchies)'],
+  whenNotToUse: ['Flat entity list → Simple List & Details - List Grid'],
+  referenceForms: ['EcoResCategoryHierarchy'],
+  designProperties: { Style: 'SimpleListDetails' },
+  requiresDataSource: 'one',
+  root: [
+    actionPane('required'),
+    {
+      id: 'NavigationList',
+      controlTypes: ['Group'],
+      occurrence: 'required',
+      nameHint: 'TreeContainer',
+      properties: { Style: 'SidePanel' },
+      extraChildren: 'any',
+    },
+    detailsPanel,
+  ],
+  extraRootChildren: 'none',
+};
+
+export const simpleListDetailsPatterns: FormPatternSpec[] = [
+  simpleListDetailsListGrid,
+  simpleListDetailsTree,
+];

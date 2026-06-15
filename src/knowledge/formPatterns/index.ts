@@ -13,26 +13,28 @@ import type {
 } from './types.js';
 
 import { simpleList } from './catalog/topLevel/simpleList.js';
-import { simpleListDetailsListGrid } from './catalog/topLevel/simpleListDetails.js';
+import { simpleListDetailsListGrid, simpleListDetailsTree } from './catalog/topLevel/simpleListDetails.js';
 import { detailsMaster, detailsMasterTabs } from './catalog/topLevel/detailsMaster.js';
 import { detailsTransaction } from './catalog/topLevel/detailsTransaction.js';
-import { dialogBasic, dropDialog } from './catalog/topLevel/dialog.js';
-import { tableOfContents } from './catalog/topLevel/tableOfContents.js';
-import { lookupBasic } from './catalog/topLevel/lookup.js';
+import { dialogBasic, dropDialog, dialogFastTabs, dialogTabs, dialogReadOnly, dialogDoubleTabs, dropDialogReadOnly } from './catalog/topLevel/dialog.js';
+import { tableOfContents, advancedSelection } from './catalog/topLevel/tableOfContents.js';
+import { lookupBasic, lookupGridOnly, lookupTab, lookupPreview } from './catalog/topLevel/lookup.js';
 import { listPage } from './catalog/topLevel/listPage.js';
 import {
   workspacePanorama,
   workspaceOperational,
   formPartSectionList,
+  formPartSectionListDouble,
   hubPartChart,
+  hubPartGrid,
 } from './catalog/topLevel/workspace.js';
 import { factBoxPatterns } from './catalog/topLevel/factBox.js';
-import { simpleDetailsPatterns } from './catalog/topLevel/simpleDetails.js';
+import { simpleDetailsPatterns, customPattern } from './catalog/topLevel/simpleDetails.js';
 import { taskPatterns } from './catalog/topLevel/task.js';
 import { wizard } from './catalog/topLevel/wizard.js';
 
 import { customFilterSubPatterns } from './catalog/subPatterns/customFilters.js';
-import { fieldsSubPatterns } from './catalog/subPatterns/fields.js';
+import { allFieldsSubPatterns } from './catalog/subPatterns/fields.js';
 import { panelSubPatterns } from './catalog/subPatterns/panels.js';
 import { toolbarSubPatterns } from './catalog/subPatterns/toolbar.js';
 import { workspaceSectionSubPatterns } from './catalog/subPatterns/workspaceSections.js';
@@ -43,26 +45,39 @@ export const FORM_PATTERN_CATALOG: FormPatternCatalog = {
   patterns: [
     simpleList,
     simpleListDetailsListGrid,
+    simpleListDetailsTree,
     detailsMaster,
     detailsMasterTabs,
     detailsTransaction,
     dialogBasic,
     dropDialog,
+    dialogFastTabs,
+    dialogTabs,
+    dialogReadOnly,
+    dialogDoubleTabs,
+    dropDialogReadOnly,
     tableOfContents,
+    advancedSelection,
     lookupBasic,
+    lookupGridOnly,
+    lookupTab,
+    lookupPreview,
     listPage,
     workspacePanorama,
     workspaceOperational,
     formPartSectionList,
+    formPartSectionListDouble,
     hubPartChart,
+    hubPartGrid,
     ...factBoxPatterns,
     ...simpleDetailsPatterns,
+    customPattern,
     ...taskPatterns,
     wizard,
   ],
   subPatterns: [
     ...customFilterSubPatterns,
-    ...fieldsSubPatterns,
+    ...allFieldsSubPatterns,
     ...panelSubPatterns,
     ...toolbarSubPatterns,
     ...workspaceSectionSubPatterns,

@@ -13,8 +13,9 @@ import { actionPane } from './common.js';
 
 export const workspacePanorama: FormPatternSpec = {
   id: 'Workspace',
-  xmlName: 'Workspace',
-  displayName: 'Workspace (Panorama)',
+  xmlName: 'TabbedWorkspace',
+  xmlAliases: ['Workspace'],
+  displayName: 'Workspace (Tabbed Panorama)',
   versions: ['1.0'],
   purpose:
     'Activity overview page: a horizontally scrolling panorama with a tile/KPI summary section ' +
@@ -61,7 +62,7 @@ export const formPartSectionList: FormPatternSpec = {
   xmlName: 'FormPartSectionList',
   xmlAliases: ['SectionList', 'WorkspaceSectionList'],
   displayName: 'Form Part Section List',
-  versions: ['1.1', '1.0'],
+  versions: ['1.2', '1.1', '1.0'],
   purpose:
     'A list shown in a workspace section — modeled as a separate form and rendered in the ' +
     'workspace via a Form Part control.',
@@ -77,7 +78,37 @@ export const formPartSectionList: FormPatternSpec = {
     },
   ],
   extraRootChildren: 'any',
-  notes: ['xmlName to be confirmed by mining. Variant "Section List - Double" adds a secondary hidden list.'],
+  notes: ['Variant "Section List - Double" adds a secondary hidden list.'],
+};
+
+export const formPartSectionListDouble: FormPatternSpec = {
+  id: 'FormPartSectionListDouble',
+  xmlName: 'FormPartSectionListDouble',
+  xmlAliases: ['SectionListDouble', 'WorkspaceSectionListDouble'],
+  variantOf: 'FormPartSectionList',
+  displayName: 'Form Part Section List - Double',
+  versions: ['1.2', '1.1', '1.0'],
+  purpose:
+    'A workspace section list with two lists — the primary visible list and a secondary hidden ' +
+    'list that becomes visible on toggle (e.g. "My" vs "All" tasks).',
+  whenToUse: ['Work-queue section that offers two list views the user can switch between'],
+  referenceForms: [],
+  requiresDataSource: 'one',
+  root: [
+    {
+      id: 'PrimaryList',
+      controlTypes: ['Group', 'Grid'],
+      occurrence: 'required',
+      extraChildren: 'any',
+    },
+    {
+      id: 'SecondaryList',
+      controlTypes: ['Group', 'Grid'],
+      occurrence: 'optional',
+      extraChildren: 'any',
+    },
+  ],
+  extraRootChildren: 'any',
 };
 
 export const hubPartChart: FormPatternSpec = {
@@ -94,7 +125,22 @@ export const hubPartChart: FormPatternSpec = {
     { id: 'Chart', controlTypes: ['*'], occurrence: 'required' },
   ],
   extraRootChildren: 'any',
-  notes: ['xmlName to be confirmed by mining.'],
+};
+
+export const hubPartGrid: FormPatternSpec = {
+  id: 'HubPartGrid',
+  xmlName: 'HubPartGrid',
+  xmlAliases: ['SectionGrid', 'WorkspaceSectionGrid'],
+  displayName: 'Hub Part Grid',
+  versions: ['1.0'],
+  purpose: 'A grid shown in a workspace section via a Form Part control.',
+  whenToUse: ['Grid/list section of an Operational Workspace rendered as a Form Part'],
+  referenceForms: [],
+  requiresDataSource: 'one',
+  root: [
+    { id: 'Grid', controlTypes: ['Grid'], occurrence: 'required', extraChildren: 'any' },
+  ],
+  extraRootChildren: 'any',
 };
 
 export const workspaceOperational: FormPatternSpec = {
@@ -119,5 +165,4 @@ export const workspaceOperational: FormPatternSpec = {
     },
   ],
   extraRootChildren: 'any',
-  notes: ['xmlName/versions to be confirmed by mining (Phase 3 cross-check).'],
 };

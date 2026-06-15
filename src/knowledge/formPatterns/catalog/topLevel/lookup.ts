@@ -34,3 +34,68 @@ export const lookupBasic: FormPatternSpec = {
     'Use SysTableLookup/selectMode patterns to return the picked value.',
   ],
 };
+
+export const lookupGridOnly: FormPatternSpec = {
+  id: 'LookupGridOnly',
+  xmlName: 'LookupGridOnly',
+  variantOf: 'Lookup',
+  displayName: 'Lookup - Grid Only',
+  versions: ['1.2', '1.1', '1.0'],
+  purpose: 'Simplified lookup with only a grid (no filter bar or extra buttons) — the most common lookup variant.',
+  whenToUse: ['Auto-lookup replacement where no filter bar is needed'],
+  whenNotToUse: ['Filter bar needed → Lookup - Basic'],
+  referenceForms: [],
+  designProperties: { Style: 'Lookup' },
+  requiresDataSource: 'one',
+  root: [mainGrid('required')],
+  extraRootChildren: 'any',
+};
+
+export const lookupTab: FormPatternSpec = {
+  id: 'LookupTab',
+  xmlName: 'LookupTab',
+  variantOf: 'Lookup',
+  displayName: 'Lookup w/ Tabs',
+  versions: ['1.2', '1.1', '1.0'],
+  purpose: 'Lookup with multiple tab pages offering alternative views (e.g. grid view + tree view) for picking a value.',
+  whenToUse: ['Lookup that offers multiple selection modes or views in tabs'],
+  whenNotToUse: ['Single grid view → Lookup - Grid Only'],
+  referenceForms: [],
+  designProperties: { Style: 'Lookup' },
+  requiresDataSource: 'one',
+  root: [
+    filterGroup('optional'),
+    {
+      id: 'LookupTabs',
+      controlTypes: ['Tab'],
+      occurrence: 'required',
+      extraChildren: 'any',
+    },
+  ],
+  extraRootChildren: 'any',
+};
+
+export const lookupPreview: FormPatternSpec = {
+  id: 'LookupPreview',
+  xmlName: 'LookupPreview',
+  variantOf: 'Lookup',
+  displayName: 'Lookup w/ Preview',
+  versions: ['1.2', '1.1', '1.0'],
+  purpose: 'Lookup with a grid on the left and a preview/details pane on the right for the selected record.',
+  whenToUse: ['Lookup where users need to see record details before confirming their selection'],
+  whenNotToUse: ['No preview needed → Lookup - Grid Only'],
+  referenceForms: [],
+  designProperties: { Style: 'Lookup' },
+  requiresDataSource: 'one',
+  root: [
+    filterGroup('optional'),
+    mainGrid('required'),
+    {
+      id: 'PreviewGroup',
+      controlTypes: ['Group'],
+      occurrence: 'required',
+      extraChildren: 'any',
+    },
+  ],
+  extraRootChildren: 'any',
+};
