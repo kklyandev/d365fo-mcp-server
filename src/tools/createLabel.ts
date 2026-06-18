@@ -21,6 +21,7 @@ import * as path from 'path';
 import { getConfigManager } from '../utils/configManager.js';
 import { PackageResolver } from '../utils/packageResolver.js';
 import { detectEol } from '../utils/eolUtils.js';
+import { isExtensionLabelFile } from '../metadata/labelParser.js';
 import { ProjectFileManager, ProjectFileFinder } from './createD365File.js';
 
 // UTF-8 BOM (Byte Order Mark)
@@ -110,6 +111,16 @@ const CreateLabelArgsSchema = z.object({
     .describe(
       'If true and the AxLabelFile does not exist yet, create it with the provided translations. ' +
         'Set to false (default) to fail fast when the label file is missing.',
+    ),
+  allowExtensionLabelFile: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'Escape hatch to allow writing into a label file EXTENSION (a labelFileId ' +
+        'carrying the "_Extension" marker). Off by default: new labels belong in the ' +
+        "model's own ORIGINAL label file, not in an extension. Only set true if you " +
+        'genuinely intend to add labels to an extension label file.',
     ),
   updateIndex: z
     .boolean()
@@ -276,6 +287,32 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
       createLabelFileIfMissing,
       updateIndex,
     } = args;
+
+    // Guard: never create new labels in a label file EXTENSION (e.g. "Base_Extension").
+    // Extensions only extend a base label file owned by another model — new labels
+    // belong in the model's own ORIGINAL label file. Writing here is what makes clients
+    // wrongly prefix the label IDs. Opt out explicitly with allowExtensionLabelFile=true.
+    if (isExtensionLabelFile(labelFileId) && !args.allowExtensionLabelFile) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              `❌ "${labelFileId}" is a label file EXTENSION, not an original label file.\n\n` +
+              `New labels must be created in the model's own (original) label file — ` +
+              `extensions (…_Extension…) only extend a base label file owned by another model, ` +
+              `and adding new labels there leads to wrongly prefixed label IDs.\n\n` +
+              `➡️  Use the model's original label file instead. List the candidates with:\n` +
+              `      labels(action="info", model="${model}")\n` +
+              `   then re-run with that original labelFileId, e.g.:\n` +
+              `      labels(action="create", labelId="${labelId}", labelFileId="<OriginalLabelFileId>", model="${model}", ...)\n\n` +
+              `If you really must add labels to this extension, pass allowExtensionLabelFile=true.\n` +
+              `Nothing was written.`,
+          },
+        ],
+        isError: true,
+      };
+    }
 
     // Resolve sortLabels: explicit param → LABEL_SORT_ORDER env → true (alphabetical)
     const envSortOrder = process.env.LABEL_SORT_ORDER?.toLowerCase();

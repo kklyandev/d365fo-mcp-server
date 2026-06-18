@@ -876,7 +876,7 @@ Model from .mcp.json; prefix auto-applied from EXTENSION_PREFIX. Classes: member
             'Unified label operations — read and write. Choose an `action`:\n' +
             '• search → full-text query across indexed label files (read). Always run before action=create.\n' +
             '• info → all language translations for a labelId, OR list available label files when labelId is omitted. Pass labelFileId (without labelId) to get that label file plus the physical .label.txt path per language (read).\n' +
-            '• create → add a new label to an AxLabelFile, write into every language .label.txt, create XML descriptors if missing (write). Label IDs describe MEANING — never add a model prefix.\n' +
+            '• create → add a new label to an AxLabelFile, write into every language .label.txt, create XML descriptors if missing (write). Label IDs describe MEANING — never add a model prefix. Target the model\'s ORIGINAL label file, never a label file extension (…_Extension…).\n' +
             '• rename → rename a label ID across .label.txt + X++ + XML metadata + SQLite index. Use dryRun=true first (write).',
           inputSchema: {
             type: 'object',
@@ -893,7 +893,7 @@ Model from .mcp.json; prefix auto-applied from EXTENSION_PREFIX. Classes: member
               },
               labelFileId: {
                 type: 'string',
-                description: '[search|info|create|rename] AxLabelFile ID (e.g. ContosoExt, SYS). For action=info with no labelId, returns the physical .label.txt path per language.',
+                description: '[search|info|create|rename] AxLabelFile ID (e.g. ContosoExt, SYS). For action=info with no labelId, returns the physical .label.txt path per language. For create/rename use the model\'s ORIGINAL label file, not an extension (…_Extension…).',
               },
               language: {
                 type: 'string',
@@ -997,6 +997,13 @@ Model from .mcp.json; prefix auto-applied from EXTENSION_PREFIX. Classes: member
               updateIndex: {
                 type: 'boolean',
                 description: '[create|rename] Update the MCP label index after writing (default: true).',
+              },
+              allowExtensionLabelFile: {
+                type: 'boolean',
+                description:
+                  '[create|rename] Allow operating on a label file EXTENSION (labelFileId carrying the "_Extension" marker). ' +
+                  'Default false: new labels belong in the model\'s ORIGINAL label file, never an extension. ' +
+                  'Leave false unless you genuinely intend to write to an extension.',
               },
             },
             required: ['action'],
