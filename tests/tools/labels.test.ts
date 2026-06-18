@@ -8,6 +8,7 @@ import { searchLabelsTool } from '../../src/tools/searchLabels';
 import { getLabelInfoTool } from '../../src/tools/getLabelInfo';
 import { createLabelTool } from '../../src/tools/createLabel';
 import { renameLabelTool } from '../../src/tools/renameLabel';
+import { isExtensionLabelFile } from '../../src/metadata/labelParser';
 import type { XppServerContext } from '../../src/types/context';
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 
@@ -109,6 +110,22 @@ const buildContext = (overrides: Partial<XppServerContext> = {}): XppServerConte
   workspaceScanner: {} as any,
   hybridSearch: {} as any,
   ...overrides,
+});
+
+// ─── isExtensionLabelFile ─────────────────────────────────────────────────────
+
+describe('isExtensionLabelFile', () => {
+  it('flags label file IDs carrying the _Extension marker', () => {
+    expect(isExtensionLabelFile('BaseLabels_Extension')).toBe(true);
+    expect(isExtensionLabelFile('BaseLabels_ExtensionContoso')).toBe(true);
+    expect(isExtensionLabelFile('baselabels_extension')).toBe(true); // case-insensitive
+  });
+
+  it('does not flag original label file IDs', () => {
+    expect(isExtensionLabelFile('MyModel')).toBe(false);
+    expect(isExtensionLabelFile('ContosoExt')).toBe(false);
+    expect(isExtensionLabelFile('SYS')).toBe(false);
+  });
 });
 
 // ─── search_labels ───────────────────────────────────────────────────────────
@@ -543,6 +560,69 @@ describe('create_label', () => {
   it('returns error when required fields are missing', async () => {
     const result = await createLabelTool(req('create_label', { labelId: 'Foo' }), ctx);
     expect(result.isError).toBe(true);
+  });
+
+  it('refuses to write into a label file EXTENSION and writes nothing', async () => {
+    const fsMock = await import('fs');
+    (fsMock.promises.writeFile as any).mockClear();
+    (ctx.symbolIndex.getLabelById as any).mockReturnValue([]);
+    (ctx.symbolIndex.searchLabels as any).mockReturnValue([]);
+
+    const result = await createLabelTool(
+      req('create_label', {
+        labelId: 'MyNewLabel',
+        labelFileId: 'BaseLabels_Extension',
+        model: 'MyModel',
+        createLabelFileIfMissing: true,
+        updateIndex: false,
+        translations: [{ language: 'en-US', text: 'My new label' }],
+      }),
+      ctx,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/extension/i);
+    expect(result.content[0].text).toMatch(/original label file/i);
+    // Nothing must be written to disk.
+    expect((fsMock.promises.writeFile as any)).not.toHaveBeenCalled();
+  });
+
+  it('also detects an extension with a trailing model prefix (…_Extension<prefix>)', async () => {
+    (ctx.symbolIndex.getLabelById as any).mockReturnValue([]);
+    (ctx.symbolIndex.searchLabels as any).mockReturnValue([]);
+
+    const result = await createLabelTool(
+      req('create_label', {
+        labelId: 'MyNewLabel',
+        labelFileId: 'BaseLabels_ExtensionContoso',
+        model: 'MyModel',
+        createLabelFileIfMissing: true,
+        updateIndex: false,
+        translations: [{ language: 'en-US', text: 'My new label' }],
+      }),
+      ctx,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/extension/i);
+  });
+
+  it('allows writing into an extension when allowExtensionLabelFile=true', async () => {
+    (ctx.symbolIndex.getLabelById as any).mockReturnValue([]);
+    (ctx.symbolIndex.searchLabels as any).mockReturnValue([]);
+
+    const result = await createLabelTool(
+      req('create_label', {
+        labelId: 'MyNewLabel',
+        labelFileId: 'BaseLabels_Extension',
+        model: 'MyModel',
+        allowExtensionLabelFile: true,
+        createLabelFileIfMissing: true,
+        updateIndex: false,
+        addToProject: false,
+        translations: [{ language: 'en-US', text: 'My new label' }],
+      }),
+      ctx,
+    );
+    expect(result.isError).toBeFalsy();
   });
 
   it('writes to every existing model language when `languages` is omitted (default fan-out)', async () => {
@@ -1105,6 +1185,24 @@ describe('rename_label', () => {
   it('returns error when required fields are missing', async () => {
     const result = await renameLabelTool(req('rename_label', { oldLabelId: 'Foo' }), ctx);
     expect(result.isError).toBe(true);
+  });
+
+  it('refuses to operate on a label file EXTENSION', async () => {
+    const fsMock = await import('fs');
+    (fsMock.promises.writeFile as any).mockClear();
+
+    const result = await renameLabelTool(
+      req('rename_label', {
+        oldLabelId: 'OldName',
+        newLabelId: 'NewName',
+        labelFileId: 'BaseLabels_Extension',
+        model: 'MyModel',
+      }),
+      ctx,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/extension/i);
+    expect((fsMock.promises.writeFile as any)).not.toHaveBeenCalled();
   });
 
   it('preserves CRLF line endings when renaming inside a CRLF .label.txt', async () => {
