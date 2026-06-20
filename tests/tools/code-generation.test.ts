@@ -357,8 +357,8 @@ describe('XmlTemplateGenerator security duty/role generators', () => {
 
 describe('XmlTemplateGenerator.generateAxTableXml enum fields', () => {
   it('emits AxTableFieldEnum + EnumType from enumType (extension-style field spec)', () => {
-    const xml = XmlTemplateGenerator.generateAxTableXml('AslRentEquipment', {
-      fields: [{ name: 'EquipmentStatus', enumType: 'NoYes', label: '@Asl:Status' }],
+    const xml = XmlTemplateGenerator.generateAxTableXml('ContosoRentEquipment', {
+      fields: [{ name: 'EquipmentStatus', enumType: 'NoYes', label: '@Contoso:Status' }],
     });
     expect(xml).toContain('i:type="AxTableFieldEnum"');
     expect(xml).toContain('<EnumType>NoYes</EnumType>');
@@ -366,7 +366,7 @@ describe('XmlTemplateGenerator.generateAxTableXml enum fields', () => {
   });
 
   it('honors an explicit fieldType="AxTableFieldEnum"', () => {
-    const xml = XmlTemplateGenerator.generateAxTableXml('AslRentEquipment', {
+    const xml = XmlTemplateGenerator.generateAxTableXml('ContosoRentEquipment', {
       fields: [{ name: 'EquipmentStatus', fieldType: 'AxTableFieldEnum', enumType: 'NoYes' }],
     });
     expect(xml).toContain('i:type="AxTableFieldEnum"');
@@ -374,7 +374,7 @@ describe('XmlTemplateGenerator.generateAxTableXml enum fields', () => {
   });
 
   it('still maps the primitive type="Enum" spec to an enum field', () => {
-    const xml = XmlTemplateGenerator.generateAxTableXml('AslRentEquipment', {
+    const xml = XmlTemplateGenerator.generateAxTableXml('ContosoRentEquipment', {
       fields: [{ name: 'EquipmentStatus', type: 'Enum', enumType: 'NoYes' }],
     });
     expect(xml).toContain('i:type="AxTableFieldEnum"');
@@ -382,7 +382,7 @@ describe('XmlTemplateGenerator.generateAxTableXml enum fields', () => {
   });
 
   it('leaves plain string fields untouched', () => {
-    const xml = XmlTemplateGenerator.generateAxTableXml('AslRentEquipment', {
+    const xml = XmlTemplateGenerator.generateAxTableXml('ContosoRentEquipment', {
       fields: [{ name: 'EquipmentName', edt: 'Name' }],
     });
     expect(xml).toContain('i:type="AxTableFieldString"');
@@ -462,6 +462,23 @@ describe('generate_smart_form', () => {
     );
     expect(result?.content[0].text).toContain('MyCustomForm');
     expect(result?.content[0].text).toContain('MyCustomTable');
+  });
+
+  it('warns when the requested pattern has no template and degrades to another', async () => {
+    // "Task" has a catalog spec (TaskSingle) but no builder template, so it
+    // silently falls back to SimpleList. The output must say so and point at a
+    // reference form to clone instead.
+    const result = await handleGenerateSmartForm(
+      {
+        name: 'MyTaskForm',
+        modelName: 'MyModel',
+        dataSource: 'MyCustomTable',
+        formPattern: 'Task',
+      },
+      ctx.symbolIndex,
+    );
+    expect(result?.content[0].text).toContain('No dedicated template');
+    expect(result?.content[0].text).toContain('cloneFrom');
   });
 });
 

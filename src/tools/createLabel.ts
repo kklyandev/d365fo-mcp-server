@@ -136,6 +136,15 @@ const CreateLabelArgsSchema = z.object({
         'When false, new labels are appended at the end preserving existing file order. ' +
         'Defaults to the LABEL_SORT_ORDER env var ("alphabetical" = true, "append" = false), or true if not set.',
     ),
+  overwriteExisting: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'Update mode (set automatically by labels(action="update")): overwrite the text of an ' +
+        'existing label instead of skipping it. When the label is absent in a target language it ' +
+        'is created (upsert). Off by default so create never clobbers existing text.',
+    ),
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -274,9 +283,28 @@ function normalizeCreateLabelArgs(raw: unknown): Record<string, unknown> {
 
 export async function createLabelTool(request: CallToolRequest, context: XppServerContext) {
   try {
-    const args = CreateLabelArgsSchema.parse(
+    const parsed = CreateLabelArgsSchema.safeParse(
       normalizeCreateLabelArgs(request.params.arguments),
     );
+    if (!parsed.success) {
+      // Name the offending field(s) instead of leaking a bare zod
+      // "expected string, received undefined" with no field reference.
+      const issues = parsed.error.issues
+        .map(i => `${i.path.join('.') || '(root)'}: ${i.message}`)
+        .join('; ');
+      return {
+        content: [{
+          type: 'text',
+          text:
+            `❌ labels(action="create"/"update"): invalid arguments — ${issues}.\n` +
+            `Required: labelId, labelFileId, model, translations:[{language, text}]. Example:\n` +
+            `  labels(action="create", labelId="EquipmentName", labelFileId="ContosoExt", model="ContosoExt", ` +
+            `translations=[{language:"en-US", text:"Equipment name"}])`,
+        }],
+        isError: true,
+      };
+    }
+    const args = parsed.data;
     const {
       labelId,
       labelFileId,
@@ -567,8 +595,8 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
       const eol = detectEol(content);
       const labelMap = parseLabelMap(content);
 
-      // Duplicate check
-      if (labelMap.has(labelId)) {
+      // Duplicate check — create skips an existing label, update overwrites it.
+      if (labelMap.has(labelId) && !args.overwriteExisting) {
         skipped.push(`${lang} (already exists: "${labelMap.get(labelId)!.text}")`);
         continue;
       }
@@ -688,7 +716,7 @@ export async function createLabelTool(request: CallToolRequest, context: XppServ
     const ref = `@${labelFileId}:${labelId}`;
     const lines: string[] = [
       ...(collisionWarning ? [collisionWarning] : []),
-      `✅ Label "${ref}" created successfully!`,
+      `✅ Label "${ref}" ${args.overwriteExisting ? 'updated' : 'created'} successfully!`,
       '',
       `Label ID   : ${labelId}`,
       `Label File : ${labelFileId}  (model: ${model})`,

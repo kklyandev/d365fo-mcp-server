@@ -1304,7 +1304,61 @@ describe('labels dispatcher: action aliases + errors', () => {
       ctx,
     );
     expect(r.isError).toBe(true);
-    expect(r.content[0].text).toContain('search, info, create, rename');
+    expect(r.content[0].text).toContain('search, info, create, update, rename');
+  });
+
+  // A model whose en-US label file already contains MyExistingLabel.
+  const seedExistingLabel = async () => {
+    const fsMock = await import('fs');
+    (fsMock.promises.readFile as any).mockImplementation(
+      async () => '; Label file\nMyExistingLabel=Existing label text\n',
+    );
+    (fsMock.promises.readdir as any).mockImplementation(async () => ['en-US']);
+  };
+
+  it('action="update" overwrites the text of an existing label', async () => {
+    await seedExistingLabel();
+    (ctx.symbolIndex.getLabelById as any).mockReturnValue([]);
+    const r: any = await labelsTool(
+      { method: 'tools/call', params: { name: 'labels', arguments: {
+        action: 'update',
+        labelId: 'MyExistingLabel',
+        labelFileId: 'MyModel',
+        model: 'MyModel',
+        updateIndex: false,
+        translations: [{ language: 'en-US', text: 'Corrected text' }],
+      } } } as CallToolRequest,
+      ctx,
+    );
+    expect(r.isError).toBeFalsy();
+    expect(r.content[0].text).toMatch(/updated successfully/i);
+  });
+
+  it('action="create" refuses to overwrite an existing label', async () => {
+    await seedExistingLabel();
+    (ctx.symbolIndex.getLabelById as any).mockReturnValue([]);
+    const r: any = await labelsTool(
+      { method: 'tools/call', params: { name: 'labels', arguments: {
+        action: 'create',
+        labelId: 'MyExistingLabel',
+        labelFileId: 'MyModel',
+        model: 'MyModel',
+        updateIndex: false,
+        translations: [{ language: 'en-US', text: 'Different text' }],
+      } } } as CallToolRequest,
+      ctx,
+    );
+    expect(r.content[0].text).toMatch(/already exists|No label text changes/i);
+  });
+
+  it('names the missing field when create/update args are incomplete', async () => {
+    const r: any = await labelsTool(
+      { method: 'tools/call', params: { name: 'labels', arguments: { action: 'create', labelId: 'Foo' } } } as CallToolRequest,
+      ctx,
+    );
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/invalid arguments/i);
+    expect(r.content[0].text).toContain('labelFileId');
   });
 
   it('aliases action="list" to info (not rejected as invalid)', async () => {

@@ -39,4 +39,10 @@ describe('getFormPatternSpec — copy-paste XML skeleton', () => {
     // The optional CustomFilterGroup carries its sub-pattern declaration.
     expect(skeleton).toContain('<Pattern>CustomAndQuickFilters</Pattern>');
   });
+
+  it('resolves the bare "FactBox" alias to the grid variant', async () => {
+    const text = await specText('FactBox');
+    expect(text).toContain('Form Part FactBox Grid');
+    expect(text).toContain('FormPartFactboxGrid');
+  });
 });

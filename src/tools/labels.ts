@@ -21,7 +21,7 @@ import { renameLabelTool } from './renameLabel.js';
 
 export type LabelsTool = (request: CallToolRequest, context: XppServerContext) => Promise<any>;
 
-export const LABEL_ACTIONS = ['search', 'info', 'create', 'rename'] as const;
+export const LABEL_ACTIONS = ['search', 'info', 'create', 'update', 'rename'] as const;
 export type LabelAction = (typeof LABEL_ACTIONS)[number];
 
 interface LabelDispatch {
@@ -33,6 +33,9 @@ export const LABEL_DISPATCH: Record<LabelAction, LabelDispatch> = {
   search: { tool: searchLabelsTool, toolName: 'search_labels' },
   info:   { tool: getLabelInfoTool, toolName: 'get_label_info' },
   create: { tool: createLabelTool,  toolName: 'create_label' },
+  // update reuses the create handler, which overwrites existing label text when
+  // overwriteExisting is set (injected below). Same args as create.
+  update: { tool: createLabelTool,  toolName: 'create_label' },
   rename: { tool: renameLabelTool,  toolName: 'rename_label' },
 };
 
@@ -41,7 +44,8 @@ const LabelsArgsSchema = z
     action: z.enum(LABEL_ACTIONS).describe(
       'Which label operation to run: ' +
       'search (full-text query, read), info (translations for a label ID or list of label files, read), ' +
-      'create (add a new label to an AxLabelFile, write), rename (rename a label ID across .label.txt + X++ + XML, write).',
+      'create (add a NEW label to an AxLabelFile, write), update (overwrite the text of an EXISTING label, ' +
+      'e.g. fix a wrong translation, write), rename (rename a label ID across .label.txt + X++ + XML, write).',
     ),
   })
   .passthrough();
@@ -55,6 +59,7 @@ const ACTION_ALIASES: Record<string, LabelAction> = {
   list: 'info', 'list-files': 'info', 'list-label-files': 'info', get: 'info', 'get-info': 'info',
   find: 'search', query: 'search', lookup: 'search',
   add: 'create', 'create-label': 'create', 'new': 'create',
+  edit: 'update', 'update-label': 'update', 'set': 'update', 'overwrite': 'update',
   'rename-label': 'rename',
 };
 
@@ -90,8 +95,8 @@ export async function labelsTool(request: CallToolRequest, context: XppServerCon
         type: 'text',
         text:
           `❌ labels: invalid arguments — action must be one of: ${LABEL_ACTIONS.join(', ')} ` +
-          `(got "${rawArgs.action ?? ''}"). search=find labels, info=translations/list files, ` +
-          `create=add a label, rename=rename a label ID.`,
+          `(got "${rawArgs.action ?? ''}"). search=find labels, info=translations / list label files, ` +
+          `create=add a new label, update=fix an existing label's text, rename=rename a label ID.`,
       }],
       isError: true,
     };
@@ -105,6 +110,10 @@ export async function labelsTool(request: CallToolRequest, context: XppServerCon
       isError: true,
     };
   }
+
+  // update is create with overwrite-on-collision — force the flag so callers
+  // can't accidentally clobber text via action="create".
+  if (action === 'update') (rest as Record<string, unknown>).overwriteExisting = true;
 
   const subRequest: CallToolRequest = {
     method: 'tools/call',

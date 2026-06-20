@@ -16,6 +16,7 @@ import { ProjectFileManager } from './createD365File.js';
 import { extractModelFromProject, findProjectInSolution } from '../utils/projectUtils.js';
 import { normalizeD365Xml } from '../utils/d365XmlNormalizer.js';
 import { validateFormPatternXml } from '../validation/formPatternValidator.js';
+import { resolvePattern } from '../knowledge/formPatterns/index.js';
 import { cloneFormXml } from '../utils/formCloner.js';
 import { methodStubsForPattern, injectMethodStubs } from '../knowledge/formPatterns/methodStubs.js';
 import { findBaseFormXml } from './modifyD365File.js';
@@ -420,6 +421,24 @@ export async function handleGenerateSmartForm(
     // Align the Design-level PatternVersion with the version this environment uses
     // for the pattern; template defaults can lag and be rejected by BP.
     const designPattern = xml.match(/<Pattern xmlns="">([^<]+)<\/Pattern>/)?.[1];
+
+    // Warn when the requested pattern has no dedicated template and silently
+    // degraded to another base (or to SimpleList). The emitted <Pattern> reflects
+    // the template, not the request, and the self-test validates only the emitted
+    // pattern — so this mismatch would otherwise pass unnoticed.
+    if (formPattern && designPattern) {
+      const intended = resolvePattern(formPattern);
+      if (intended && intended.xmlName.toLowerCase() !== designPattern.toLowerCase()) {
+        const ref = intended.referenceForms?.[0];
+        cloneNotes +=
+          `\n   ⚠️ No dedicated template for pattern "${intended.xmlName}" — generated a "${designPattern}" form instead.` +
+          (ref
+            ? ` For a true "${intended.xmlName}", clone a reference form: ` +
+              `generate_object(mode="scaffold", objectType="form", name="${name}", cloneFrom="${ref}", tableMapping={...}).`
+            : ` Clone a reference form for that pattern via cloneFrom=.`);
+      }
+    }
+
     if (designPattern) {
       const envVersion = resolveEnvPatternVersion(symbolIndex.getReadDb(), designPattern);
       if (envVersion) {
