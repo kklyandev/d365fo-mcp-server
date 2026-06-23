@@ -167,6 +167,47 @@ export function countTopLevelMethodBodies(source: string): number {
   return count;
 }
 
+/** Split a source string containing one or more top-level X++ methods into the
+ *  individual method sources (each including any leading doc comments / attributes
+ *  and its full body). Mirrors countTopLevelMethodBodies' brace/comment/string
+ *  handling. Used to let add-method accept several methods in one call and add them
+ *  one <Method> at a time. */
+export function splitTopLevelMethodBodies(source: string): string[] {
+  const s = source;
+  const methods: string[] = [];
+  let depth = 0;
+  let methodStart = -1;
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    // Start a method slice at the first significant char (incl. leading /// doc
+    // comments and [Attribute] blocks) after the previous method closed.
+    if (methodStart === -1 && !/\s/.test(ch)) methodStart = i;
+
+    const two = s.slice(i, i + 2);
+    if (two === '//') { const nl = s.indexOf('\n', i); i = nl === -1 ? s.length : nl; continue; }
+    if (two === '/*') { const end = s.indexOf('*/', i + 2); i = end === -1 ? s.length : end + 2; continue; }
+    if (ch === '"') { i++; while (i < s.length && s[i] !== '"') { if (s[i] === '\\') i++; i++; } i++; continue; }
+
+    if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      if (depth > 0) depth--;
+      if (depth === 0 && methodStart !== -1) {
+        methods.push(s.slice(methodStart, i + 1).trim());
+        methodStart = -1;
+      }
+    }
+    i++;
+  }
+  // Trailing brace-less content (e.g. an interface/abstract method declaration).
+  if (methodStart !== -1) {
+    const tail = s.slice(methodStart).trim();
+    if (tail) methods.push(tail);
+  }
+  return methods.filter(Boolean);
+}
+
 /**
  * Reject an add-method payload that contains more than one method. Each add-method
  * call emits a single <Method>; passing two methods drops the second outside the
@@ -704,10 +745,16 @@ export async function modifyD365FileTool(request: CallToolRequest, context: XppS
     // method-adding operations — replace-code's newCode is a snippet, not a method.
     if (['add-method', 'add-display-method', 'add-table-method'].includes(args.operation)) {
       const methodSrc = args.sourceCode ?? (args as any).methodCode;
-      assertSingleMethodSource(methodSrc);
+      // add-method may carry several methods — they are split and added one <Method>
+      // at a time below. add-display-method / add-table-method generate a single
+      // method, so multiple bodies there are still a mistake.
+      if (args.operation !== 'add-method') {
+        assertSingleMethodSource(methodSrc);
+      }
       // Derive methodName from the source signature when omitted — the full method
       // source already contains the name (e.g. "public static X find(...)" → "find").
-      if (!args.methodName) {
+      // Skip derivation when the payload holds multiple methods (handled per-method).
+      if (!args.methodName && countTopLevelMethodBodies(methodSrc ?? '') <= 1) {
         const derived = extractMethodNameFromSource(methodSrc);
         if (derived) {
           args.methodName = derived;
@@ -948,14 +995,45 @@ export async function modifyD365FileTool(request: CallToolRequest, context: XppS
       case 'add-method': {
         // sourceCode and methodCode are aliases; sourceCode wins when both are set.
         const methodSource = args.sourceCode ?? (args as any).methodCode;
-        if (args.methodName && methodSource) {
-          bridgeResult = await bridgeAddMethod(
-            context.bridge,
-            objectType,
-            objectName,
-            args.methodName,
-            methodSource,
-          );
+        if (methodSource) {
+          // A single call may carry several methods — split and add each as its own
+          // <Method> so callers don't have to issue one tool call per method.
+          const bodies = countTopLevelMethodBodies(methodSource) > 1
+            ? splitTopLevelMethodBodies(methodSource)
+            : [methodSource];
+
+          if (bodies.length > 1) {
+            const added: string[] = [];
+            let lastResult: { success: boolean; message: string } | null = null;
+            for (const body of bodies) {
+              const mName = extractMethodNameFromSource(body);
+              if (!mName) {
+                throw new Error(
+                  `⛔ add-method: could not derive a method name from one of the ${bodies.length} method bodies. ` +
+                  `Ensure each method has a complete signature (e.g. "public void foo()").`,
+                );
+              }
+              lastResult = await bridgeAddMethod(context.bridge, objectType, objectName, mName, body);
+              if (!lastResult) {
+                throw new Error(
+                  `Bridge add-method failed for '${mName}' (${added.length} of ${bodies.length} method(s) added successfully: ${added.join(', ') || 'none'}).`,
+                );
+              }
+              added.push(mName);
+            }
+            // Summarize as a single result for the downstream success message.
+            bridgeResult = lastResult
+              ? { ...lastResult, message: `Added ${added.length} methods: ${added.join(', ')}` }
+              : null;
+          } else if (args.methodName) {
+            bridgeResult = await bridgeAddMethod(
+              context.bridge,
+              objectType,
+              objectName,
+              args.methodName,
+              methodSource,
+            );
+          }
         }
         break;
       }

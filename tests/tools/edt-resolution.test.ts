@@ -3,6 +3,8 @@ import {
   resolveBestEdt,
   suggestEdtFromFieldName,
   isInfrastructureField,
+  heuristicEdtBaseType,
+  isEnumName,
 } from '../../src/tools/generateSmartTable';
 
 /**
@@ -112,6 +114,51 @@ describe('resolveBestEdt (DB-aware)', () => {
     const db = fakeDb([]);
     expect(resolveBestEdt('Status', db)).toBe('String255');
     expect(resolveBestEdt('Category', db)).toBe('String255');
+  });
+});
+
+describe('heuristicEdtBaseType (fallback when EDT not indexed)', () => {
+  it('resolves Real/Date/Int64 from standard EDT names', () => {
+    // Regression for friction #3: Qty/TransDate/RecId fell to AxTableFieldString on
+    // the bridge path because their base type was undefined when not indexed.
+    expect(heuristicEdtBaseType('Qty')).toBe('Real');
+    expect(heuristicEdtBaseType('AmountMST')).toBe('Real');
+    expect(heuristicEdtBaseType('DailyRate')).toBe('Real');
+    expect(heuristicEdtBaseType('TransDate')).toBe('Date');
+    expect(heuristicEdtBaseType('AcquiredDate')).toBe('Date');
+    expect(heuristicEdtBaseType('RecId')).toBe('Int64');
+    expect(heuristicEdtBaseType('SomeRefRecId')).toBe('Int64');
+  });
+
+  it('maps datetime names to UtcDateTime', () => {
+    expect(heuristicEdtBaseType('CreatedDateTime')).toBe('UtcDateTime');
+  });
+
+  it('returns undefined for names with no recognizable base type', () => {
+    expect(heuristicEdtBaseType('ContosoRentEquipmentId')).toBeUndefined();
+    expect(heuristicEdtBaseType('Name')).toBeUndefined();
+  });
+});
+
+describe('isEnumName (enum vs EDT detection)', () => {
+  function enumDb(enums: string[]) {
+    return {
+      prepare(_sql: string) {
+        return {
+          get(arg: string) {
+            return enums.some(e => e.toLowerCase() === String(arg).toLowerCase()) ? { 1: 1 } : undefined;
+          },
+        };
+      },
+    };
+  }
+  it('detects an indexed enum name', () => {
+    // Regression for friction #2: an enum-backed field was created as
+    // AxTableFieldString + EDT instead of AxTableFieldEnum.
+    expect(isEnumName('AslRentEquipmentStatus', enumDb(['AslRentEquipmentStatus']))).toBe(true);
+  });
+  it('returns false for a name that is not an indexed enum', () => {
+    expect(isEnumName('CustAccount', enumDb(['AslRentEquipmentStatus']))).toBe(false);
   });
 });
 

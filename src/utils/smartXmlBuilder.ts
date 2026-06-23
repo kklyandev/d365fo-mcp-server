@@ -15,6 +15,9 @@ export interface TableFieldSpec {
   type?: string;
   mandatory?: boolean;
   label?: string;
+  /** Enum name for enum-backed fields (AxTableFieldEnum). When set, the field emits
+   *  <EnumType> instead of <ExtendedDataType>. */
+  enumType?: string;
 }
 
 export interface TableIndexSpec {
@@ -402,14 +405,17 @@ export class SmartXmlBuilder {
    * NOT typed element names like <AxTableFieldString>.
    */
   private buildTableField(field: TableFieldSpec): string {
-    const { name, edt, type, mandatory, label } = field;
+    const { name, edt, type, mandatory, label, enumType } = field;
 
-    const iType = this.getAxTableFieldType(edt, type);
+    // Enum-backed fields use AxTableFieldEnum + <EnumType>, never <ExtendedDataType>.
+    const iType = enumType ? 'AxTableFieldEnum' : this.getAxTableFieldType(edt, type);
 
     // D365FO field format: <AxTableField xmlns="" i:type="AxTableFieldString">
     let xml = `\t\t<AxTableField xmlns=""\n\t\t\t\ti:type="${iType}">\n`;
     xml += `\t\t\t<Name>${name}</Name>\n`;
-    if (edt) {
+    if (enumType) {
+      xml += `\t\t\t<EnumType>${enumType}</EnumType>\n`;
+    } else if (edt) {
       xml += `\t\t\t<ExtendedDataType>${edt}</ExtendedDataType>\n`;
     }
     if (mandatory) {

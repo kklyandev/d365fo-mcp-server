@@ -9,7 +9,7 @@ import { validateObjectNamingTool } from '../../src/tools/validateObjectNaming';
 import { getExtensionNamingStyle } from '../../src/utils/modelClassifier';
 import { verifyD365ProjectTool } from '../../src/tools/verifyD365Project';
 import { handleCreateD365File } from '../../src/tools/createD365File';
-import { modifyD365FileTool, countTopLevelMethodBodies, isUnresolvedObjectError, extractMethodNameFromSource } from '../../src/tools/modifyD365File';
+import { modifyD365FileTool, countTopLevelMethodBodies, splitTopLevelMethodBodies, isUnresolvedObjectError, extractMethodNameFromSource } from '../../src/tools/modifyD365File';
 import type { XppServerContext } from '../../src/types/context';
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 
@@ -398,9 +398,12 @@ describe('verify_d365fo_project', () => {
     expect(result.content[0].text).toContain('MyEnum');
   });
 
-  it('returns error when objects array is missing', async () => {
+  it('verify-all mode: missing objects derives them from the project or asks for one', async () => {
     const result = await verifyD365ProjectTool(req('verify_d365fo_project', {}), buildContext());
-    expect((result as any).isError).toBe(true);
+    const text = result.content[0].text as string;
+    // Objects are now optional: it either verifies every object referenced in a
+    // resolvable project, or returns clear guidance — never a raw schema parse error.
+    expect(text).toMatch(/Verification Results|no `objects`|no recognizable object/i);
   });
 });
 
@@ -835,7 +838,7 @@ describe('modify_d365fo_file', () => {
     expect(result.content[0].text).toMatch(/objectName|filePath/);
   });
 
-  it('rejects add-method whose sourceCode contains two methods', async () => {
+  it('add-method accepts multiple methods (no single-method rejection)', async () => {
     const twoMethods =
       `public int lastLineNum()\n{\n    return 0;\n}\n\n` +
       `public AmountCur calcLineAmount()\n{\n    return this.Qty * this.Price;\n}`;
@@ -850,8 +853,24 @@ describe('modify_d365fo_file', () => {
       }),
       ctx,
     );
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/exactly ONE method|2 method bodies/i);
+    // Multiple methods are now split and added one at a time — the old single-method
+    // guard no longer fires (this env has no bridge, so it fails later at the bridge).
+    expect(result.content[0].text).not.toMatch(/exactly ONE method|method bodies were detected/i);
+  });
+
+  it('splitTopLevelMethodBodies splits multiple methods, preserving each body and doc comments', () => {
+    const src =
+      `/// <summary>first</summary>\npublic int lastLineNum()\n{\n    if (x) { y(); }\n    return 0;\n}\n\n` +
+      `public AmountCur calcLineAmount()\n{\n    return this.Qty * this.Price;\n}`;
+    const parts = splitTopLevelMethodBodies(src);
+    expect(parts).toHaveLength(2);
+    expect(parts[0]).toContain('lastLineNum');
+    expect(parts[0]).toContain('first');           // leading doc comment retained
+    expect(parts[0]).toContain('if (x) { y(); }');  // nested block kept with method 1
+    expect(parts[1]).toContain('calcLineAmount');
+    expect(parts[1]).not.toContain('lastLineNum');
+    // A single method round-trips unchanged.
+    expect(splitTopLevelMethodBodies(`public void run()\n{\n    a();\n}`)).toHaveLength(1);
   });
 
   it('countTopLevelMethodBodies counts methods, ignoring nested blocks/comments/strings', () => {

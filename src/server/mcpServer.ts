@@ -1493,13 +1493,15 @@ Model from .mcp.json; prefix auto-applied from EXTENSION_PREFIX. Classes: member
       },
       {
         name: 'verify_d365fo_project',
-        description: 'Verify that D365FO objects exist on disk at the correct AOT path and are referenced in the .rnrproj project file. Use instead of PowerShell to check d365fo_file(action="create") results.',
+        description:
+          'Verify that D365FO objects exist on disk at the correct AOT path and are referenced in the .rnrproj project file. Use instead of PowerShell to check d365fo_file(action="create") results. ' +
+          'Omit `objects` to verify the ENTIRE project: every object referenced in the .rnrproj is checked on disk (requires projectPath, or an auto-detected/configured project).',
         inputSchema: {
           type: 'object',
           properties: {
             objects: {
               type: 'array',
-              description: 'List of objects to verify',
+              description: 'List of objects to verify. OPTIONAL — omit to verify every object referenced in the project (.rnrproj).',
               items: {
                 type: 'object',
                 properties: {
@@ -1528,19 +1530,20 @@ Model from .mcp.json; prefix auto-applied from EXTENSION_PREFIX. Classes: member
             packageName: { type: 'string', description: 'Package name. Auto-resolved from model name if omitted.' },
             packagePath: { type: 'string', description: 'Base package path (default: K:\\AosService\\PackagesLocalDirectory)' },
           },
-          required: ['objects'],
         },
       },
       // ── SDLC & Build Tools ────────────────────────────────────────────────────
       {
         name: 'update_symbol_index',
-        description: 'Index a newly generated or modified D365FO XML file immediately so references to it work without restarting the server. Call this after d365fo_file(action="create") to make the new object instantly searchable.',
+        description:
+          'Index a newly generated or modified D365FO XML file immediately so references to it work without restarting the server. ' +
+          'Call this after d365fo_file(action="create") — pass the created file\'s `filePath` — to make the new object instantly searchable AND, for new AxEnum/AxEdt files, resolvable by scaffolding (so enum fields become AxTableFieldEnum and EDT fields get the correct base type). ' +
+          'Call WITHOUT `filePath` for a lightweight refresh: it refreshes the C# bridge provider and drops workspace caches so objects created via the bridge this session become resolvable (does NOT fully index them into the symbol DB).',
         inputSchema: {
           type: 'object',
           properties: {
-            filePath: { type: 'string', description: 'Absolute path to the modified or created XML file (e.g. K:\\\\AosService\\\\PackagesLocalDirectory\\\\MyModel\\\\MyModel\\\\AxClass\\\\MyClass.xml)' },
+            filePath: { type: 'string', description: 'Absolute path to the modified or created XML file (e.g. K:\\\\AosService\\\\PackagesLocalDirectory\\\\MyModel\\\\MyModel\\\\AxClass\\\\MyClass.xml). Omit to run a lightweight bridge/workspace refresh instead of indexing a specific file.' },
           },
-          required: ['filePath'],
         },
       },
       {

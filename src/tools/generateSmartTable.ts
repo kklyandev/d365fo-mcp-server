@@ -398,14 +398,26 @@ export async function handleGenerateSmartTable(
   {
     const db = symbolIndex.getReadDb();
     for (const f of fields) {
+      // The resolved "EDT" may actually be an enum (e.g. a custom RentStatus enum
+      // or a field that resolveBestEdt echoed back as a same-session custom type).
+      // An enum-backed field must be AxTableFieldEnum + EnumType, not String + EDT.
+      if (f.edt && !f.enumType && isEnumName(f.edt, db)) {
+        f.enumType = f.edt;
+        f.type = 'Enum';
+        f.edt = undefined;
+        continue;
+      }
       if (f.edt && !f.type) {
-        f.type = resolveEdtBaseType(f.edt, db);
+        // Prefer the indexed base type; when the EDT isn't indexed (same-session or
+        // an OOB EDT whose metadata wasn't loaded) fall back to a name heuristic so
+        // the bridge gets an explicit type instead of defaulting Real/Date EDTs to String.
+        f.type = resolveEdtBaseType(f.edt, db) ?? heuristicEdtBaseType(f.edt);
       }
       // Validate EDT exists in the symbol index
       if (f.edt) {
         const edtExists = validateEdtExists(f.edt, db);
         if (!edtExists) {
-          edtWarnings.push(`⚠️ Field "${f.name}": EDT "${f.edt}" not found in indexed metadata — will cause build error 'EdtDoesNotExist'. Change to an existing EDT.`);
+          edtWarnings.push(`⚠️ Field "${f.name}": "${f.edt}" not found in indexed metadata as an EDT or enum — if it is a same-session custom type, call update_symbol_index on its file first, then regenerate. Otherwise this will cause a build error.`);
         }
       }
     }
@@ -476,7 +488,12 @@ export async function handleGenerateSmartTable(
   // and may miss packagePath from config if ensureLoaded() was not yet called.
   const configManager = getConfigManager();
   await configManager.ensureLoaded();
-  const resolvedPackagePath = argPackagePath || configManager.getPackagePath();
+  // Prefer the bridge's custom packages root (where bridge-backed writes actually land,
+  // e.g. a repo metadata checkout like K:\repos\…\metadata) so the exists-guard, the
+  // fallback write target, and the reported path all match the real write location.
+  // Falls back to the standard PackagesLocalDirectory for traditional environments.
+  const customPackagesRoot = await configManager.getCustomPackagesPath();
+  const resolvedPackagePath = argPackagePath || customPackagesRoot || configManager.getPackagePath();
   // getPackagePath() already probes C:\ and K:\ well-known locations before returning null,
   // so reaching here with null means neither location exists on this machine.
   if (!resolvedPackagePath && process.platform === 'win32') {
@@ -759,6 +776,7 @@ export async function handleGenerateSmartTable(
         name: f.name,
         fieldType: f.type || undefined,
         edt: f.edt || undefined,
+        enumType: f.enumType || undefined,
         mandatory: f.mandatory || false,
         label: f.label || undefined,
       })),
@@ -1010,6 +1028,42 @@ function resolveEdtBaseType(edtName: string, db: any, depth = 0): string | undef
     return resolveEdtBaseType(row.extends, db, depth + 1);
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Heuristic base type from an EDT/field name when the EDT is not in the index
+ * (e.g. a standard EDT whose edt_metadata wasn't loaded, or a same-session EDT).
+ * Mirrors SmartXmlBuilder.getAxTableFieldType's name heuristics but returns the
+ * primitive base type so it can be passed explicitly to the C# bridge (which
+ * otherwise defaults unknown EDTs to AxTableFieldString).
+ * Returns undefined for genuinely unrecognizable names (caller keeps EDT-as-string).
+ */
+export function heuristicEdtBaseType(edtName: string): string | undefined {
+  const e = edtName.toLowerCase();
+  if (e === 'recid' || e.endsWith('recid') || e.includes('refrecid')) return 'Int64';
+  if (e.includes('utcdatetime') || (e.includes('datetime') && !e.includes('transdate'))) return 'UtcDateTime';
+  if (e.includes('date') && !e.includes('time') && !e.includes('update')) return 'Date';
+  if (e.includes('amount') || e.includes('price') || e.includes('qty') || e.includes('quantity')
+      || e.includes('percent') || e.includes('rate') || e === 'real' || e.endsWith('mst')) return 'Real';
+  if ((e.endsWith('int') || e.includes('count') || e.includes('level'))
+      && !e.includes('account') && !e.includes('name')) return 'Integer';
+  return undefined;
+}
+
+/**
+ * Check whether a name refers to an indexed ENUM (not an EDT). Used to emit
+ * AxTableFieldEnum + EnumType instead of AxTableFieldString + ExtendedDataType
+ * for fields whose "EDT" is actually a base enum (e.g. a custom RentStatus enum).
+ */
+export function isEnumName(name: string, db: any): boolean {
+  try {
+    const row = db.prepare(
+      `SELECT 1 FROM symbols WHERE name = ? COLLATE NOCASE AND type IN ('enum', 'enum-extension') LIMIT 1`
+    ).get(name);
+    return !!row;
+  } catch {
+    return false;
   }
 }
 

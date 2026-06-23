@@ -347,6 +347,10 @@ export async function handleGenerateSmartForm(
   // Lines datasource (header+lines patterns): add a second datasource bound to
   // the lines table, with its own typed field controls and field list.
   let linesTableResolved = linesTable || linesDataSource;
+  // The effective lines datasource name (may differ from the corrected table name when
+  // an explicit, distinct linesDataSource is supplied). Hoisted so the method-stub
+  // injection below references the same name as the datasource we actually emit.
+  let linesDsNameResolved: string | undefined;
   // Note about an auto-corrected lines table name — threaded into the output via cloneNotes.
   let linesTableNote = '';
   if (linesTableResolved) {
@@ -420,14 +424,41 @@ export async function handleGenerateSmartForm(
       /* index unavailable — skip validation and proceed */
     }
 
-    const linesDsNameResolved = linesDataSource || linesTableResolved;
-    dataSources.push({
-      name: linesDsNameResolved,
-      table: linesTableResolved,
-      allowEdit: true,
-      allowCreate: true,
-      allowDelete: true,
-    });
+    // Datasource name: by D365FO convention it equals the (corrected) table name.
+    // Honor an explicit linesDataSource ONLY when it is a genuinely distinct name —
+    // not just the wrong pluralized guess (e.g. "AslRentAgreementLines") that the
+    // table auto-correction above already resolved to "AslRentAgreementLine".
+    // Otherwise the form ends up with a datasource named after a non-existent table.
+    // Local const captures the (possibly auto-corrected) table name so TS keeps the
+    // non-undefined narrowing through the reassignments above.
+    const linesTbl: string = linesTableResolved;
+    const explicitDsIsStalePlural =
+      !!linesDataSource &&
+      linesDataSource.toLowerCase() !== linesTbl.toLowerCase() &&
+      (linesDataSource.replace(/s$/i, '').toLowerCase() === linesTbl.toLowerCase() ||
+        linesDataSource.toLowerCase() === `${linesTbl.toLowerCase()}s`);
+    const dsName = linesDataSource && !explicitDsIsStalePlural ? linesDataSource : linesTbl;
+    linesDsNameResolved = dsName;
+
+    // Guard against a duplicate datasource: skip when one already targets the same
+    // table or already uses the same name (prevents the stale "…Lines" + correct
+    // "…Line" double-datasource the form scaffolder previously produced).
+    const isDuplicateDs = dataSources.some(
+      ds =>
+        ds.table.toLowerCase() === linesTbl.toLowerCase() ||
+        ds.name.toLowerCase() === dsName.toLowerCase(),
+    );
+    if (!isDuplicateDs) {
+      dataSources.push({
+        name: dsName,
+        table: linesTbl,
+        allowEdit: true,
+        allowCreate: true,
+        allowDelete: true,
+      });
+    } else {
+      console.log(`[generateSmartForm] Skipped duplicate lines datasource for table "${linesTbl}"`);
+    }
     try {
       const db = symbolIndex.getReadDb();
       linesFields = collectGridFields(db, linesTableResolved);
@@ -443,9 +474,11 @@ export async function handleGenerateSmartForm(
     console.warn(`[generateSmartForm] No datasource configured, form will be empty`);
   }
 
-  // Determine package path
+  // Determine package path — prefer the bridge's custom packages root (where bridge-backed
+  // writes actually land) so the reported/fallback path matches the real write location.
   const configManager = getConfigManager();
-  const packagePath = configManager.getPackagePath() || 'K:\\AosService\\PackagesLocalDirectory';
+  const customPackagesRoot = await configManager.getCustomPackagesPath();
+  const packagePath = customPackagesRoot || configManager.getPackagePath() || 'K:\\AosService\\PackagesLocalDirectory';
 
   // Resolve project/solution path — fall back to configManager (from .mcp.json / auto-detection)
   let resolvedProjectPath = projectPath;
@@ -718,7 +751,7 @@ export async function handleGenerateSmartForm(
     const patternInXml = xml.match(/<Pattern xmlns="">([^<]+)<\/Pattern>/)?.[1] ?? normalizedPattern;
     const stubDsName =
       xml.match(/<AxFormDataSource[^>]*>\s*<Name>([^<]+)<\/Name>/)?.[1] ?? primaryDs?.name ?? '';
-    const stubLinesDsName = linesTableResolved ? (linesDataSource || linesTableResolved) : undefined;
+    const stubLinesDsName = linesTableResolved ? (linesDsNameResolved || linesTableResolved) : undefined;
     const stubResult = injectMethodStubs(
       xml,
       methodStubsForPattern(patternInXml, stubDsName, stubLinesDsName),
