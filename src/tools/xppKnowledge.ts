@@ -613,26 +613,69 @@ class MyReportDP extends SRSReportDataProviderBase
       'Number sequences generate unique, configurable identifiers for master data and transactions. ' +
       'They support scope (shared, company, legal entity) and format segments.',
     rules: [
-      'Define in NumberSequenceModuleXxx class (e.g. NumberSequenceModuleCustPaym)',
-      'loadModule() method: register each number sequence reference with its EDT, label, and scope',
-      'Use NumberSeqFormHandler on forms for auto-number behavior',
-      'Continuous sequences: no gaps allowed — performance impact, use only when legally required',
-      'Non-continuous (default): allows gaps — faster, use for internal IDs',
-      'Call NumberSeq::newGetNum() to fetch next number at runtime',
-      'Scope: DataArea (per-company), Global (cross-company), OperatingUnit',
-      'Format: {Company}-{NumberSequence:#######} — configurable in Number sequences form',
+      'Module class EXTENDS NumberSeqApplicationModule — exact name. ❌ NOT "NumberSequenceApplicationModule" (that class does not exist).',
+      'It is a subclass (extends), so override loadModule() and call super() at the top. ❌ NOT next() — next() is ONLY for [ExtensionOf] CoC classes, never for an extends subclass.',
+      'loadModule() registers each reference with NumberSeqDatatype::construct(), then parmDatatypeId(extendedTypeNum(MyEdt)) + parmWizardIsContinuous/parmWizardIsManual/parmWizardIsChangeDownAllowed/… , then this.create(datatype). ❌ Do NOT assign fields on a NumberSeqReference/NumberSequenceReference buffer (DataTypeId, WizardContinuous, AllowManual… are parm*() methods on NumberSeqDatatype, NOT table fields) and there is NO this.addModuleEntry().',
+      'Override numberSeqModule() to return your NumberSeqModule enum value.',
+      'A new module class is NOT auto-loaded: extend the NumberSeqModule enum and register the module via an event handler on NumberSeqGlobal (or CoC) so loadModule() runs.',
+      'Form auto-numbering: NumberSeqFormHandler::newForm(<ParametersTable>::numRef<Id>().NumberSequenceId, element, <datasource>, fieldNum(<Table>, <Id>)). First arg is a RefRecId via the .NumberSequenceId field. ❌ NOT .NumberSequence and ❌ NOT a string code.',
+      'Runtime fetch: NumberSeqReference::findReference(extendedTypeNum(MyId)) → NumberSeq::newGetNum(ref) → .num(); call .abort() to release on rollback.',
+      'Continuous (no gaps): perf cost — only when legally required. Non-continuous (default) allows gaps, faster for internal IDs.',
+      'Scope: DataArea (per-company), Global (cross-company), OperatingUnit.',
+      'Verify exact parm*() names against the SDK with get_object_info(objectType="class", name="NumberSeqDatatype") before relying on them.',
     ],
     examples: [
       {
-        label: 'Fetching next number',
+        label: 'Module class — register the reference in loadModule() (correct API)',
+        code: `public class NumberSeqModuleAslRent extends NumberSeqApplicationModule
+{
+    protected void loadModule()
+    {
+        NumberSeqDatatype datatype = NumberSeqDatatype::construct();
+        datatype.parmDatatypeId(extendedTypeNum(AslRentEquipmentId));
+        datatype.parmReferenceHelp(literalStr("Equipment ID"));
+        datatype.parmWizardIsContinuous(false);
+        datatype.parmWizardIsManual(NoYes::No);
+        datatype.parmWizardIsChangeDownAllowed(NoYes::Yes);
+        datatype.parmWizardIsChangeUpAllowed(NoYes::Yes);
+        datatype.parmWizardHighest(0);
+        datatype.parmSortField(1);
+        datatype.addParameterType(NumberSeqParameterType::DataArea, true, false);
+        this.create(datatype);            // NOT a NumberSeqReference field assignment
+    }
+
+    public NumberSeqModule numberSeqModule()
+    {
+        return NumberSeqModule::AslRent;  // your NumberSeqModule enum value
+    }
+}`,
+      },
+      {
+        label: 'Form auto-numbering handler',
+        code: `NumberSeqFormHandler numberSeqFormHandler;   // form member
+
+public NumberSeqFormHandler numberSeqFormHandler()
+{
+    if (!numberSeqFormHandler)
+    {
+        numberSeqFormHandler = NumberSeqFormHandler::newForm(
+            AslRentParameters::numRefAslRentEquipmentId().NumberSequenceId, // RefRecId, not a string
+            element,
+            AslRentEquipmentTable_ds,
+            fieldNum(AslRentEquipmentTable, AslRentEquipmentId));
+    }
+    return numberSeqFormHandler;
+}`,
+      },
+      {
+        label: 'Fetching next number at runtime',
         code: `NumberSequenceReference numSeqRef =
-    NumberSeqReference::findReference(
-        extendedTypeNum(MyDocumentId));
+    NumberSeqReference::findReference(extendedTypeNum(AslRentEquipmentId));
 
 NumberSeq numSeq = NumberSeq::newGetNum(numSeqRef);
-MyDocumentId newId = numSeq.num();
+AslRentEquipmentId newId = numSeq.num();
 
-// If insert fails, release the number:
+// If the insert is rolled back, release the number:
 // numSeq.abort();`,
       },
     ],
@@ -2147,16 +2190,51 @@ function scoreEntry(entry: KnowledgeEntry, queryTokens: string[]): number {
   return score;
 }
 
-function searchKnowledge(topic: string): KnowledgeEntry[] {
-  const tokens = topic
+/**
+ * Tokenize a topic query. Splits on whitespace/comma/semicolon/slash, then for
+ * every token that itself contains a hyphen or underscore ALSO emits the split
+ * sub-words. The original (joined) token is kept so entry-ID matches like
+ * `set-based` still hit `entry.id === token`, while hyphenated multi-word
+ * queries like `number-sequence` also match word-level keywords/titles (which
+ * store the words separated by spaces, e.g. keyword "number sequence").
+ */
+function tokenize(topic: string): string[] {
+  const base = topic
     .toLowerCase()
     .replace(/[^a-z0-9áčďéěíňóřšťúůýž_\-/\s]/g, '')
     .split(/[\s,;/]+/)
     .filter(t => t.length > 1);
 
+  const out = new Set<string>();
+  for (const tok of base) {
+    out.add(tok);
+    if (tok.includes('-') || tok.includes('_')) {
+      for (const part of tok.split(/[-_]+/).filter(p => p.length > 1)) {
+        out.add(part);
+      }
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Minimum top score for a query to count as a confident match. A score below
+ * this means no title/keyword/ID hit landed — only incidental summary-substring
+ * overlap (1–2 pts) — so the results are surfaced as low-confidence suggestions
+ * rather than authoritative answers. Without this floor, `number-sequence`
+ * silently returned Electronic Reporting docs (the nearest substring hit).
+ */
+const CONFIDENT_SCORE = 3;
+
+function searchKnowledge(topic: string): { entries: KnowledgeEntry[]; topScore: number } {
+  const tokens = tokenize(topic);
+
   if (tokens.length === 0) {
     // Return all entries sorted alphabetically
-    return [...KNOWLEDGE_BASE].sort((a, b) => a.title.localeCompare(b.title));
+    return {
+      entries: [...KNOWLEDGE_BASE].sort((a, b) => a.title.localeCompare(b.title)),
+      topScore: 0,
+    };
   }
 
   const scored = KNOWLEDGE_BASE
@@ -2164,7 +2242,10 @@ function searchKnowledge(topic: string): KnowledgeEntry[] {
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  return scored.map(s => s.entry);
+  return {
+    entries: scored.map(s => s.entry),
+    topScore: scored.length > 0 ? scored[0].score : 0,
+  };
 }
 
 // ─── Formatters ─────────────────────────────────────────────────────────────
@@ -2263,7 +2344,7 @@ function formatDetailed(entries: KnowledgeEntry[]): string {
 export async function xppKnowledgeTool(request: CallToolRequest) {
   try {
     const args = XppKnowledgeArgsSchema.parse(request.params.arguments);
-    const entries = searchKnowledge(args.topic);
+    const { entries, topScore } = searchKnowledge(args.topic);
 
     // Empty topic → compact table of contents listing ALL entries
     const isListAll = args.topic.trim() === '';
@@ -2277,6 +2358,16 @@ export async function xppKnowledgeTool(request: CallToolRequest) {
       formatted = args.format === 'detailed'
         ? formatDetailed(entries)
         : formatConcise(entries);
+
+      // Low-confidence guard: when something matched but only weakly (incidental
+      // substring overlap, no title/keyword/ID hit), warn so the caller doesn't
+      // treat unrelated content as authoritative.
+      if (entries.length > 0 && topScore < CONFIDENT_SCORE) {
+        formatted =
+          `⚠️ No strong match for "${args.topic}" — showing the closest entries below, which may be ` +
+          `unrelated. Browse the full list with \`get_knowledge(kind="knowledge")\` and an empty topic, ` +
+          `or refine your query.\n\n${formatted}`;
+      }
     }
 
     return {

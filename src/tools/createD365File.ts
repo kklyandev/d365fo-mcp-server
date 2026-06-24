@@ -13,9 +13,10 @@ import { registerCustomModel, resolveObjectPrefix, applyObjectPrefix, getObjectS
 import { PackageResolver } from '../utils/packageResolver.js';
 import { ensureXppDocComment, ensureBlankLineBeforeClosingBrace } from '../utils/xppDocGen.js';
 import { decodeXmlEntitiesFromXppSource } from './modifyD365File.js';
-import { bridgeValidateAfterWrite, canBridgeCreate, bridgeCreateObject } from '../bridge/index.js';
+import { bridgeValidateAfterWrite, canBridgeCreate, bridgeCreateObject, bridgeRefreshProvider } from '../bridge/index.js';
 import { enforceGrounding } from '../utils/provenanceStore.js';
 import { gateOnFormPatternErrors } from './validateFormPattern.js';
+import { FormPatternTemplates } from '../utils/formPatternTemplates.js';
 import { gateOnReferenceErrors } from './resolveReferences.js';
 import { normalizeD365Xml } from '../utils/d365XmlNormalizer.js';
 import { buildAxSecurityPrivilegeXml } from './securityPrivilegeXml.js';
@@ -628,8 +629,12 @@ ${methodsXml}\t</SourceCode>
     // Build <Fields> block from properties.fields array (TableFieldSpec[]).
     // Copilot may pass field definitions via properties.fields or via sourceCode JSON —
     // both paths merge into properties before calling here (see generate()).
-    const fieldSpecs: Array<{ name: string; edt?: string; type?: string; mandatory?: boolean; label?: string }> =
-      Array.isArray(properties?.fields) ? properties.fields : [];
+    // Field-spec keys are unified with the table-extension path (generateAxTableExtensionXml):
+    // accept an explicit AxTableField* i:type (fieldType), a primitive base type (type),
+    // or infer AxTableFieldEnum from enumType — and always emit <EnumType> for enum fields.
+    const fieldSpecs: Array<{
+      name: string; edt?: string; type?: string; fieldType?: string; enumType?: string; mandatory?: boolean; label?: string;
+    }> = Array.isArray(properties?.fields) ? properties.fields : [];
 
     let fieldsXml: string;
     if (fieldSpecs.length === 0) {
@@ -637,14 +642,17 @@ ${methodsXml}\t</SourceCode>
     } else {
       fieldsXml = '\t<Fields>\n';
       for (const f of fieldSpecs) {
-        // Determine i:type: use explicit type if provided, otherwise derive from EDT name heuristics.
-        // NEVER default to AxTableFieldString blindly when an EDT is present — EDT base type matters!
-        const iType = fieldTypeToAxType(f.type || 'String', f.edt);
+        // Determine i:type: explicit AxTableField* wins; otherwise derive from the
+        // primitive type / enumType / EDT name heuristics. NEVER default to
+        // AxTableFieldString blindly when an EDT or enumType is present.
+        const iType = f.fieldType
+          ?? fieldTypeToAxType(f.type || (f.enumType ? 'Enum' : 'String'), f.edt);
         fieldsXml += `\t\t<AxTableField xmlns=""\n\t\t\ti:type="${iType}">\n`;
         fieldsXml += `\t\t\t<Name>${f.name}</Name>\n`;
         if (f.edt)       fieldsXml += `\t\t\t<ExtendedDataType>${f.edt}</ExtendedDataType>\n`;
-        if (f.mandatory) fieldsXml += `\t\t\t<Mandatory>Yes</Mandatory>\n`;
         if (f.label)     fieldsXml += `\t\t\t<Label>${f.label}</Label>\n`;
+        if (f.mandatory) fieldsXml += `\t\t\t<Mandatory>Yes</Mandatory>\n`;
+        if (f.enumType)  fieldsXml += `\t\t\t<EnumType>${f.enumType}</EnumType>\n`;
         fieldsXml += `\t\t</AxTableField>\n`;
       }
       fieldsXml += '\t</Fields>\n';
@@ -758,59 +766,39 @@ ${enumValuesXml}${isExtensibleXml}</AxEnum>
   }
 
   /**
-   * Generate AxForm XML structure (based on real D365FO form structure)
+   * Generate AxForm XML for a new form from a pattern template.
+   *
+   * Delegates to the pattern-compliant {@link FormPatternTemplates} builders so
+   * the generated skeleton actually satisfies the form-pattern gate. The old
+   * inline skeleton declared a `<Pattern>` over empty `<Controls />`, which the
+   * gate rejected as FP003 (required Grid/ActionPane missing) for every pattern
+   * — and worse, defaulted to a `DetailsTransaction` pattern even when the
+   * caller asked for a `SimpleList` template, guaranteeing a mismatch block.
+   *
+   * Pattern resolution: callers may express the intent as either `pattern`
+   * (the design pattern) or `formTemplate` (the VS template name); both are
+   * fuzzy strings normalized to a canonical pattern. When neither is given we
+   * default to SimpleList — the most common shape for a new setup table.
    */
   static generateAxFormXml(
     formName: string,
     properties?: Record<string, any>
   ): string {
-    const caption = properties?.caption || `@${formName}`;
-    const formTemplate = properties?.formTemplate || 'DetailsPage';
-    const pattern = properties?.pattern || 'DetailsTransaction';
-    const dataSource = properties?.dataSource || '';
-    const interactionClass = properties?.interactionClass || '';
-    const style = properties?.style || 'DetailsFormTransaction';
+    const rawPattern = properties?.pattern || properties?.formTemplate;
+    const pattern = rawPattern
+      ? FormPatternTemplates.normalizePattern(String(rawPattern))
+      : 'SimpleList';
 
-    // Build class declaration for SourceCode
-    const extendsFrom = properties?.extends || 'FormRun';
-    const classDeclaration = properties?.classDeclaration || 
-      `[Form]\npublic class ${formName} extends ${extendsFrom}\n{\n}`;
-
-    // Build optional InteractionClass
-    const interactionClassXml = interactionClass
-      ? `\t<InteractionClass>${interactionClass}</InteractionClass>\n`
-      : '';
-
-    // Build DataSource reference for Design
-    const dataSourceXml = dataSource
-      ? `\t\t<DataSource xmlns="">${dataSource}</DataSource>\n`
-      : '';
-
-    return `<?xml version="1.0" encoding="utf-8"?>
-<AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
-\t<Name>${formName}</Name>
-\t<SourceCode>
-\t\t<Methods xmlns="">
-\t\t\t<Method>
-\t\t\t\t<Name>classDeclaration</Name>
-\t\t\t\t<Source><![CDATA[
-${classDeclaration}
-
-]]></Source>
-\t\t\t</Method>
-\t\t</Methods>
-\t</SourceCode>
-\t<FormTemplate>${formTemplate}</FormTemplate>
-${interactionClassXml}\t<DataSources />
-\t<Design>
-\t\t<Caption xmlns="">${caption}</Caption>
-${dataSourceXml}\t\t<Pattern xmlns="">${pattern}</Pattern>
-\t\t<Style xmlns="">${style}</Style>
-\t\t<Controls xmlns="" />
-\t</Design>
-\t<Parts />
-</AxForm>
-`;
+    return FormPatternTemplates.build(pattern, {
+      formName,
+      dsName: properties?.dataSource || undefined,
+      dsTable: properties?.dataSourceTable || properties?.dataSource || undefined,
+      caption: properties?.caption,
+      gridFields: Array.isArray(properties?.gridFields) ? properties.gridFields : undefined,
+      linesDsName: properties?.linesDataSource,
+      linesDsTable: properties?.linesDataSourceTable || properties?.linesDataSource,
+      sections: Array.isArray(properties?.sections) ? properties.sections : undefined,
+    });
   }
 
   /**
@@ -2599,30 +2587,58 @@ ${relationsXml}
   }
 
   /**
+   * Normalize a name list that may arrive as an array or a comma/semicolon/
+   * newline-separated string (models pass either). Returns trimmed, non-empty names.
+   */
+  static normalizeNameList(value: any): string[] {
+    if (!value) return [];
+    const arr = Array.isArray(value) ? value : String(value).split(/[,;\n]+/);
+    return arr.map((s: any) => String(s).trim()).filter((s: string) => s.length > 0);
+  }
+
+  /**
+   * Render a security reference container: a self-closing tag when empty, or the
+   * wrapped child references (e.g. <AxSecurityRolePermissionSet><Name>…</Name></…>).
+   */
+  private static securityRefContainer(container: string, childTag: string, names: string[]): string {
+    if (names.length === 0) return `\t<${container} />`;
+    const children = names
+      .map(n => `\t\t<${childTag}>\n\t\t\t<Name>${n}</Name>\n\t\t</${childTag}>`)
+      .join('\n');
+    return `\t<${container}>\n${children}\n\t</${container}>`;
+  }
+
+  /**
    * Generate AxSecurityDuty XML.
+   * properties.privileges – privilege names to reference (array or comma-separated).
    */
   static generateAxSecurityDutyXml(name: string, properties?: Record<string, any>): string {
     const label = properties?.label || '@TODO:LabelId';
+    const privileges = this.normalizeNameList(properties?.privileges);
     return `<?xml version="1.0" encoding="utf-8"?>
 <AxSecurityDuty xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
 \t<Name>${name}</Name>
 \t<Label>${label}</Label>
-\t<Privileges />
+${this.securityRefContainer('Privileges', 'AxSecurityRolePermissionSet', privileges)}
 </AxSecurityDuty>`;
   }
 
   /**
    * Generate AxSecurityRole XML.
+   * properties.duties     – duty names to reference (array or comma-separated).
+   * properties.privileges – privilege names to reference directly on the role.
    */
   static generateAxSecurityRoleXml(name: string, properties?: Record<string, any>): string {
     const label = properties?.label || '@TODO:LabelId';
+    const duties = this.normalizeNameList(properties?.duties);
+    const privileges = this.normalizeNameList(properties?.privileges);
     return `<?xml version="1.0" encoding="utf-8"?>
 <AxSecurityRole xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
 \t<Name>${name}</Name>
 \t<Label>${label}</Label>
 \t<DirectAccessPermissions />
-\t<Duties />
-\t<Privileges />
+${this.securityRefContainer('Duties', 'AxSecurityRoleDutyPermission', duties)}
+${this.securityRefContainer('Privileges', 'AxSecurityRolePermissionSet', privileges)}
 \t<SubRoles />
 </AxSecurityRole>`;
   }
@@ -3693,15 +3709,29 @@ export async function handleCreateD365File(
         basePath = customWritePath || args.packagePath || configPackagePath || fallbackPackagePath();
       }
     } else {
-      // Traditional mode: assume package == model.
-      // Prefer the custom write root over D365FO_PACKAGE_PATH so custom model
-      // XML lands in the repo working tree rather than the MS PackagesLocalDirectory.
-      resolvedPackageName = actualModelName;
-      basePath =
-        args.packagePath ||
-        customWritePath ||
-        configPackagePath ||
-        fallbackPackagePath();
+      // Traditional mode: try descriptor-based resolution first so a package
+      // whose name differs from the model name (e.g. package "ISVPackage",
+      // model "ISV Package") resolves correctly without an explicit packageName
+      // arg. Scan both the custom write root and D365FO_PACKAGE_PATH for the
+      // matching descriptor; fall back to assuming package == model otherwise.
+      const roots = [customWritePath, configPackagePath].filter(Boolean) as string[];
+      const resolver = new PackageResolver(roots);
+      const resolved = roots.length ? await resolver.resolve(actualModelName) : null;
+
+      if (resolved) {
+        resolvedPackageName = resolved.packageName;
+        basePath = resolved.rootPath;
+      } else {
+        // Fallback: assume package == model.
+        // Prefer the custom write root over D365FO_PACKAGE_PATH so custom model
+        // XML lands in the repo working tree rather than the MS PackagesLocalDirectory.
+        resolvedPackageName = actualModelName;
+        basePath =
+          args.packagePath ||
+          customWritePath ||
+          configPackagePath ||
+          fallbackPackagePath();
+      }
     }
 
     console.error(
@@ -3793,14 +3823,54 @@ export async function handleCreateD365File(
 
     if (fileExisted) {
       if (!args.overwrite) {
+        // Surface what's already on disk so the caller doesn't have to read the
+        // file in chunks just to discover its contents. Previously this branch
+        // returned only "already exists", forcing repeated read_file calls.
+        let existingContent = '';
+        try {
+          existingContent = await fs.readFile(normalizedFullPath, 'utf-8');
+        } catch { /* unreadable — fall through with no summary */ }
+
+        let existingSummary = '';
+        let inlineContent = '';
+        if (existingContent) {
+          const methodNames = [...existingContent.matchAll(/<Method>\s*<Name>([^<]+)<\/Name>/g)].map(m => m[1]);
+          const fieldNames = [...existingContent.matchAll(/<AxTableField[A-Za-z]*>\s*<Name>([^<]+)<\/Name>/g)].map(m => m[1]);
+          const summaryParts: string[] = [];
+          if (methodNames.length) {
+            summaryParts.push(`${methodNames.length} method(s): ${methodNames.slice(0, 30).join(', ')}${methodNames.length > 30 ? ', …' : ''}`);
+          }
+          if (fieldNames.length) {
+            summaryParts.push(`${fieldNames.length} field(s): ${fieldNames.slice(0, 30).join(', ')}${fieldNames.length > 30 ? ', …' : ''}`);
+          }
+          const sizeKb = (Buffer.byteLength(existingContent, 'utf-8') / 1024).toFixed(1);
+          existingSummary = `\n\n📄 Existing file (${sizeKb} KB):` +
+            (summaryParts.length ? `\n  ${summaryParts.join('\n  ')}` : ' (no methods/fields detected)');
+
+          // Inline the full content when small enough to be useful in one shot;
+          // otherwise point at the targeted readers rather than dumping a huge file.
+          const INLINE_LIMIT = 8000;
+          inlineContent = existingContent.length <= INLINE_LIMIT
+            ? `\n\n----- BEGIN ${path.basename(normalizedFullPath)} -----\n${existingContent}\n----- END -----`
+            : `\n\n(File is ${sizeKb} KB — too large to inline. Use get_method / get_object_info to read specific members.)`;
+        }
+
+        // When the requested objectName was normalized to a different on-disk name,
+        // say so explicitly — the file that "already exists" can otherwise look
+        // unrelated to what the caller asked for (e.g. "Foo_Extension" → "FooAc_Extension").
+        const nameNote = finalObjectName !== args.objectName
+          ? `\n\nℹ️ Note: objectName "${args.objectName}" was normalized to "${finalObjectName}" ` +
+            `(active naming style/prefix), so this is the file that matches your request.`
+          : '';
+
         return {
           content: [
             {
               type: 'text',
-              text: `⚠️ File already exists: ${normalizedFullPath}\n\nOptions:\n` +
+              text: `⚠️ File already exists: ${normalizedFullPath}${nameNote}${existingSummary}\n\nOptions:\n` +
                 `  1. Pass overwrite=true together with xmlContent to replace the file.\n` +
                 `  2. Use d365fo_file(action="modify") to make targeted changes (rename-field, replace-all-fields, modify-property, …).\n` +
-                `  3. Choose a different objectName.`,
+                `  3. Choose a different objectName.${inlineContent}`,
             },
           ],
           isError: true,
@@ -3815,12 +3885,27 @@ export async function handleCreateD365File(
     // (report, data-entity, tile, kpi, business-event, etc.).
     if (!args.xmlContent && context?.bridge && actualModelName && canBridgeCreate(args.objectType)) {
       try {
+        // The bridge's `properties` is a flat string map (C# Dictionary<string,string>).
+        // Keep only SCALAR values and stringify them. Structured collections
+        // (fields/fieldGroups/indexes/relations/values/enumValues/methods) are
+        // arrays/objects passed via their own bridge params below — if they leak into
+        // `properties` the C# GetDictParam calls GetString() on a JSON array/boolean and
+        // the whole create throws ("requires an element of type 'String', but the target
+        // element has type 'Array'/'True'").
+        const scalarProperties: Record<string, string> | undefined = args.properties
+          ? Object.fromEntries(
+              Object.entries(args.properties as Record<string, unknown>)
+                .filter(([, v]) => v != null && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'))
+                .map(([k, v]) => [k, String(v)]),
+            )
+          : undefined;
+
         // Prepare parameters for the bridge
         const bridgeParams: Parameters<typeof bridgeCreateObject>[1] = {
           objectType: args.objectType,
           objectName: finalObjectName,
           modelName: actualModelName,
-          properties: (args.properties as Record<string, string>) ?? undefined,
+          properties: scalarProperties && Object.keys(scalarProperties).length > 0 ? scalarProperties : undefined,
         };
 
         // For classes: parse sourceCode into declaration + methods
@@ -3902,6 +3987,10 @@ export async function handleCreateD365File(
             }
           }
 
+          // Eagerly refresh the bridge provider so the new object is immediately
+          // resolvable by subsequent modify calls in the same session.
+          try { await bridgeRefreshProvider(context.bridge); } catch { /* best-effort */ }
+
           return {
             content: [
               {
@@ -3934,21 +4023,33 @@ export async function handleCreateD365File(
     // When xmlContent or sourceCode contains `class MyClass` but finalObjectName is `MyPrefixMyClass`,
     // the file would be named MyPrefixMyClass.xml but contain `class MyClass` — inconsistency!
     if (finalObjectName !== args.objectName && (args.xmlContent || args.sourceCode)) {
-      // Pattern to match: `class OriginalName` or `public class OriginalName`
+      const orig = args.objectName;
+      const final = finalObjectName;
+      // Escape for use in RegExp (handles dots in extension names like "Foo.Extension")
+      const escapedOrig = orig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      // 1. `class OriginalName` / `public class OriginalName` etc.
       const classPattern = new RegExp(
-        `\\b(public\\s+|private\\s+|protected\\s+|internal\\s+|final\\s+)?class\\s+${args.objectName}\\b`,
-        'g'
+        `\\b(public\\s+|private\\s+|protected\\s+|internal\\s+|final\\s+)?class\\s+${escapedOrig}\\b`,
+        'g',
       );
-      const replacedContent = xmlContent.replace(classPattern, (match) => {
-        return match.replace(args.objectName, finalObjectName);
-      });
-      
-      if (replacedContent !== xmlContent) {
+      let replaced = xmlContent.replace(classPattern, (match) => match.replace(orig, final));
+
+      // 2. classnum(OriginalName) — X++ intrinsic that refers to the class by name.
+      //    Callers often write classnum(OriginalName) in the source code before prefixing.
+      const classnumPattern = new RegExp(`\\bclassnum\\(\\s*${escapedOrig}\\s*\\)`, 'gi');
+      replaced = replaced.replace(classnumPattern, (m) => m.replace(new RegExp(escapedOrig, 'i'), final));
+
+      // 3. classStr(OriginalName) — used in [ExtensionOf(classStr(...))] and SysOperation attributes.
+      const classStrPattern = new RegExp(`\\bclassStr\\(\\s*${escapedOrig}\\s*\\)`, 'gi');
+      replaced = replaced.replace(classStrPattern, (m) => m.replace(new RegExp(escapedOrig, 'i'), final));
+
+      if (replaced !== xmlContent) {
         console.error(
           `[create_d365fo_file] ✅ Fixed class name inconsistency: ` +
-          `replaced \`class ${args.objectName}\` with \`class ${finalObjectName}\` in XML content`
+          `replaced \`${orig}\` with \`${final}\` in XML content (class decl, classnum, classStr)`,
         );
-        xmlContent = replacedContent;
+        xmlContent = replaced;
       }
     }
 
@@ -4049,6 +4150,10 @@ export async function handleCreateD365File(
     console.error(
       `[create_d365fo_file] ✅ Written: ${normalizedFullPath}  (${fileSizeKb} KB)`
     );
+
+    // Eagerly refresh the bridge provider so the new object is immediately
+    // resolvable by subsequent modify calls in the same session.
+    try { await bridgeRefreshProvider(context?.bridge); } catch { /* best-effort */ }
 
     // Post-write validation via C# bridge (best-effort, non-fatal, fire-and-forget).
     // Not awaited: the validation goes through the sequential bridge stdin/stdout

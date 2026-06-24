@@ -34,8 +34,10 @@ import { recordToolStart, startMetricsLogging, recordCallSequence } from '../uti
 import {
   DEDUP_EXCLUDED_TOOLS, DEDUP_TTL_MS,
   dedupKey, getDedupedResult, storeDedupResult, appendNote,
+  getInFlight, registerInFlight, clearInFlight,
 } from '../utils/callDedup.js';
 import { checkIndexStaleness } from '../utils/indexStaleness.js';
+import { buildContextSnapshot, renderContextSnapshotSection } from '../workspace/contextSnapshot.js';
 import * as nodePath from 'path';
 import { buildProgressMessage } from '../utils/toolProgressMessage.js';
 
@@ -193,7 +195,23 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
           `the result above is identical. Use the data you already have instead of re-querying.`,
         );
       }
+      // In-flight dedup: if the same call is already executing, coalesce onto it
+      // rather than starting a redundant parallel execution.
+      const inFlight = getInFlight(callKey);
+      if (inFlight) {
+        console.error(`[toolHandler] ⏳ ${toolName}: identical call already in-flight — coalescing`);
+        const inFlightResult = await inFlight;
+        return appendNote(
+          inFlightResult,
+          `> ♻️ Parallel duplicate — coalesced with a concurrent identical call.`,
+        );
+      }
     }
+
+    // Register this call as in-flight so concurrent duplicates can coalesce.
+    const inFlightHandle = !DEDUP_EXCLUDED_TOOLS.has(toolName)
+      ? registerInFlight(callKey)
+      : null;
 
     const finishMetrics = recordToolStart(toolName);
     let result: any;
@@ -546,6 +564,17 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
           }
         }
 
+        // -----------------------------------------------------------------------
+        // Context Snapshot — curated "what am I working on" view: recently edited
+        // objects + uncommitted X++ changes. Best-effort; never breaks the tool.
+        // -----------------------------------------------------------------------
+        try {
+          const snapshot = await buildContextSnapshot(context);
+          lines.push('', ...renderContextSnapshotSection(snapshot));
+        } catch {
+          // Snapshot is additive — omit silently on failure.
+        }
+
         return { content: [{ type: 'text', text: lines.join('\n') }] };
       }
       default:
@@ -583,6 +612,9 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
 
     if (!DEDUP_EXCLUDED_TOOLS.has(toolName)) {
       storeDedupResult(callKey, capped);
+      // Resolve the in-flight promise so any coalesced waiters get the result.
+      inFlightHandle?.resolve(capped);
+      clearInFlight(callKey);
       // Loop hint: 3+ identical calls in the recent window means the model is
       // cycling (cache misses only happen when calls are >60 s apart).
       if (occurrences >= 3) {
