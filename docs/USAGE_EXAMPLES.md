@@ -46,29 +46,29 @@ add display menu items + a submenu, and a maintenance + a view security role.
 Label everything in en-US, cs and de.
 ```
 
-The diagram below is the **actual tool chain from a recorded run** of this prompt (model `fm-mcp`, `Asl` object prefix — the codebase's own naming). It is busier than an idealized plan because real metadata pushes back: the number-sequence delegate had to be reverse-engineered from the platform, and a couple of form generations were retried. See the cost box for the measured numbers.
+The diagram below is the **actual tool chain from a recorded run** of this prompt (object names normalized to the generic `EquipRental` model / `Rent` prefix used above). It is busier than an idealized plan because real metadata pushes back: the number-sequence delegate had to be reverse-engineered from the platform, and a couple of form generations were retried. See the cost box for the measured numbers.
 
 ```mermaid
 flowchart TB
-    A["get_workspace_info<br/>model fm-mcp, paths, staleness"] --> B["get_knowledge x4<br/>number sequences / form patterns / security / object patterns"]
+    A["get_workspace_info<br/>model EquipRental, paths, staleness"] --> B["get_knowledge x4<br/>number sequences / form patterns / security / object patterns"]
     B --> C["object_patterns domain=form action=analyze x2<br/>master + header/lines transaction"]
     C --> D["analyze_code mode=patterns + search x2<br/>how this codebase wires NumberSeqModule"]
-    D --> E["generate_object mode=pattern<br/>pattern=number-seq-handler (AslRent)"]
+    D --> E["generate_object mode=pattern<br/>pattern=number-seq-handler (Rent)"]
     E --> F["verify_d365fo_project<br/>early scaffold sanity check"]
     F --> G["list_dir + run_in_terminal<br/>locate label-file shape in metadata"]
-    G --> H["labels action=create<br/>AslRent label file, 42 entries (en-US/cs/de)"]
+    G --> H["labels action=create<br/>Rent label file, 42 entries (en-US/cs/de)"]
     H --> I["d365fo_file action=create<br/>2 EDTs + 3 enums + NumberSeqModule enum-extension"]
     I --> J["d365fo_file action=create x4<br/>tables: Equipment / AgreementHeader / Line / Parameters"]
     J --> K["d365fo_file action=modify<br/>add-index x4 + add-relation x3"]
     K --> L["d365fo_file action=modify<br/>table methods: numRef* + numberSeqModule()"]
-    L --> M["d365fo_file action=create<br/>NumberSeqModuleAslRent class + NumberSeqGlobal class-extension"]
+    L --> M["d365fo_file action=create<br/>NumberSeqModuleRent class + NumberSeqGlobal class-extension"]
     M --> N["search + run_in_terminal x~10<br/>find NumberSeqGlobal buildModulesMapDelegate pattern"]
     N --> O["d365fo_file action=modify class-extension<br/>SubscribesTo buildModulesMapDelegate"]
     O --> P["update_symbol_index"]
     P --> Q["generate_object objectType=form cloneFrom (+retries)<br/>Equipment←PaymTerm, Agreement←SalesTable"]
     Q --> R["d365fo_file action=modify form<br/>add lines data source + number-seq form handler methods"]
     R --> S["generate_object form Parameters TableOfContents<br/>(retried) + update_symbol_index"]
-    S --> T["d365fo_file action=create<br/>3 display menu items + menu AslRentModule + add items"]
+    S --> T["d365fo_file action=create<br/>3 display menu items + menu RentModule + add items"]
     T --> U["d365fo_file action=create<br/>4 privileges + 2 duties + 2 roles"]
     U --> V["verify_d365fo_project<br/>final, full object list"]
 ```
