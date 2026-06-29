@@ -42,6 +42,28 @@ describe('get_xpp_knowledge', () => {
     expect(text).toContain('Set-Based Operations');
   });
 
+  it('warns against COM Excel for "read excel" topic (file-readers)', async () => {
+    const result = await xppKnowledgeTool(req({ topic: 'read excel csv' }));
+    const text = getText(result);
+    expect(text).toContain('OpenXML');
+    expect(text).toContain('SysExcelApplication'); // documents the anti-pattern
+    expect(text).not.toContain('❌ No matching');
+  });
+
+  it('returns the BatchHeader fan-out for "parallel batch" topic', async () => {
+    const result = await xppKnowledgeTool(req({ topic: 'parallel batch' }));
+    const text = getText(result);
+    expect(text).toContain('addRuntimeTask');
+    expect(text).not.toContain('❌ No matching');
+  });
+
+  it('requires a permission assert for "direct sql" topic', async () => {
+    const result = await xppKnowledgeTool(req({ topic: 'direct sql' }));
+    const text = getText(result);
+    expect(text).toContain('SqlStatementExecutePermission');
+    expect(text).not.toContain('❌ No matching');
+  });
+
   it('returns detailed format with code examples', async () => {
     const result = await xppKnowledgeTool(req({ topic: 'transactions', format: 'detailed' }));
     const text = getText(result);
