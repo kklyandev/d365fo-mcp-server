@@ -32,6 +32,7 @@ const SearchArgsSchema = z.object({
   limit: z.number().max(100).optional().default(20).describe('Maximum results to return'),
   workspacePath: z.string().optional().describe('Optional workspace path to search local project files in addition to external metadata'),
   includeWorkspace: z.boolean().optional().default(false).describe('Whether to include workspace files in search results (workspace-aware search)'),
+  verbose: z.boolean().optional().default(false).describe('Include related-searches/patterns/tips sections in the output'),
 });
 
 export async function searchTool(request: CallToolRequest, context: XppServerContext) {
@@ -100,7 +101,7 @@ async function performHybridSearch(
     
     try {
       const { symbolIndex } = context;
-      const allSymbolNames = symbolIndex.getAllSymbolNames();
+      const allSymbolNames = symbolIndex.getAllSymbolNames(args.query);
       const symbolsByTerm = symbolIndex.getSymbolsByTerm();
       
       const suggestions = generateSearchSuggestions(
@@ -149,11 +150,14 @@ async function performHybridSearch(
 
   // Convert hybrid results to XppSymbol format for rich context
   const symbols = results.map(r => r.symbol).filter(Boolean) as any[];
-  
-  // Generate rich context from symbols
-  const relatedSearches = generateRelatedSearches(args.query, symbols, 5);
-  const commonPatterns = detectCommonPatterns(symbols);
-  const tips = generateContextualTips(args.query, symbols, args.type);
+
+  // Rich context sections (related searches / patterns / tips) are opt-in:
+  // on a successful search they are mostly generic boilerplate that costs the
+  // agent hundreds of tokens per call. Empty-result searches keep suggestions
+  // (handled above) because there the guidance is the entire value.
+  const relatedSearches = args.verbose ? generateRelatedSearches(args.query, symbols, 5) : [];
+  const commonPatterns = args.verbose ? detectCommonPatterns(symbols) : [];
+  const tips = args.verbose ? generateContextualTips(args.query, symbols, args.type) : [];
 
   // Format results with source indicators
   const formatted = results
@@ -228,7 +232,7 @@ async function performExternalSearch(
     // Ensure results is not null
     if (!results || results.length === 0) {
       // Generate intelligent suggestions using suggestion engine
-      const allSymbolNames = symbolIndex.getAllSymbolNames();
+      const allSymbolNames = symbolIndex.getAllSymbolNames(args.query);
       const symbolsByTerm = symbolIndex.getSymbolsByTerm();
       
       // Note: context is passed as parameter, so we can access it
@@ -266,10 +270,11 @@ async function performExternalSearch(
       };
     }
 
-    // Generate rich context
-    const relatedSearches = generateRelatedSearches(args.query, results, 5);
-    const commonPatterns = detectCommonPatterns(results);
-    const tips = generateContextualTips(args.query, results, args.type);
+    // Rich context sections are opt-in via `verbose` — on a successful search
+    // they are mostly generic boilerplate costing hundreds of tokens per call.
+    const relatedSearches = args.verbose ? generateRelatedSearches(args.query, results, 5) : [];
+    const commonPatterns = args.verbose ? detectCommonPatterns(results) : [];
+    const tips = args.verbose ? generateContextualTips(args.query, results, args.type) : [];
 
     // Format output with rich context
     let output = `Found ${results.length} matches:\n`;

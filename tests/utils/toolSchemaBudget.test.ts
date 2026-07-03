@@ -23,11 +23,12 @@ import { createXppMcpServer } from '../../src/server/mcpServer';
 // the human-readable log line, never for assertions.
 const CHARS_PER_TOKEN = 4;
 
-// Ceilings in characters of serialized JSON. Current actuals (2026-06, after
-// the A+B description trim): total ≈ 70,103 · d365fo_file ≈ 18,503. Headroom is
-// small on purpose so creep is caught early.
-const TOTAL_BUDGET = 72_000;
-const LARGEST_TOOL_BUDGET = 19_000; // d365fo_file is the outlier (~26% of total)
+// Ceilings in characters of serialized JSON. Current actuals (2026-07, after
+// the audit description trim): total ≈ 69,158 · d365fo_file ≈ 17,207. Headroom
+// is small on purpose so creep is caught early. The next big cut is structural
+// (modify-op params → error-driven guidance) — see BACKLOG.md.
+const TOTAL_BUDGET = 70_000;
+const LARGEST_TOOL_BUDGET = 17_800; // d365fo_file is the outlier (~25% of total)
 
 async function getTools(): Promise<Array<{ name: string }>> {
   const ctx: any = { symbolIndex: {}, parser: {} };

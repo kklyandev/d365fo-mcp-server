@@ -389,6 +389,10 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         // in a single-root traditional setup neither is set so omit the line.
         const msFrameworkPath = frameworkDirectory ?? (!customPackagesPath ? null : packagePath);
 
+        // Verbose diagnostic sections (suffix breakdown, stdio session dump) are
+        // opt-in — they are debugging aids that cost tokens on every call.
+        const diagnostics = args.diagnostics === true;
+
         const lines: string[] = [
           `## D365FO Workspace Configuration`,
           ``,
@@ -406,15 +410,23 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
             ? `✅ EXTENSION_PREFIX is set — all new objects will use prefix "${effectivePrefix}".`
             : `⚠️  EXTENSION_PREFIX is not set in the server environment. The model name "${modelName}" will be used as prefix. Add EXTENSION_PREFIX=MY (or your ISV prefix) to the .env file and restart the server.`,
           ``,
-          `## Suffix Configuration`,
-          ``,
-          `EXTENSION_SUFFIX: ${objectSuffixEnv ?? '(not set)'}`,
-          `Effective suffix: ${effectiveSuffix || '(none)'}`,
-          effectiveSuffix
-            ? `✅ EXTENSION_SUFFIX is set — new objects will have suffix "${effectiveSuffix}" appended (e.g. MyTable${effectiveSuffix}).`
-            : `ℹ️  EXTENSION_SUFFIX is not set. No suffix will be applied. This is normal — most projects use prefixes only.`,
-          ``,
         ];
+
+        if (diagnostics) {
+          lines.push(
+            `## Suffix Configuration`,
+            ``,
+            `EXTENSION_SUFFIX: ${objectSuffixEnv ?? '(not set)'}`,
+            `Effective suffix: ${effectiveSuffix || '(none)'}`,
+            effectiveSuffix
+              ? `✅ EXTENSION_SUFFIX is set — new objects will have suffix "${effectiveSuffix}" appended (e.g. MyTable${effectiveSuffix}).`
+              : `ℹ️  EXTENSION_SUFFIX is not set. No suffix will be applied. This is normal — most projects use prefixes only.`,
+            ``,
+          );
+        } else if (effectiveSuffix) {
+          // Suffix affects generated names — always surface it when active.
+          lines.push(`Suffix          : "${effectiveSuffix}" appended to new objects (EXTENSION_SUFFIX)`, ``);
+        }
 
         // ── Extension naming style ────────────────────────────────────────────
         // The prefix doubles as the extension infix UNLESS EXTENSION_NAMING_STYLE
@@ -527,7 +539,9 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
         // -----------------------------------------------------------------------
         // Stdio session info — what VS 2022 sent during the MCP handshake
         // Populated by the stdin sniffer in index.ts (always active in stdio mode).
+        // Debugging aid — only rendered with diagnostics=true.
         // -----------------------------------------------------------------------
+        if (diagnostics) {
         const sio = getStdioSessionInfo();
         lines.push(``);
         lines.push(`## Stdio Session Info`);
@@ -562,6 +576,7 @@ export function registerToolHandler(server: Server, context: XppServerContext): 
             lines.push(`Last change at  : ${sio.rootsListChangedLastAt}`);
             lines.push(`✅ VS 2022 IS sending roots/list_changed — solution switching IS detectable.`);
           }
+        }
         }
 
         // -----------------------------------------------------------------------

@@ -205,17 +205,14 @@ export async function downloadDatabaseFromBlob(options?: DownloadOptions): Promi
     } catch (error) {
       console.error(`   ❌ Attempt ${attempt} failed:`, error);
       
-      // Clean up temp file + companion SQLite WAL files
+      // Clean up temp file + companion SQLite WAL files.
+      // NEVER touch localPath here: the download writes only to tmpPath and
+      // renames after validation, so on any failure the previous database at
+      // localPath is still the last known-good copy — deleting it would turn a
+      // transient network outage into total data loss.
       await cleanupTempFiles(tmpPath);
-      
-      // If this was the last attempt, also clean up potentially corrupted final file
+
       if (attempt === maxRetries) {
-        console.log(`   🧹 Cleaning up potentially corrupted database file...`);
-        try {
-          await fs.unlink(localPath);
-        } catch {
-          // Ignore if doesn't exist
-        }
         throw error;
       }
       

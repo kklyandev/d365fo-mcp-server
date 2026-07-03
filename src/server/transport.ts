@@ -331,11 +331,22 @@ export class CustomHttpTransport implements Transport {
           // can see what was processed when expanding the "ran <tool>" detail in VS2026.
           if (!isSilentProbe && 'result' in response) {
             const progressText = buildProgressMessage(toolName, args);
-            const resultContent = (response as any).result?.content;
+            const result = (response as any).result;
+            const resultContent = result?.content;
             if (Array.isArray(resultContent) && resultContent.length > 0) {
               const first = resultContent[0];
               if (first?.type === 'text' && typeof first.text === 'string') {
-                first.text = `${progressText}\n\n${first.text}`;
+                // Clone instead of mutating in place: the result object may be
+                // the same instance stored in the dedup cache — mutating it
+                // would bake the progress line into the cached copy and every
+                // dedup hit would then render the line twice.
+                (response as any).result = {
+                  ...result,
+                  content: [
+                    { ...first, text: `${progressText}\n\n${first.text}` },
+                    ...resultContent.slice(1),
+                  ],
+                };
               }
             }
           }

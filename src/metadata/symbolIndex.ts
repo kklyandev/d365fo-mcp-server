@@ -933,7 +933,10 @@ export class XppSymbolIndex {
       // FTS5 syntax error (e.g. user typed *, ", (, ), -) — fall back to LIKE contains search
       // PERFORMANCE: Also select only essential columns in fallback
       const fallbackCacheKey = types?.length ? `fallback_typed_${types.join('_')}` : 'fallback_all';
-      let fallbackSql = `SELECT s.id, s.name, s.type, s.parent_name, s.signature, s.file_path, s.model, s.description FROM symbols s WHERE s.name LIKE ?`;
+      // ESCAPE '\' is required — without it the backslashes produced by
+      // escapeLikePattern are literal characters and any query containing
+      // '_' or '%' (e.g. "SalesLine_MyExt") silently matches nothing.
+      let fallbackSql = `SELECT s.id, s.name, s.type, s.parent_name, s.signature, s.file_path, s.model, s.description FROM symbols s WHERE s.name LIKE ? ESCAPE '\\'`;
       const escapeLikePattern = (value: string): string => {
         // First escape backslashes, then escape SQL LIKE wildcards % and _
         return value
@@ -2957,23 +2960,60 @@ export class XppSymbolIndex {
   }
 
   /**
-   * Get all symbol names for fuzzy matching
-   * Used by suggestion engine for typo detection
-   * Uses iterator to avoid loading all names into memory at once
+   * Get candidate symbol names for fuzzy matching ("did you mean" suggestions).
+   *
+   * When a query is given, candidates are anchored to it: names sharing the
+   * query's leading characters plus names containing its root term. The old
+   * behaviour (first 5000 names ALPHABETICALLY) meant the suggestion engine
+   * only ever saw the A–C slice of a 580K-symbol index, making typo
+   * suggestions effectively random for most queries.
+   *
+   * Without a query the alphabetical fallback is kept for compatibility.
    */
-  getAllSymbolNames(): string[] {
-    const stmt = this.db.prepare(`
-      SELECT DISTINCT name
-      FROM symbols
-      ORDER BY name
-      LIMIT 5000
-    `);
-    
-    const names: string[] = [];
-    for (const row of stmt.iterate() as IterableIterator<{ name: string }>) {
-      names.push(row.name);
+  getAllSymbolNames(query?: string, limit: number = 2000): string[] {
+    const trimmed = query?.trim();
+    if (!trimmed) {
+      const stmt = this.db.prepare(`
+        SELECT DISTINCT name
+        FROM symbols
+        ORDER BY name
+        LIMIT 5000
+      `);
+
+      const names: string[] = [];
+      for (const row of stmt.iterate() as IterableIterator<{ name: string }>) {
+        names.push(row.name);
+      }
+      return names;
     }
-    return names;
+
+    const escapeLike = (value: string): string =>
+      value.replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&');
+
+    // Typo distance is usually in the tail of the name, so same-prefix names
+    // are the best candidate pool; contains-matches on the root term catch
+    // wrong-prefix typos (e.g. "CusTable" → "CustTable").
+    const half = Math.max(1, Math.floor(limit / 2));
+    const prefix = escapeLike(trimmed.slice(0, 2));
+    const root = escapeLike(trimmed.slice(0, Math.max(3, Math.ceil(trimmed.length / 2))));
+
+    const names = new Set<string>();
+    const db = this.getReadDb();
+    try {
+      const prefixStmt = this.getReadStmt(db, 'suggest_prefix', () =>
+        `SELECT DISTINCT name FROM symbols WHERE name LIKE ? ESCAPE '\\' LIMIT ?`);
+      for (const row of prefixStmt.iterate(`${prefix}%`, half) as IterableIterator<{ name: string }>) {
+        names.add(row.name);
+      }
+      const containsStmt = this.getReadStmt(db, 'suggest_contains', () =>
+        `SELECT DISTINCT name FROM symbols WHERE name LIKE ? ESCAPE '\\' LIMIT ?`);
+      for (const row of containsStmt.iterate(`%${root}%`, half) as IterableIterator<{ name: string }>) {
+        names.add(row.name);
+      }
+    } catch {
+      // Best-effort — suggestions are advisory, never fail the search
+    }
+    return [...names];
   }
 
   /**

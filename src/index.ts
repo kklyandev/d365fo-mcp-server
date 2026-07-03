@@ -21,6 +21,7 @@ import { HybridSearch } from './workspace/hybridSearch.js';
 import { initializeDatabase } from './database/download.js';
 import { initializeConfig, getConfigManager } from './utils/configManager.js';
 import { SERVER_MODE, LOCAL_TOOLS } from './server/serverMode.js';
+import { TOOL_ANNOTATIONS } from './server/toolAnnotations.js';
 import { apiKeyAuth } from './middleware/apiKeyAuth.js';
 import { setInitializeParams } from './utils/stdioSessionInfo.js';
 import { box, kv, sectionTitle, statusLine, spread, c, glyph, sanitize, supportsUnicode, log, shortPath, startupWarnings } from './utils/terminalUi.js';
@@ -597,8 +598,10 @@ async function main() {
       console.error(statusLine('err', 'Background initialization failed:'), err);
     });
 
-    // Log tool count immediately (transport is already connected)
-    const totalTools = 26;
+    // Log tool count immediately (transport is already connected).
+    // TOOL_ANNOTATIONS is guaranteed complete by tests/utils/toolInventory.test.ts,
+    // so its size tracks the real tool count without a hardcoded literal.
+    const totalTools = Object.keys(TOOL_ANNOTATIONS).length;
     const localToolCount = LOCAL_TOOLS.size;
     const toolCount = SERVER_MODE === 'write-only' ? localToolCount :
                      SERVER_MODE === 'read-only' ? totalTools - localToolCount : totalTools;

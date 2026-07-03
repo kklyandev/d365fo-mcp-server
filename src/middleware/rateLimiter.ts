@@ -22,35 +22,47 @@ function parseEnvInt(key: string, defaultVal: number, min: number, max: number):
 }
 
 /**
- * Rate-limit key generator: prefer Bearer token identity over IP address.
+ * Rate-limit key generator.
  *
- * Why: Behind corporate VPN / NAT all developers share a single egress IP.
- * Using the IP as the key means 10 devs share the same bucket and each gets
- * only 1/10 of the allowed requests. The Authorization header carries a
- * per-user token (GitHub Copilot OAuth token), so it identifies individual
- * users even when they all come from the same IP.
+ * Two deployment shapes, two strategies:
  *
- * Security: we SHA-256 the full Authorization header and use the hash as the
- * key. Slicing the raw token (old behaviour) let an attacker vary the leading
- * bytes of a forged header to create unlimited buckets and bypass the limit.
- * Hashing anchors the key to the ENTIRE header so any change — forged or not —
- * produces a fresh limit, and the full secret never reaches logs or memory
- * for longer than the sync hash computation.
+ * 1. API_KEY set (recommended): every authenticated request carries the SAME
+ *    shared key, so the Authorization header is useless as a per-user
+ *    identity — keying on it would put the whole team into one bucket.
+ *    apiKeyAuth already 401s unauthenticated requests before the limiter
+ *    runs, so the limiter is pure per-source DoS protection → key by IP.
  *
- * Falls back to IP when no Authorization header is present (curl, healthz).
+ * 2. API_KEY not set: the Authorization header carries a per-user token
+ *    (GitHub Copilot OAuth), which correctly separates developers behind a
+ *    shared corporate VPN/NAT egress IP. Caveat: an anonymous attacker can
+ *    rotate forged headers to mint fresh buckets (hashing does NOT prevent
+ *    this — any change produces a new key), so the token key is scoped to
+ *    the client IP. Rotation still only multiplies buckets within one IP;
+ *    exposing the endpoint without API_KEY remains discouraged.
+ *
+ * The header is SHA-256 hashed so the secret never reaches logs or lives in
+ * memory beyond the sync hash computation.
  */
-function generateKey(req: Request): string {
-  const authHeader = req.headers['authorization'];
-  if (typeof authHeader === 'string' && authHeader.length > 8) {
-    // Hash the full header; truncate the digest for a compact in-memory key.
-    const digest = createHash('sha256').update(authHeader).digest('hex');
-    return 'tok:' + digest.slice(0, 32);
-  }
+const AUTH_ENABLED = !!process.env.API_KEY?.trim();
 
-  // Fallback: IP-based key (same logic as before)
+function ipKey(req: Request): string {
   const rawIp = req.ip || req.socket.remoteAddress || 'unknown';
   const ipWithoutPort = rawIp.replace(/:\d+$/, '');
-  return 'ip:' + ipKeyGenerator(ipWithoutPort);
+  return ipKeyGenerator(ipWithoutPort);
+}
+
+function generateKey(req: Request): string {
+  if (AUTH_ENABLED) {
+    return 'ip:' + ipKey(req);
+  }
+
+  const authHeader = req.headers['authorization'];
+  if (typeof authHeader === 'string' && authHeader.length > 8) {
+    const digest = createHash('sha256').update(authHeader).digest('hex');
+    return `ip:${ipKey(req)}|tok:${digest.slice(0, 32)}`;
+  }
+
+  return 'ip:' + ipKey(req);
 }
 
 /**
@@ -88,78 +100,3 @@ export const apiRateLimiter = rateLimit({
   },
 });
 
-/**
- * Strict rate limiter for expensive operations
- * Default: 20 requests per 15 minutes per IP
- */
-export const strictRateLimiter = rateLimit({
-  windowMs: parseEnvInt('RATE_LIMIT_WINDOW_MS', 900000, 10000, 86400000),
-  max: parseEnvInt('RATE_LIMIT_STRICT_MAX_REQUESTS', 20, 1, 1000),
-  keyGenerator: generateKey,
-  validate: {
-    // We safely use ipKeyGenerator in our custom generateKey function
-    keyGeneratorIpFallback: false,
-  },
-  message: {
-    error: 'Too many requests for this endpoint, please try again later.',
-    retryAfter: 'Please check the Retry-After header.',
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (_req: Request, res: Response) => {
-    res.status(429).json({
-      error: 'Rate limit exceeded',
-      message: 'This endpoint has stricter rate limits. Please try again later.',
-      retryAfter: res.getHeader('Retry-After'),
-    });
-  },
-});
-
-/**
- * Authentication rate limiter
- * Default: 5 requests per 15 minutes per IP
- */
-export const authRateLimiter = rateLimit({
-  windowMs: parseEnvInt('RATE_LIMIT_WINDOW_MS', 900000, 10000, 86400000),
-  max: parseEnvInt('RATE_LIMIT_AUTH_MAX_REQUESTS', 5, 1, 100),
-  keyGenerator: generateKey,
-  validate: {
-    // We safely use ipKeyGenerator in our custom generateKey function
-    keyGeneratorIpFallback: false,
-  },
-  message: {
-    error: 'Too many authentication attempts, please try again later.',
-    retryAfter: 'Please check the Retry-After header.',
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: true, // Don't count successful auth requests
-  handler: (_req: Request, res: Response) => {
-    res.status(429).json({
-      error: 'Too many authentication attempts',
-      message: 'Please wait before trying to authenticate again.',
-      retryAfter: res.getHeader('Retry-After'),
-    });
-  },
-});
-
-/**
- * Create a custom rate limiter with specific settings
- */
-export function createCustomRateLimiter(windowMs: number, maxRequests: number) {
-  return rateLimit({
-    windowMs,
-    max: maxRequests,
-    keyGenerator: generateKey,
-    validate: {
-      // We safely use ipKeyGenerator in our custom generateKey function
-      keyGeneratorIpFallback: false,
-    },
-    message: {
-      error: 'Rate limit exceeded',
-      retryAfter: 'Please check the Retry-After header.',
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
-}

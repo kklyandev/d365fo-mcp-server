@@ -390,22 +390,21 @@ export function formatRichContext(
 }
 
 /**
- * Group results by type
+ * Group results by type.
+ *
+ * Groups are built dynamically from the types actually present — a hardcoded
+ * group list silently dropped every other type (form, query, view, report,
+ * security-*, menu-item-*, *-extension) from the rendered output while the
+ * header still claimed the full match count.
  */
+const TYPE_DISPLAY_ORDER = ['class', 'table', 'method', 'field', 'enum', 'edt'];
+
 function groupResultsByType(results: XppSymbol[]): Record<string, XppSymbol[]> {
-  const groups: Record<string, XppSymbol[]> = {
-    class: [],
-    table: [],
-    method: [],
-    field: [],
-    enum: [],
-    edt: []
-  };
+  const groups: Record<string, XppSymbol[]> = {};
+  for (const type of TYPE_DISPLAY_ORDER) groups[type] = [];
 
   results.forEach(r => {
-    if (groups[r.type]) {
-      groups[r.type].push(r);
-    }
+    (groups[r.type] ??= []).push(r);
   });
 
   return groups;
