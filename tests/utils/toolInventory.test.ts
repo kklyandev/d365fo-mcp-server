@@ -72,10 +72,12 @@ describe('tool inventory contract', () => {
     }
   });
 
-  it('advertises modify-operation params in the d365fo_file inputSchema', () => {
-    // Regression guard: the advertised inputSchema is the only param surface the
-    // model sees. If an operation's params are handled in modifyD365File.ts but not
-    // exposed here, the model cannot pass them and the op fails with "returned null".
+  it('surfaces every modify-operation param via schema or op-spec registry', () => {
+    // Regression guard: the model discovers op params either flat in the published
+    // d365fo_file inputSchema (core params) or through error-driven guidance backed
+    // by the central op-spec registry (op-specific params). A param handled in
+    // modifyD365File.ts but missing from BOTH surfaces is invisible to the model
+    // and the op fails with "returned null" and no usable guidance.
     const requiredModifyParams = [
       // add-table-method / add-display-method
       'tableMethodType', 'tableKeyField', 'displayMethodReturnEdt',
@@ -98,11 +100,13 @@ describe('tool inventory contract', () => {
       // aliases / lookup
       'methodCode', 'sourceCode', 'baseFormName', 'filePath',
     ];
-    const d365foFileSchemaSource = readRepoFile('src/server/toolSchemas/d365foFile.ts');
+    const paramSurface =
+      readRepoFile('src/server/toolSchemas/d365foFile.ts') +
+      readRepoFile('src/tools/d365foFileOpSpecs.ts');
     for (const param of requiredModifyParams) {
       expect(
-        new RegExp(`\\b${param}:\\s*\\{`).test(d365foFileSchemaSource),
-        `d365fo_file inputSchema is missing advertised modify param '${param}'`,
+        new RegExp(`\\b${param}:\\s*\\{`).test(paramSurface),
+        `modify param '${param}' is surfaced neither in the d365fo_file inputSchema nor in d365foFileOpSpecs`,
       ).toBe(true);
     }
   });
