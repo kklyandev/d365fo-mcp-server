@@ -237,6 +237,7 @@ export class XppMetadataParser {
         name: field.Name || 'unknown',
         type: xppType,
         extendedDataType: field.ExtendedDataType || undefined,
+        enumType: field.EnumType || undefined,
         mandatory: field.Mandatory === 'Yes' || field.Mandatory === 'true',
         label: field.Label || undefined,
       };

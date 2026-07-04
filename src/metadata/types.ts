@@ -65,6 +65,7 @@ export interface XppFieldInfo {
   name: string;
   type: string;
   extendedDataType?: string;
+  enumType?: string;
   mandatory: boolean;
   label?: string;
 }

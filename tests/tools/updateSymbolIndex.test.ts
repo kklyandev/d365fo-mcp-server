@@ -3,10 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const {
   existsSyncMock,
   readFileSyncMock,
+  readFilePromiseMock,
   bridgeRefreshProviderMock,
 } = vi.hoisted(() => ({
   existsSyncMock: vi.fn(),
   readFileSyncMock: vi.fn(),
+  readFilePromiseMock: vi.fn(),
   bridgeRefreshProviderMock: vi.fn(async () => undefined),
 }));
 
@@ -17,6 +19,13 @@ vi.mock('fs', () => ({
   },
   existsSync: existsSyncMock,
   readFileSync: readFileSyncMock,
+}));
+
+// xmlParser.ts (used by the table-reindexing path) reads files via fs/promises,
+// a separate module from the sync `fs` mocked above.
+vi.mock('fs/promises', () => ({
+  default: { readFile: readFilePromiseMock },
+  readFile: readFilePromiseMock,
 }));
 
 vi.mock('../../src/bridge/index.js', () => ({
@@ -98,5 +107,55 @@ describe('update_symbol_index label file reconciliation', () => {
     expect(context.symbolIndex.removeLabelsByFile).toHaveBeenCalledWith(filePath);
     expect(result.isError).toBeFalsy();
     expect(result.content[0].text).toContain('3 label(s)');
+  });
+});
+
+describe('update_symbol_index table re-indexing preserves field EDT/EnumType', () => {
+  let context: XppServerContext;
+
+  beforeEach(() => {
+    context = createContext();
+    vi.clearAllMocks();
+  });
+
+  it('stores the field\'s ExtendedDataType/EnumType as its signature, not the bare base type', async () => {
+    // Regression (eval scenario 1 — Equipment Rental): the incremental table-reindex path stored
+    // `signature: field.type` (the i:type-derived base type, e.g. "String"/"Enum") instead of the
+    // field's actual EDT/EnumType. modifyD365File.ts's resolveFieldEdt() (used by
+    // add-table-method to generate find()/exist() parameter types) reads this column expecting an
+    // X++-usable type name; a base-type keyword is discarded by its own guard, which then falls
+    // back to the bare field name — wrong for every custom-prefixed model, where the field name
+    // (e.g. "MyId") and its EDT (e.g. "Contoso_MyId") are never identical. Reproduced live: right
+    // after creating a table + calling update_symbol_index on it, add-table-method(find) on that
+    // table emitted `public static MyTable find(RentEquipmentId _rentEquipmentId, ...)` — using
+    // the bare field name as a (non-existent) type — instead of the real EDT.
+    const filePath = 'K:\\PackagesLocalDirectory\\MyPackage\\MyModel\\AxTable\\MyTable.xml';
+    existsSyncMock.mockReturnValue(true);
+    readFilePromiseMock.mockResolvedValue(`<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>MyTable</Name>
+  <Label>My table</Label>
+  <TableGroup>Main</TableGroup>
+  <Fields>
+    <AxTableField xmlns="" i:type="AxTableFieldString">
+      <Name>MyId</Name>
+      <ExtendedDataType>ContosoMyId</ExtendedDataType>
+    </AxTableField>
+    <AxTableField xmlns="" i:type="AxTableFieldEnum">
+      <Name>MyStatus</Name>
+      <EnumType>ContosoMyStatus</EnumType>
+    </AxTableField>
+  </Fields>
+</AxTable>`);
+
+    const result = await updateSymbolIndexTool({ filePath }, context);
+
+    expect(result.isError).toBeFalsy();
+    const addSymbolCalls = (context.symbolIndex.addSymbol as any).mock.calls.map((c: any[]) => c[0]);
+    const myIdField = addSymbolCalls.find((s: any) => s.type === 'field' && s.name === 'MyId');
+    const myStatusField = addSymbolCalls.find((s: any) => s.type === 'field' && s.name === 'MyStatus');
+
+    expect(myIdField?.signature).toBe('ContosoMyId');
+    expect(myStatusField?.signature).toBe('ContosoMyStatus');
   });
 });

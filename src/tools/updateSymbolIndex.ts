@@ -294,11 +294,22 @@ export const updateSymbolIndexTool = async (params: any, context: XppServerConte
           });
           insertedCount++;
           for (const field of tableData.fields ?? []) {
+            // Store the field's actual EDT/EnumType as its signature, not the bare
+            // i:type-derived base type (String/Real/Enum/...). Consumers such as
+            // modifyD365File.ts's resolveFieldEdt() (used by add-table-method to
+            // generate find()/exist() parameter types) read this column expecting
+            // an X++-usable type name. A base-type keyword is never a valid X++
+            // parameter type, so storing it here silently broke EDT resolution for
+            // every table indexed through this incremental (same-session) path —
+            // the caller's base-type-keyword guard then fell back to the bare field
+            // name, which is only coincidentally correct when the field name and
+            // its EDT are identical (never true once a model prefix is auto-applied
+            // to the EDT but not the field, e.g. field "ItemId" + EDT "Contoso_ItemId").
             symbolIndex.addSymbol({
               name: field.name,
               type: 'field',
               parentName: tableData.name,
-              signature: field.type,
+              signature: field.extendedDataType || field.enumType || field.type,
               filePath,
               model,
             });
