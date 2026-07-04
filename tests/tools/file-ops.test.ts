@@ -519,6 +519,41 @@ describe('create_d365fo_file', () => {
     ]);
   });
 
+  it('enum-extension create forwards properties.enumValues to the bridge as `values`', async () => {
+    // Regression (eval scenario 1 — Equipment Rental): only objectType==='enum' populated
+    // bridgeParams.values, so an enum-extension's properties.enumValues never reached the
+    // bridge. C# CreateEnumExtension(name, modelName, values, properties) happily accepts a
+    // values list, but was always invoked with null — the write reported success while
+    // <EnumValues /> came back empty on disk. Reproduced live: adding a "Rent" value to the
+    // standard NumberSeqModule enum via objectType="enum-extension" wrote an empty
+    // <EnumValues /> despite enumValues:[{name:"Rent"}] being passed.
+    const createObject = vi.fn(async () => ({
+      success: true,
+      filePath: 'K:\\PackagesLocalDirectory\\MyPackage\\MyModel\\AxEnumExtension\\NumberSeqModule.MyExt.xml',
+      api: 'IMetaEnumExtensionProvider.Create',
+    }));
+    const ctx = buildContext();
+    (ctx as any).bridge = { isReady: true, metadataAvailable: true, createObject, validateObject: vi.fn(async () => null) };
+
+    const result = await handleCreateD365File(
+      req('create_d365fo_file', {
+        objectType: 'enum-extension',
+        objectName: 'NumberSeqModule',
+        modelName: 'Contoso',
+        packageName: 'Contoso',
+        packagePath: 'K:\\PackagesLocalDirectory',
+        addToProject: false,
+        properties: { enumValues: [{ name: 'Rent', label: '@Contoso:RentModule' }] },
+      }),
+      ctx,
+    );
+
+    expect((result as any).isError).toBeFalsy();
+    expect(createObject).toHaveBeenCalledTimes(1);
+    const sentParams = createObject.mock.calls[0][0];
+    expect(sentParams.values).toEqual([{ name: 'Rent', label: '@Contoso:RentModule' }]);
+  });
+
   it('blocks form-extension create when xmlContent uses the malformed control shape', async () => {
     // Guard: the deserializer-rejecting shape an AI tends to hand-write
     // (AxFormControlExtension / ParentControlName / FormControlExtension-wrapping / AxFormIntControl)
