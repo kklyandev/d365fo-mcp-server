@@ -4093,9 +4093,15 @@ export async function handleCreateD365File(
           }
         }
 
-        // For enums: pass values from properties.
+        // For enums AND enum-extensions: pass values from properties.
         // Accept both `enumValues` (documented in tool description) and `values` (legacy).
-        if (args.objectType === 'enum' && args.properties) {
+        // Regression: only 'enum' was handled here, so an enum-extension's properties.enumValues
+        // never reached bridgeParams.values — C# CreateEnumExtension() happily accepts a `values`
+        // list, but was always called with null, silently writing an empty <EnumValues />
+        // (write reported success; the dropped value surfaced two calls later as an unrelated
+        // "unresolved enum value" build error). Same class of bug as the table/table-extension
+        // fields gap fixed above.
+        if ((args.objectType === 'enum' || args.objectType === 'enum-extension') && args.properties) {
           const props = args.properties as Record<string, unknown>;
           const enumVals = (props.enumValues ?? props.values) as Record<string, unknown>[] | undefined;
           if (enumVals) bridgeParams.values = enumVals;
@@ -4105,6 +4111,18 @@ export async function handleCreateD365File(
         if (args.objectType === 'view' && args.properties) {
           const props = args.properties as Record<string, unknown>;
           if (props.fields) bridgeParams.fields = props.fields as Record<string, unknown>[];
+        }
+
+        // For EDTs: translate the tool's documented `edtType` property to the bridge's
+        // expected `BaseType` key. C# CreateEdt() does `properties.TryGetValue("BaseType", ...)`
+        // — a literal, case-SENSITIVE dictionary lookup — so sending `edtType` (as documented
+        // in the tool schema and as suggest_edt/prepare recommend) never matched, silently
+        // defaulting every bridge-created EDT to AxEdtString regardless of the requested type
+        // (Real, Int, Date, Enum, ...). Confirmed via a live create of an EDT with
+        // edtType:"Real", extends:"AmountCur" — the written XML came back i:type="AxEdtString".
+        if (args.objectType === 'edt' && bridgeParams.properties && 'edtType' in bridgeParams.properties) {
+          const { edtType, ...rest } = bridgeParams.properties;
+          bridgeParams.properties = { ...rest, BaseType: edtType };
         }
 
         const bridgeResult = await bridgeCreateObject(context.bridge, bridgeParams);
