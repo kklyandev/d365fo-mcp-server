@@ -23,7 +23,7 @@ import { gateOnReferenceErrors } from './resolveReferences.js';
 import { normalizeD365Xml } from '../utils/d365XmlNormalizer.js';
 import { buildAxSecurityPrivilegeXml } from './securityPrivilegeXml.js';
 import { buildAxDataEntityXml } from './dataEntityXml.js';
-import { resolveEdtBaseType, heuristicEdtBaseType, isEnumName, bridgeEdtBaseType } from './generateSmartTable.js';
+import { resolveEdtBaseType, resolveEdtEnumType, heuristicEdtBaseType, isEnumName, bridgeEdtBaseType } from './generateSmartTable.js';
 import { buildAxQueryXml, buildAxViewXml } from './queryViewXml.js';
 import { buildAxMapXml } from './mapXml.js';
 
@@ -4085,7 +4085,19 @@ export async function handleCreateD365File(
               const resolved = (await bridgeEdtBaseType(context.bridge, edt))
                 ?? (db ? resolveEdtBaseType(edt, db) : undefined)
                 ?? heuristicEdtBaseType(edt);
-              if (resolved) f.type = resolved;
+              if (resolved) {
+                f.type = resolved;
+                // An EDT whose OWN base type is Enum (e.g. "Posted" extends "NoYes") only
+                // gets the literal string "Enum" back from the resolvers above — without
+                // the actual enum name, the bridge cannot emit a valid AxTableFieldEnum and
+                // silently falls back to AxTableFieldString. Look up the underlying enum
+                // name so the field is created correctly instead of building "successfully"
+                // as a mistyped string field.
+                if (resolved === 'Enum' && !f.enumType && db) {
+                  const enumType = resolveEdtEnumType(edt, db);
+                  if (enumType) f.enumType = enumType;
+                }
+              }
             }
           }
         }

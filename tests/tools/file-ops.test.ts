@@ -563,6 +563,99 @@ describe('create_d365fo_file', () => {
     expect(sentParams.fields[0].edt).toBe('ContosoRentDailyRate');
   });
 
+  it('table create resolves BOTH type and enumType for a field whose EDT is itself Enum-backed', async () => {
+    // Regression (eval scenario 2 — sales credit review + audit): the field-type resolution
+    // added for the test above handles Real/Date/Int64 EDTs, but an EDT whose OWN base type is
+    // Enum (e.g. the standard "Posted" EDT, which extends the "NoYes" enum) only got as far as
+    // `type: 'Enum'` — nothing populated `enumType`, so the bridge could not emit a valid
+    // AxTableFieldEnum and silently fell back to AxTableFieldString. Reproduced live: a table
+    // field `{ name: "Posted", edt: "Posted" }` (no explicit enumType) was written as
+    // i:type="AxTableFieldString" with ExtendedDataType=Posted — no build error, just silently
+    // the wrong storage kind.
+    const createObject = vi.fn(async () => ({
+      success: true,
+      filePath: 'K:\\PackagesLocalDirectory\\MyPackage\\MyModel\\AxTable\\MyTable.xml',
+      api: 'IMetaTableProvider.Create',
+    }));
+    const ctx = buildContext();
+    (ctx as any).bridge = { isReady: true, metadataAvailable: true, createObject, validateObject: vi.fn(async () => null) };
+    // Distinguish the two DIFFERENT queries this path issues against the same fake db:
+    // isEnumName() probes the `symbols` table (is "Posted" itself an enum name? no — it's
+    // an EDT), while resolveEdtBaseType()/resolveEdtEnumType() probe `edt_metadata` (what
+    // does the "Posted" EDT extend? the "NoYes" enum). A mock that didn't discriminate by
+    // SQL text would make isEnumName() false-positive on the edt_metadata row and short
+    // -circuit before the code under test ever runs.
+    (ctx.symbolIndex.db as any).prepare = vi.fn((sql: string) => ({
+      get: (arg: string) => {
+        if (/FROM symbols/.test(sql)) return undefined; // isEnumName: "Posted" is not itself an enum
+        if (String(arg).toLowerCase() === 'posted') {
+          return { extends: null, enum_type: 'NoYes', string_size: null };
+        }
+        return undefined;
+      },
+    }));
+
+    const result = await handleCreateD365File(
+      req('create_d365fo_file', {
+        objectType: 'table',
+        objectName: 'MyTable',
+        modelName: 'Contoso',
+        packageName: 'Contoso',
+        packagePath: 'K:\\PackagesLocalDirectory',
+        addToProject: false,
+        properties: {
+          fields: [
+            { name: 'Posted', edt: 'Posted' }, // no explicit type/enumType — must be resolved
+          ],
+        },
+      }),
+      ctx,
+    );
+
+    expect((result as any).isError).toBeFalsy();
+    expect(createObject).toHaveBeenCalledTimes(1);
+    const sentParams = createObject.mock.calls[0][0];
+    expect(sentParams.fields[0].type).toBe('Enum');
+    expect(sentParams.fields[0].enumType).toBe('NoYes');
+  });
+
+  it('table create resolves a "...DateTime"-named EDT to UtcDateTime, not String', async () => {
+    // Regression (eval scenario 2): heuristicEdtBaseType('TransDateTime') used to return
+    // undefined (see edt-resolution.test.ts for the root cause), so with no index entry
+    // for the EDT either, a field `{ name: "PostedAt", edt: "TransDateTime" }` fell all the
+    // way through to the bridge's AxTableFieldString default instead of AxTableFieldUtcDateTime.
+    const createObject = vi.fn(async () => ({
+      success: true,
+      filePath: 'K:\\PackagesLocalDirectory\\MyPackage\\MyModel\\AxTable\\MyTable.xml',
+      api: 'IMetaTableProvider.Create',
+    }));
+    const ctx = buildContext();
+    (ctx as any).bridge = { isReady: true, metadataAvailable: true, createObject, validateObject: vi.fn(async () => null) };
+    // No index entry for TransDateTime — forces the heuristic fallback.
+    (ctx.symbolIndex.db as any).stmt.get.mockReturnValue(undefined);
+
+    const result = await handleCreateD365File(
+      req('create_d365fo_file', {
+        objectType: 'table',
+        objectName: 'MyTable',
+        modelName: 'Contoso',
+        packageName: 'Contoso',
+        packagePath: 'K:\\PackagesLocalDirectory',
+        addToProject: false,
+        properties: {
+          fields: [
+            { name: 'PostedAt', edt: 'TransDateTime' },
+          ],
+        },
+      }),
+      ctx,
+    );
+
+    expect((result as any).isError).toBeFalsy();
+    const sentParams = createObject.mock.calls[0][0];
+    expect(sentParams.fields[0].type).toBe('UtcDateTime');
+  });
+
   it('table create normalizes properties.indexes (indexName/indexFields -> name/fields)', async () => {
     // Regression (eval scenario 1 — Equipment Rental): the only index shape documented
     // anywhere in the tool (modify operation="add-index") is { indexName, indexFields:

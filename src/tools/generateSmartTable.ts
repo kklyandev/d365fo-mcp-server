@@ -1150,6 +1150,43 @@ export function resolveEdtBaseType(edtName: string, db: any, depth = 0): string 
 }
 
 /**
+ * Resolve the underlying ENUM NAME for an EDT whose own base type is Enum (e.g. "Posted"
+ * extends the "NoYes" enum, "SalesStatus" extends its own enum). Mirrors the chain-walk in
+ * resolveEdtBaseType() but returns the enum name instead of the literal string "Enum".
+ *
+ * Needed because resolveEdtBaseType() alone can only tell the caller "this field's type is
+ * Enum" — without also knowing WHICH enum, the bridge cannot emit a valid AxTableFieldEnum
+ * (it has no EnumType to write) and silently falls back to AxTableFieldString. This was
+ * discovered live: a table field created with only `{ name, edt: "Posted" }` (no explicit
+ * enumType) resolved `type: 'Enum'` via resolveEdtBaseType() but the created field came back
+ * as plain AxTableFieldString with ExtendedDataType=Posted — a valid-looking but semantically
+ * wrong field (the compiler accepts a String-typed field pointed at an Enum-based EDT via
+ * ExtendedDataType, so this doesn't even fail the build; it just isn't what was asked for).
+ *
+ * Returns undefined when the EDT isn't enum-backed (or isn't indexed).
+ */
+export function resolveEdtEnumType(edtName: string, db: any, depth = 0): string | undefined {
+  if (depth > 8) return undefined; // guard against circular chains
+
+  try {
+    const row = db.prepare(
+      `SELECT extends, enum_type FROM edt_metadata WHERE edt_name = ? LIMIT 1`
+    ).get(edtName) as { extends: string | null; enum_type: string | null } | undefined;
+
+    if (!row) return undefined;
+    // Enum-based EDT: extends is null but enum_type is set (e.g. Posted → NoYes)
+    if (row.enum_type && !row.extends) return row.enum_type;
+    if (!row.extends) return undefined; // root EDT of a non-enum primitive
+    if (row.extends === 'Enum') return undefined; // extends the bare primitive, no named enum
+
+    // Follow the chain to the parent EDT (e.g. a custom EDT extending "Posted")
+    return resolveEdtEnumType(row.extends, db, depth + 1);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Heuristic base type from an EDT/field name when the EDT is not in the index
  * (e.g. a standard EDT whose edt_metadata wasn't loaded, or a same-session EDT).
  * Mirrors SmartXmlBuilder.getAxTableFieldType's name heuristics but returns the
@@ -1160,7 +1197,14 @@ export function resolveEdtBaseType(edtName: string, db: any, depth = 0): string 
 export function heuristicEdtBaseType(edtName: string): string | undefined {
   const e = edtName.toLowerCase();
   if (e === 'recid' || e.endsWith('recid') || e.includes('refrecid')) return 'Int64';
-  if (e.includes('utcdatetime') || (e.includes('datetime') && !e.includes('transdate'))) return 'UtcDateTime';
+  // Any "...DateTime" name (TransDateTime, CreatedDateTime, ModifiedDateTime, UtcDateTime,
+  // ...) is UtcDateTime-based. The previous `&& !e.includes('transdate')` guard was meant
+  // to protect something else but instead excluded the single most common case: a name
+  // containing BOTH "datetime" and "transdate" (e.g. "TransDateTime" itself, since
+  // "transdatetime" contains "transdate" as a substring) fell through this branch entirely
+  // AND the next Date branch (which excludes names containing "time"), so it resolved to
+  // undefined and the caller defaulted the field to plain AxTableFieldString.
+  if (e.includes('datetime')) return 'UtcDateTime';
   if (e.includes('date') && !e.includes('time') && !e.includes('update')) return 'Date';
   if (e.includes('amount') || e.includes('price') || e.includes('qty') || e.includes('quantity')
       || e.includes('percent') || e.includes('rate') || e === 'real' || e.endsWith('mst')) return 'Real';
