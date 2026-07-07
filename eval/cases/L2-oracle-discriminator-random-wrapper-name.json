@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "L2-oracle-discriminator-random-wrapper-name",
   "title": "Oracle discriminator uses a random wrapper Name as collection key (AxFormExtensionControl) — FIXED",
   "tier": 2,

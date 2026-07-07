@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!-- Golden for L1-class-basic: a plain standalone class (constructor, member var, instance method, static factory) - the first case NOT built on a specialized extensibility mechanism (CoC/business-event/batch/SSRS). Captured 2026-07-01, SHA 5d4b4a3. -->
 <AxClass xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
 	<Name>ConDemoNoteFormatter</Name>

@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "L2-form-modify-controls",
   "title": "Form controls built exclusively via modify add-control (regression: add-control non-functional)",
   "tier": 2,

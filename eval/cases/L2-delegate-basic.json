@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "L2-delegate-basic",
   "title": "Custom delegate declaration + subscriber (distinct from system event handlers)",
   "tier": 2,

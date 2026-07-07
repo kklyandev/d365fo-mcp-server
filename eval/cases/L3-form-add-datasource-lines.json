@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "L3-form-add-datasource-lines",
   "title": "Second (lines) data source + bound grid added to an existing form via modify (regression: datasource refers to table '')",
   "tier": 3,

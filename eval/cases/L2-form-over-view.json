@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "L2-form-over-view",
   "title": "Form generated over a view data source (regression: 'table not found' when datasource is a view)",
   "tier": 2,

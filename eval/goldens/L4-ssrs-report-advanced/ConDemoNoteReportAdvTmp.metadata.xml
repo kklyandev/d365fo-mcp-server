@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!-- Golden for L4-ssrs-report-advanced (1 of 6): tmp table, generated via generate_object(scaffold, report, contractParams=[...]). Captured 2026-07-01, SHA 6e53a07. -->
 <AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
 	<Name>ConDemoNoteReportAdvTmp</Name>

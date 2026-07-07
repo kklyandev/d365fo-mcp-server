@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!-- Golden for L1-form-detailsmaster: DetailsMaster form pattern. Captured 2026-07-01, SHA f203a68. Fully deterministic (no random ids). -->
 <AxForm xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="Microsoft.Dynamics.AX.Metadata.V6">
 	<Name>ConDemoNoteHeaderMaster</Name>

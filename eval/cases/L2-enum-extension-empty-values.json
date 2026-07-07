@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "L2-enum-extension-empty-values",
   "title": "Enum-extension create silently drops EnumValues (regression: NumberSeqModule::<Value> unresolved)",
   "tier": 2,

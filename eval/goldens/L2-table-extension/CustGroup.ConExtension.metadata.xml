@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!-- Golden for L2-table-extension — captured 2026-06-30, build green + BP clean.
      NOTE: the live (pre-fix) bridge create produced a BARE AxTableFieldString with no
      ExtendedDataType (TOOL_DEFECT: normalizeFieldSpecsForBridge emitted fieldType/
