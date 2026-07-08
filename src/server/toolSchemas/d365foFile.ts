@@ -73,7 +73,7 @@ Model from .mcp.json; prefix auto-applied from EXTENSION_PREFIX. Classes: member
             '• security-duty: label, privileges[]\n' +
             '• security-role: label, duties[], privileges[]\n' +
             '• menu-item-*: label, object, objectType\n' +
-            '• data-entity: primaryTable, fields[{name,dataField?}]'
+            '• data-entity: primaryTable, fields[{name,dataField?}], dataManagementEnabled? (default false — set true ONLY if the staging table already exists, else the build fails)'
         },
         addToProject: {
           type: 'boolean',
