@@ -16,6 +16,7 @@
  */
 
 import { parseStringPromise } from 'xml2js';
+import { reindentXppSource } from '../../utils/xppFormat.js';
 
 /**
  * Built-in ignores applied to every document (in addition to per-case globs).
@@ -104,12 +105,42 @@ function isIgnored(path: string, matchers: RegExp[]): boolean {
 }
 
 /**
+ * Is this path an X++ source-code element (`.../Source` or `.../Declaration`)?
+ * These hold CDATA method bodies / class declarations — X++ is whitespace-
+ * insensitive for indentation, so two builds that differ only in indent depth
+ * are semantically identical and must not register as a `golden_match` diff
+ * (see `canonicalizeXppSourceText` below).
+ */
+function isXppSourcePath(pathPrefix: string): boolean {
+  return /\/(Source|Declaration)$/.test(pathPrefix);
+}
+
+/**
+ * Re-derive indentation from brace depth alone (baseDepth 0), discarding
+ * whatever indentation convention the text actually used. Applied identically
+ * to both the golden and the actual side of a diff, so — per §6.2 of
+ * docs/AGENT_EVAL_LOOP.md ("canonicalise element ordering and whitespace") —
+ * two method bodies with identical tokens but different indentation compare
+ * equal. Reuses the same brace-depth algorithm the generators use to emit
+ * X++ source (src/utils/xppFormat.ts), so this is a comparison-time-only
+ * canonicalisation — it never rewrites a stored artifact.
+ */
+function canonicalizeXppSourceText(s: string): string {
+  return reindentXppSource(s, 0);
+}
+
+/**
  * Normalize text content: CRLF -> LF (the C# bridge writes CRLF into <Source>
  * CDATA; a golden authored or diffed on a different platform may use LF — that
- * is a whitespace-style difference, not a semantic one) then trim.
+ * is a whitespace-style difference, not a semantic one) then trim. X++ source
+ * elements (`Source`/`Declaration`) additionally get indentation canonicalised
+ * (see `canonicalizeXppSourceText`) since X++ doesn't care about indent depth.
  */
-function normalizeText(s: string): string {
-  return s.replace(/\r\n/g, '\n').trim();
+function normalizeText(s: string, pathPrefix?: string): string {
+  const crlfNormalized = s.replace(/\r\n/g, '\n').trim();
+  return pathPrefix && isXppSourcePath(pathPrefix)
+    ? canonicalizeXppSourceText(crlfNormalized)
+    : crlfNormalized;
 }
 
 /** A node's OWN Name/DataField, if any (no recursion). */
@@ -204,7 +235,7 @@ function walk(
 
   // Leaf: a plain string is element text.
   if (typeof node === 'string') {
-    const v = normalizeText(node);
+    const v = normalizeText(node, pathPrefix);
     if (v !== '' && !isIgnored(pathPrefix, matchers)) out.set(pathPrefix, canonicalizePrefix(v, prefix));
     return;
   }
@@ -216,7 +247,7 @@ function walk(
   if ('_' in obj || '$' in obj) {
     emitAttrs(obj.$ as Record<string, unknown> | undefined, pathPrefix, out, matchers, prefix);
     if (typeof obj._ === 'string') {
-      const v = normalizeText(obj._);
+      const v = normalizeText(obj._, pathPrefix);
       if (v !== '' && !isIgnored(pathPrefix, matchers)) out.set(pathPrefix, canonicalizePrefix(v, prefix));
     }
   }

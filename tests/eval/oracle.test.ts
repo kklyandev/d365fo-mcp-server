@@ -404,3 +404,126 @@ describe('prefix-agnostic golden comparison (regression: eval/corpus/runs/2026-0
     expect(res.score.golden_match).toBe(1);
   });
 });
+
+// Regression: eval/corpus/runs/2026-07-07T05__L2-dimension-basic__cb1b73d.json and
+// eval/corpus/runs/2026-07-06T19__L2-business-event-basic__cb1b73d.json both scored
+// golden_match=0 (classified TOOL_DEFECT) even though `build` and `bp_clean` passed and
+// the generated Method/Source text was semantically IDENTICAL to the golden — the only
+// delta was indentation depth (e.g. golden's method signature/brace at column 0, actual's
+// at column 4, with every nested line shifted by the same one-level offset). X++ is
+// whitespace-insensitive for indentation, and docs/AGENT_EVAL_LOOP.md §6.2 already commits
+// the oracle to "canonicalise element ordering and whitespace" — but normalizeText() only
+// did CRLF normalisation + trim, so any indentation-convention mismatch (tool vs. golden,
+// or even the D365FO metadata SDK's own on-save reformatting, which is opaque to this repo)
+// spuriously failed golden_match. Fixed by re-deriving indentation from brace depth alone
+// (reusing src/utils/xppFormat.ts's reindentXppSource, baseDepth 0) for `Source`/
+// `Declaration` text specifically before comparing.
+describe('X++ source indentation is not a golden_match diff (regression: L2-dimension-basic / L2-business-event-basic)', () => {
+  const DIMENSION_GOLDEN = `<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>PFXDemoNoteHeader</Name>
+  <SourceCode>
+    <Methods>
+      <Method>
+        <Name>dimensionDisplayValue</Name>
+        <Source><![CDATA[
+public display str dimensionDisplayValue()
+{
+    DimensionAttributeValueSetStorage dimStorage;
+
+    if (!this.DefaultDimension)
+    {
+        return '';
+    }
+
+    dimStorage = DimensionAttributeValueSetStorage::find(this.DefaultDimension);
+
+    return dimStorage.toString();
+}
+]]></Source>
+      </Method>
+    </Methods>
+  </SourceCode>
+</AxTable>`;
+
+  // Same method, byte-identical tokens, but the tool's actual bridge/addMethod output
+  // (captured verbatim in the corpus record) indents the brace/body one level deeper.
+  const DIMENSION_ACTUAL = `<?xml version="1.0" encoding="utf-8"?>
+<AxTable xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+  <Name>PFXDemoNoteHeader</Name>
+  <SourceCode>
+    <Methods>
+      <Method>
+        <Name>dimensionDisplayValue</Name>
+        <Source><![CDATA[
+public display str dimensionDisplayValue()
+    {
+        DimensionAttributeValueSetStorage dimStorage;
+
+        if (!this.DefaultDimension)
+        {
+            return '';
+        }
+
+        dimStorage = DimensionAttributeValueSetStorage::find(this.DefaultDimension);
+
+        return dimStorage.toString();
+    }
+]]></Source>
+      </Method>
+    </Methods>
+  </SourceCode>
+</AxTable>`;
+
+  it('normalizeAotXml: a Method/Source that differs only in indentation canonicalises to the same value', async () => {
+    const golden = await normalizeAotXml(DIMENSION_GOLDEN);
+    const actual = await normalizeAotXml(DIMENSION_ACTUAL);
+    const path = 'AxTable/SourceCode/Methods/Method[dimensionDisplayValue]/Source';
+    expect(golden.get(path)).toBeDefined();
+    expect(golden.get(path)).toBe(actual.get(path));
+    expect(diffNormalized(golden, actual).matched).toBe(true);
+  });
+
+  it('evaluate(): golden_match=1 for an indentation-only difference in a table display method', async () => {
+    const res = await evaluate({
+      caseSpec: { id: 'L2-dimension-basic', tier: 2 },
+      actualXml: DIMENSION_ACTUAL,
+      goldenXml: DIMENSION_GOLDEN,
+      build: { succeeded: true, bpWarnings: [] },
+    });
+    expect(res.goldenDiff.changed).toEqual([]);
+    expect(res.score.golden_match).toBe(1);
+  });
+
+  it('WITHOUT indentation canonicalisation the same pair still mismatches — proves the fix is load-bearing', () => {
+    // Direct string compare (what normalizeText did before the fix): CRLF-normalise + trim
+    // only, no re-indent. The two CDATA bodies differ byte-for-byte on indentation alone.
+    const rawGolden = DIMENSION_GOLDEN.match(/<!\[CDATA\[([\s\S]*?)\]\]>/)![1].trim();
+    const rawActual = DIMENSION_ACTUAL.match(/<!\[CDATA\[([\s\S]*?)\]\]>/)![1].trim();
+    expect(rawGolden).not.toBe(rawActual);
+  });
+
+  it('a genuinely different method BODY (not just indentation) still correctly mismatches', async () => {
+    const differentBody = DIMENSION_ACTUAL.replace(
+      "return dimStorage.toString();",
+      "return 'wrong';",
+    );
+    const res = await evaluate({
+      caseSpec: { id: 'L2-dimension-basic', tier: 2 },
+      actualXml: differentBody,
+      goldenXml: DIMENSION_GOLDEN,
+      build: { succeeded: true, bpWarnings: [] },
+    });
+    expect(res.score.golden_match).toBe(0);
+    expect(res.goldenDiff.changed.length).toBeGreaterThan(0);
+  });
+
+  it('only applies indentation canonicalisation to Source/Declaration text, not arbitrary element text', async () => {
+    // A Label containing brace-like characters must still compare literally.
+    const xmlA = `<AxTable><Name>T</Name><Label>{weird} label</Label></AxTable>`;
+    const xmlB = `<AxTable><Name>T</Name><Label>{ weird } label</Label></AxTable>`;
+    const a = await normalizeAotXml(xmlA);
+    const b = await normalizeAotXml(xmlB);
+    expect(a.get('AxTable/Label')).not.toBe(b.get('AxTable/Label'));
+  });
+});
