@@ -23,6 +23,7 @@ import type { XppServerContext } from '../types/context.js';
 import { createProvenanceToken } from '../utils/provenanceStore.js';
 import { tryBridgeCocExtensions } from '../bridge/bridgeAdapter.js';
 import { getConfigManager } from '../utils/configManager.js';
+import { lookupSymbolNocase } from '../utils/symbolLookup.js';
 import { rankContext, renderRankedContext } from '../workspace/contextRanker.js';
 
 // Schema
@@ -54,40 +55,12 @@ export const prepareChangeArgsSchema = z.object({
 
 // Helpers
 
-/** Quote a name as an FTS5 phrase (strips embedded double quotes). */
-function ftsPhrase(name: string): string {
-  return `"${name.replace(/"/g, '')}"`;
-}
-
-/**
- * Case-insensitive top-level object lookup that stays on existing indexes.
- *
- * `name = ? COLLATE NOCASE` cannot use the BINARY-collated name indexes and
- * degrades to a full scan of the symbols table — 80-165 s on a production-size
- * DB with a cold file cache. better-sqlite3 is synchronous, so that scan
- * blocks the event loop and MCP clients kill the server. Instead: exact-case
- * probe on idx_name_type (sub-ms) first, FTS phrase match (case-folded by the
- * tokenizer) as the fallback for differently-cased input.
- */
+/** Case-insensitive top-level object lookup — see src/utils/symbolLookup.ts. */
 function lookupObjectNocase(
   objectName: string,
   context: XppServerContext,
-): { name: string; type: string; model: string } | undefined {
-  if (!objectName) return undefined;
-  const db = context.symbolIndex.getReadDb();
-  const exact = db.prepare(
-    `SELECT name, type, model FROM symbols
-     WHERE name = ? AND parent_name IS NULL LIMIT 1`,
-  ).get(objectName) as { name: string; type: string; model: string } | undefined;
-  if (exact) return exact;
-  return db.prepare(
-    `SELECT s.name, s.type, s.model FROM symbols_fts fts
-     JOIN symbols s ON s.id = fts.rowid
-     WHERE symbols_fts MATCH ?
-       AND s.name = ? COLLATE NOCASE AND s.parent_name IS NULL
-     LIMIT 1`,
-  ).get(`{name} : ${ftsPhrase(objectName)}`, objectName) as
-    { name: string; type: string; model: string } | undefined;
+): { name: string; type: string; model: string | null } | undefined {
+  return lookupSymbolNocase(context.symbolIndex.getReadDb(), objectName);
 }
 
 /** Resolve an object's canonical name + type from the symbol index. */

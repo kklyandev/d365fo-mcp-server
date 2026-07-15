@@ -19,6 +19,7 @@ import { createProvenanceToken } from '../utils/provenanceStore.js';
 import { getConfigManager } from '../utils/configManager.js';
 import { resolveObjectPrefix, applyObjectPrefix } from '../utils/modelClassifier.js';
 import { rankContext, renderRankedContext } from '../workspace/contextRanker.js';
+import { lookupSymbolsNocase, type SymbolHit } from '../utils/symbolLookup.js';
 import { RESERVED_SYSTEM_FIELD_NAMES } from './generateSmartTable.js';
 
 export const prepareCreateArgsSchema = z.object({
@@ -56,12 +57,20 @@ function checkCollisions(
 ): string {
   try {
     const db = context.symbolIndex.getReadDb();
-    const rows = db.prepare(
-      `SELECT DISTINCT name, type, model FROM symbols
-       WHERE name IN (?, ?) COLLATE NOCASE
-          AND parent_name IS NULL
-       LIMIT 10`,
-    ).all(finalName, baseName) as Array<{ name: string; type: string; model: string }>;
+    // `name IN (?, ?) COLLATE NOCASE` silently compared case-SENSITIVELY (the
+    // COLLATE binds to the IN expression, not the column), so differently-cased
+    // collisions were missed. The nocase helper also stays on the indexes.
+    const rows: SymbolHit[] = [];
+    const seen = new Set<string>();
+    for (const n of new Set([finalName, baseName])) {
+      for (const r of lookupSymbolsNocase(db, n, { limit: 5 })) {
+        const key = `${r.name} ${r.type} ${r.model ?? ''}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          rows.push(r);
+        }
+      }
+    }
     if (rows.length > 0) {
       return rows
         .map(r => `⚠️  "${r.name}" already exists as ${r.type} in model "${r.model}" — pick a different name or extend it instead.`)

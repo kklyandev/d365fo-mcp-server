@@ -124,6 +124,20 @@ describe('prepare_change with a real index', () => {
 });
 
 describe('prepare_create with a real index', () => {
+  it('reports a collision under different casing (regression: `IN (?, ?) COLLATE NOCASE` bound the COLLATE to the IN expression and compared case-sensitively)', async () => {
+    const result = await prepareCreateTool(
+      req('prepare_create', {
+        goal: 'Parameter table',
+        objectName: 'custparameters', // exists as "CustParameters"
+        objectType: 'table',
+      }),
+      context,
+    );
+    const text = result.content?.[0]?.text ?? '';
+    expect(text).toContain('already exists as table');
+    expect(text).toContain('CustParameters');
+  });
+
   it('finds similar objects and EDT suggestions (regression: INDEXED BY query shapes)', async () => {
     const result = await prepareCreateTool(
       req('prepare_create', {
