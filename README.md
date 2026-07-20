@@ -8,6 +8,9 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue.svg)](https://www.typescriptlang.org/)
 [![Tests](https://img.shields.io/badge/tests-1400%2B-brightgreen.svg)](docs/TESTING.md)
+<!-- coverage-badge:start -->
+[![Core coverage](https://img.shields.io/badge/core_coverage-78.6%25-yellow.svg)](eval/COVERAGE.md) [![Total coverage](https://img.shields.io/badge/total_coverage-49.3%25-lightgrey.svg)](eval/COVERAGE.md)
+<!-- coverage-badge:end -->
 
 *Grounded AI development for Dynamics 365 Finance & Operations — works with GitHub Copilot and Claude Code*
 
@@ -183,7 +186,7 @@ Deployment guide: [docs/SETUP_AZURE.md](docs/SETUP_AZURE.md) · CI/CD automation
 | [Claude Code setup](docs/CLAUDE_CODE_SETUP.md) | [Architecture](docs/ARCHITECTURE.md) | [Testing](docs/TESTING.md) |
 | [Usage examples](docs/USAGE_EXAMPLES.md) — real tool chains | [C# Bridge](docs/BRIDGE.md) | [Custom / ISV models](docs/CUSTOM_EXTENSIONS.md) |
 | | [Workspace detection](docs/WORKSPACE_DETECTION.md) | [SQLite vs Bridge](docs/SQLITE_DEPENDENCY.md) |
-| | [Backlog](docs/BACKLOG.md) — deferred work & ideas | |
+| | [Backlog](docs/BACKLOG.md) — deferred work & ideas | [Coverage](eval/COVERAGE.md) — what the badge counts |
 
 ## License
 
