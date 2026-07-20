@@ -534,20 +534,27 @@ async function extractMetadata() {
         continue;
       }
 
+      // Custom classification for this model. On UDE (customRoot set) it is
+      // PATH-based — a model is custom iff it lives under the custom root —
+      // matching the root-level scan above and the manifest flag below. Only fall
+      // back to name-based isCustomModel() for traditional environments that have
+      // no custom root path. Using isCustomModel() here on UDE would drop ISV
+      // models with source under the custom root (their names match neither
+      // D365FO_MODEL_NAME nor EXTENSION_PREFIX), leaving a `custom` build scoped
+      // to just the configured model.
+      const isCustom = customRoot ? rootPath === customRoot : isCustomModel(modelName);
+
       // Apply model-level filtering
-      if (FILTER_MODE === 'custom-only' && !isCustomModel(modelName)) {
+      if (FILTER_MODE === 'custom-only' && !isCustom) {
         log.detail(`${glyph.arrow} skip standard model: ${modelName}`);
         continue;
       }
-      if (FILTER_MODE === 'standard-only' && isCustomModel(modelName)) {
+      if (FILTER_MODE === 'standard-only' && isCustom) {
         log.detail(`${glyph.arrow} skip custom model: ${modelName}`);
         continue;
       }
 
       const expectedXmlFiles = await countModelXmlFiles(modelDirsByLowerName);
-      // In UDE mode: custom iff the package lives under customRoot.
-      // In traditional mode: fall back to name-based detection.
-      const isCustom = customRoot ? rootPath === customRoot : isCustomModel(modelName);
       modelWorkItems.push({ packageName, modelName, modelPath, expectedXmlFiles, isCustom });
     }
   }
