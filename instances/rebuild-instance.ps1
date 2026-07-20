@@ -173,6 +173,10 @@ function Migrate-DevEnvTypeName([string]$envFile) {
 function Rebuild-SingleInstance([System.IO.DirectoryInfo]$inst) {
     $envFile = Join-Path $inst.FullName '.env'
     $env:ENV_FILE = $envFile
+    # Force a full rebuild regardless of what EXTRACT_MODE the instance .env
+    # happens to have set — dotenv does not override already-set process env
+    # vars, so this wins over a stray 'custom'/'standard' value in the file.
+    $env:EXTRACT_MODE = 'all'
 
     Write-Host ''
     Write-Host ('=' * 60) -ForegroundColor DarkGray
