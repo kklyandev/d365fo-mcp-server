@@ -500,8 +500,8 @@ final class SalesFormLetter_MyModel_Extension
 // Fields: ItemId (EDT: ItemId), ItemName (EDT: ItemName), Qty (EDT: Qty)
 
 // In the DP class:
-[SRSReportParameterAttribute(classStr(MyReportContract))]
-class MyReportDP extends SRSReportDataProviderBase
+[SrsReportParameterAttribute(classStr(MyReportContract))]
+class MyReportDP extends SrsReportDataProviderBase
 {
     MyReportTmp tmpTable;
 
@@ -628,12 +628,12 @@ class MyReportDP extends SRSReportDataProviderBase
     examples: [
       {
         label: 'Module class — register the reference in loadModule() (correct API)',
-        code: `public class NumberSeqModuleContosoRent extends NumberSeqApplicationModule
+        code: `public class NumberSeqModuleMyRent extends NumberSeqApplicationModule
 {
     protected void loadModule()
     {
         NumberSeqDatatype datatype = NumberSeqDatatype::construct();
-        datatype.parmDatatypeId(extendedTypeNum(ContosoRentEquipmentId));
+        datatype.parmDatatypeId(extendedTypeNum(MyRentEquipmentId));
         datatype.parmReferenceHelp(literalStr("Equipment ID"));
         datatype.parmWizardIsContinuous(false);
         datatype.parmWizardIsManual(NoYes::No);
@@ -647,7 +647,7 @@ class MyReportDP extends SRSReportDataProviderBase
 
     public NumberSeqModule numberSeqModule()
     {
-        return NumberSeqModule::ContosoRent;  // your NumberSeqModule enum value
+        return NumberSeqModule::MyRent;  // your NumberSeqModule enum value
     }
 }`,
       },
@@ -660,10 +660,10 @@ public NumberSeqFormHandler numberSeqFormHandler()
     if (!numberSeqFormHandler)
     {
         numberSeqFormHandler = NumberSeqFormHandler::newForm(
-            ContosoRentParameters::numRefContosoRentEquipmentId().NumberSequenceId, // RefRecId, not a string
+            MyRentParameters::numRefMyRentEquipmentId().NumberSequenceId, // RefRecId, not a string
             element,
-            ContosoRentEquipmentTable_ds,
-            fieldNum(ContosoRentEquipmentTable, ContosoRentEquipmentId));
+            MyRentEquipmentTable_ds,
+            fieldNum(MyRentEquipmentTable, MyRentEquipmentId));
     }
     return numberSeqFormHandler;
 }`,
@@ -671,10 +671,10 @@ public NumberSeqFormHandler numberSeqFormHandler()
       {
         label: 'Fetching next number at runtime',
         code: `NumberSequenceReference numSeqRef =
-    NumberSeqReference::findReference(extendedTypeNum(ContosoRentEquipmentId));
+    NumberSeqReference::findReference(extendedTypeNum(MyRentEquipmentId));
 
 NumberSeq numSeq = NumberSeq::newGetNum(numSeqRef);
-ContosoRentEquipmentId newId = numSeq.num();
+MyRentEquipmentId newId = numSeq.num();
 
 // If the insert is rolled back, release the number:
 // numSeq.abort();`,
@@ -852,14 +852,14 @@ class MyHelperTest extends SysTestCase
       'DefaultDimension field (Int64): RecId pointing to DimensionAttributeValueSet — stores the account structure combination',
       'LedgerDimension field (Int64): RecId pointing to DimensionAttributeValue — full main account + dimensions combined',
       'To read dimension values: use DimensionAttributeValue::find() and DimensionAttributeValueSetStorage',
-      'To create/update default dimensions: use DimensionDefaultingService or DimensionAttributeValueSetStorage',
+      'To create/update default dimensions: use DimensionAttributeValueSetStorage (find → addItem → save). There is no DimensionDefaultingService class',
       'To merge two dimension sets: DimensionAttributeValueSetStorage.mergeValues()',
       'To get the display string of a DefaultDimension: use DimensionAttributeValueSetStorage.toString()',
       'To get the display string of a LedgerDimension: use DimensionAttributeValue::find(recId).getValue()',
       'NEVER store dimension strings in custom fields — always use DefaultDimension (Int64 EDT) referencing DimensionAttributeValueSet',
-      'DimensionDefaultingController: use on forms to render the Financial Dimensions FastTab automatically',
+      'The Financial dimensions FastTab is a FORM CONTROL (DimensionEntryControl, added in the form design over the DefaultDimension field) — not a controller class you construct in init(). There is no DimensionDefaultingController',
+      'DimensionController is the abstract base behind the dimension entry controls (segment validation, account structure) — subclass it only for custom account-type controls',
       'LedgerDimensionFacade: helper class for building/parsing ledger dimension combinations',
-      'For CoC on dimension defaulting: override dimensionDefaultingController() or ledgerDimensionDefaultingController()',
       'Dimension attribute names are configurable per company — never hardcode names like "CostCenter", use DimensionAttribute::findByName()',
     ],
     examples: [
@@ -898,33 +898,37 @@ if (dimAttr.RecId)
 }`,
       },
       {
-        label: 'DimensionDefaultingController on a form (CoC)',
-        code: `[ExtensionOf(formStr(MyForm))]
-final class MyForm_MyModel_Extension
+        label: 'Default a dimension value on write (CoC on the table)',
+        code: `// The Financial dimensions FastTab itself is a DimensionEntryControl placed
+// in the form design; from X++ you only touch the DefaultDimension value.
+[ExtensionOf(tableStr(MyTable))]
+final class MyTable_MyModel_Extension
 {
-    DimensionDefaultingController dimensionDefaultingController;
-
-    public void init()
+    public void insert()
     {
-        next init();
-        // Initialise the Financial Dimensions FastTab
-        dimensionDefaultingController =
-            DimensionDefaultingController::constructInTabWithValues(
-                true,                         // allow editing
-                true,                         // show mandatory asterisk
-                true,                         // validate on save
-                0,                            // host field group (0 = default)
-                this,                         // form run
-                MyTable::defaultDimensionField());
-    }
+        DimensionAttributeValueSetStorage dimStorage;
+        DimensionAttribute                dimAttribute;
+        DimensionAttributeValue           dimValue;
 
-    public void close()
-    {
-        if (dimensionDefaultingController)
+        dimStorage   = DimensionAttributeValueSetStorage::find(this.DefaultDimension);
+
+        // Never hardcode the attribute name in a literal used for logic —
+        // look it up so a renamed dimension fails loudly.
+        dimAttribute = DimensionAttribute::findByName('CostCenter');
+
+        if (dimAttribute.RecId && !dimStorage.containsDimensionAttribute(dimAttribute.RecId))
         {
-            dimensionDefaultingController.pageClose();
+            dimValue = DimensionAttributeValue::findByDimensionAttributeAndValue(
+                dimAttribute,
+                this.MyCostCentreCode,
+                false,      // _forUpdate
+                true);      // _createIfNecessary
+
+            dimStorage.addItem(dimValue);
+            this.DefaultDimension = dimStorage.save();
         }
-        next close();
+
+        next insert();
     }
 }`,
       },
@@ -939,51 +943,65 @@ final class MyForm_MyModel_Extension
     keywords: ['posting', 'ledger', 'voucher', 'ledgervoucher', 'subledgerjournalizer', 'journalizer', 'accounting', 'ledgerpostingtype', 'axbc', 'subledger'],
     summary:
       'D365FO posting uses SubledgerJournalizer to create subledger entries that are transferred to General Ledger via the Accounting Framework. ' +
-      'Never write to LedgerTrans directly — always use the posting framework.',
+      'Never insert into the GL entry tables directly — always go through the posting framework.',
     rules: [
-      'NEVER write to LedgerTrans directly — use SubledgerJournalizer or LedgerVoucher API',
+      'NEVER insert into GeneralJournalEntry / GeneralJournalAccountEntry / SubledgerJournalAccountEntry directly — use SubledgerJournalizer or the LedgerVoucher API (the AX2012 LedgerTrans table no longer exists)',
       'SubledgerJournalizer: modern API for creating accounting entries (replaces LedgerVoucher in new modules)',
       'LedgerVoucher: legacy but still valid for most standard modules (SalesOrder, PurchOrder posting)',
-      'AccountingEvent: groups voucher lines by posting type for a single business event',
-      'AxBC classes (AxSalesLine, AxPurchLine, etc.): business component wrappers for posting — extend via CoC, not direct modification',
-      'LedgerPostingType: must be registered in your module\'s LedgerPostingTypeHelper extension',
-      'For custom vouchers: extend LedgerVoucher_Extension and override getVoucherType()',
-      'Subledger journal: created by SubledgerJournalizerProjectEntry (or similar), transferred async to GL',
-      'Always use ledgerDimension (not defaultDimension) for posting — combines main account + dimensions',
+      'LedgerVoucher API shape: LedgerVoucher::newLedgerPost() → LedgerVoucherObject::newVoucher() → addVoucher() → LedgerVoucherTransObject::newTransactionAmountDefault() per line → addTrans() → end()',
+      'AxBC classes (AxSalesTable, AxSalesLine, etc.): business component wrappers for posting — extend via CoC, not direct modification',
+      'LedgerPostingType (base enum) selects which posting profile a voucher line hits — pass it to newTransactionAmountDefault()',
+      'Amounts are signed: a debit is a positive Money, the balancing credit the same amount negated. LedgerVoucher.end() fails if the voucher does not balance',
+      'Currency conversion goes through CurrencyExchangeHelper::newExchangeDate(Ledger::current(), transDate) — never hand-compute the accounting-currency amount',
+      'Always use ledgerDimension (LedgerDimensionAccount, not defaultDimension) for posting — it combines main account + dimensions',
       'Posting validation: override validate() in AxBC class via CoC — return error() to stop posting',
     ],
     examples: [
       {
         label: 'Create custom voucher with LedgerVoucher',
-        code: `LedgerVoucher ledgerVoucher = LedgerVoucher::newLedgerVoucher(LedgerTransType::None);
-LedgerVoucherObject voucherObj = LedgerVoucherObject::newLedgerVoucherObject(
-    LedgerTransType::None,
-    CompanyInfo::findDataArea(curExt()));
-
-// Debit line
-LedgerVoucherTransObject debit = LedgerVoucherTransObject::newTransObject(
-    voucherObj,
-    LedgerVoucherType::Normal);
-debit.parmAccount(myLedgerDimension);
-debit.parmAmountCur(amount);
-debit.parmTransDate(transDate);
-debit.parmTransTxt('My posting');
-
-// Credit line
-LedgerVoucherTransObject credit = LedgerVoucherTransObject::newTransObject(
-    voucherObj,
-    LedgerVoucherType::Normal);
-credit.parmAccount(offsetLedgerDimension);
-credit.parmAmountCur(-amount);
-credit.parmTransDate(transDate);
-credit.parmTransTxt('My posting offset');
-
-voucherObj.add(debit);
-voucherObj.add(credit);
-ledgerVoucher.add(voucherObj);
+        code: `LedgerVoucher              ledgerVoucher;
+LedgerVoucherObject        voucherObj;
+LedgerVoucherTransObject   debit, credit;
+CurrencyExchangeHelper     exchangeHelper;
 
 ttsbegin;
-ledgerVoucher.post();
+
+ledgerVoucher = LedgerVoucher::newLedgerPost(
+    DetailSummary::Detail,
+    SysModule::Ledger,
+    '');                                  // voucher series: '' = module default
+
+voucherObj = LedgerVoucherObject::newVoucher(
+    voucher,                              // Voucher number (from the number sequence)
+    transDate,
+    SysModule::Ledger,
+    LedgerTransType::None);
+ledgerVoucher.addVoucher(voucherObj);
+
+exchangeHelper = CurrencyExchangeHelper::newExchangeDate(Ledger::current(), transDate);
+
+// Debit line — positive amount
+debit = LedgerVoucherTransObject::newTransactionAmountDefault(
+    voucherObj,
+    LedgerPostingType::LedgerJournal,
+    ledgerDimension,
+    currencyCode,
+    amount,
+    exchangeHelper);
+ledgerVoucher.addTrans(debit);
+
+// Credit line — same amount, negated, so the voucher balances
+credit = LedgerVoucherTransObject::newTransactionAmountDefault(
+    voucherObj,
+    LedgerPostingType::LedgerJournal,
+    offsetLedgerDimension,
+    currencyCode,
+    -amount,
+    exchangeHelper);
+ledgerVoucher.addTrans(credit);
+
+ledgerVoucher.end();                      // posts the voucher
+
 ttscommit;`,
       },
     ],
@@ -1057,7 +1075,7 @@ while select crosscompany : companies
       'PrintMgmtDocumentType class: register your document type (link to module, table, report)',
       'To open the Print management setup: go to Accounts receivable → Setup → Print management',
       'For new document types: also add an entry in PrintMgmtReportFormat (links document type to report design)',
-      'Reprint: same controller, pass PrintCopyType::Reprint via parmPrintCopyType()',
+      'Original vs copy: the base enum is PrintCopyOriginal (Original/Copy), carried on the report contract as parmPrintCopyOriginal() — there is no PrintCopyType enum or parmPrintCopyType()',
     ],
     related: ['ssrs-reports'],
   },
@@ -1151,7 +1169,7 @@ class MyService_Test extends SysTestCase
       'error("message"): red error — operation failed, return false from validate methods',
       'checkFailed("message"): same as error() but returns false — use in validateWrite()',
       'Global::error/warning/info: same as bare functions (Global:: prefix is valid but redundant)',
-      'SysInfoLogScope: use to capture infolog output programmatically (for testing or logging)',
+      'To capture infolog output programmatically (testing/logging): snapshot infolog.infologData() and walk it with SysInfologEnumerator::newData() — there is no SysInfoLogScope class',
       'NEVER use print statement — it only shows in job output, not infolog',
       'For Azure Application Insights telemetry: use Microsoft.ApplicationInsights NuGet — not available in standard X++ without NuGet reference',
       'Structured telemetry: use SysTelemetry class (available in platform update 20+)',
@@ -1161,24 +1179,25 @@ class MyService_Test extends SysTestCase
     ],
     examples: [
       {
-        label: 'SysInfoLogScope — capture infolog to string',
-        code: `SysInfoLogScope infoLogScope = SysInfoLogScope::startScope();
-try
+        label: 'Capture infolog output programmatically',
+        code: `container               beforeData = infolog.infologData();
+container               produced;
+SysInfologEnumerator    enumerator;
+SysInfologMessageStruct msgStruct;
+
+myService.doSomething();
+
+// Everything the service added since the snapshot
+produced   = conDel(infolog.infologData(), 1, conLen(beforeData));
+enumerator = SysInfologEnumerator::newData(produced);
+
+while (enumerator.moveNext())
 {
-    myService.doSomething();
-}
-finally
-{
-    SysInfoLogEnumerator enumerator = SysInfoLogEnumerator::newData(infoLogScope.infoLogData());
-    while (enumerator.moveNext())
-    {
-        SysInfologMessageStruct msgStruct =
-            SysInfologMessageStruct::construct(enumerator.current());
-        str message = msgStruct.message();
-        SysInfologLevel level = enumerator.currentException();
-        // level: SysInfologLevel::Info, Warning, Error
-        info(strFmt('[%1] %2', enum2Str(level), message));
-    }
+    msgStruct = SysInfologMessageStruct::construct(enumerator.currentMessage());
+
+    // currentException() returns the severity as an Exception value
+    // (Exception::Info / Warning / Error), NOT a SysInfologLevel.
+    info(strFmt('[%1] %2', enumerator.currentException(), msgStruct.message()));
 }`,
       },
     ],
@@ -1243,17 +1262,20 @@ str emailAddr = email.Locator;`,
   {
     id: 'sysextension',
     title: 'SysExtension Framework — plug-in pattern without if/else chains',
-    keywords: ['sysextension', 'sysextensionappsuite', 'exportmetadata', 'iclassextension', 'plugin', 'plug-in', 'factory', 'decorator', 'extensible enum', 'sysplugin'],
+    keywords: ['sysextension', 'sysextensionappclassfactory', 'sysextensioniattribute', 'sysattribute', 'plugin', 'plug-in', 'factory', 'decorator', 'extensible enum', 'sysplugin'],
     summary:
       'SysExtension allows registering and resolving implementations keyed by an extensible enum without modifying ' +
-      'the base code. Replaces if/switch chains. Consists of: interface, enum, concrete classes decorated with ' +
-      '[ExportMetadataAttribute], and a factory call via SysExtensionAppSuiteDecoratorForward or SysPluginFactory.',
+      'the base code. Replaces if/switch chains. Consists of: a base class or interface, an extensible enum, a ' +
+      'factory ATTRIBUTE class (extends SysAttribute implements SysExtensionIAttribute) that each concrete class ' +
+      'is decorated with, and a lookup via SysExtensionAppClassFactory.',
     rules: [
-      'Define an interface (or abstract class) for the strategy: interface IMyStrategy { void execute(); }',
+      'Define an interface (or abstract base class) for the strategy: interface IMyStrategy { void execute(); }',
       'Create an extensible enum (IsExtensible=Yes) with one value per strategy',
-      'Decorate each concrete class: [ExportMetadataAttribute(enumStr(MyEnum), MyEnum::Value)]',
-      'Resolve at runtime: SysExtensionAppSuiteDecoratorForward::construct(classStr(IMyStrategy), myEnumValue)',
-      'Alternatively use SysPluginFactory::Instance(enumStr(MyEnum), myEnumValue)',
+      'Write ONE factory attribute per strategy family: `class MyProcessorAttribute extends SysAttribute implements SysExtensionIAttribute`, taking the enum value in new() and returning a unique parmCacheKey()',
+      'Decorate each concrete class with that attribute: [MyProcessorAttribute(MyProcessorType::Express)]',
+      'Resolve at runtime: SysExtensionAppClassFactory::getClassFromSysAttribute(classStr(MyProcessorBase), new MyProcessorAttribute(_type))',
+      'There is no ExportMetadataAttribute and no SysExtensionAppSuiteDecoratorForward class in D365FO — both are AX2012-era/MEF names that do not resolve',
+      'SysPluginFactory::Instance(namespace, className, metadataCollection) is the .NET-plugin sibling — different mechanism, do not mix the two',
       'Adding a new strategy = new class + new enum value, ZERO changes to base code',
       'Use classStr() / enumStr() — never string literals — for refactor-safety',
       'Works for both class and table contexts; interface must be implemented on the class',
@@ -1265,15 +1287,39 @@ str emailAddr = email.Locator;`,
         code: `// 1. Extensible enum (IsExtensible = Yes in XML)
 // enum MyProcessorType { Standard, Express, Overnight }
 
-// 2. Interface
-interface IMyProcessor
+// 2. Abstract base the factory resolves against
+public abstract class MyProcessorBase
 {
-    void process(MyTable _record);
+    public abstract void process(MyTable _record);
 }
 
-// 3. Concrete implementation decorated with enum value
-[ExportMetadataAttribute(enumStr(MyProcessorType), MyProcessorType::Express)]
-public class MyExpressProcessor implements IMyProcessor
+// 3. Factory attribute — the registration mechanism
+class MyProcessorAttribute extends SysAttribute implements SysExtensionIAttribute
+{
+    MyProcessorType processorType;
+
+    public void new(MyProcessorType _processorType)
+    {
+        super();
+        processorType = _processorType;
+    }
+
+    public str parmCacheKey()
+    {
+        return strFmt('%1;%2',
+            classStr(MyProcessorAttribute),
+            int2str(enum2int(processorType)));
+    }
+
+    public boolean useSingleton()
+    {
+        return false;
+    }
+}
+
+// 4. Concrete implementation, decorated with the enum value
+[MyProcessorAttribute(MyProcessorType::Express)]
+public class MyExpressProcessor extends MyProcessorBase
 {
     public void process(MyTable _record)
     {
@@ -1281,11 +1327,12 @@ public class MyExpressProcessor implements IMyProcessor
     }
 }
 
-// 4. Factory resolution — no if/switch needed
+// 5. Factory resolution — no if/switch needed
 public static void runProcessor(MyTable _record, MyProcessorType _type)
 {
-    IMyProcessor processor = SysExtensionAppSuiteDecoratorForward::construct(
-        classStr(IMyProcessor), _type) as IMyProcessor;
+    MyProcessorBase processor = SysExtensionAppClassFactory::getClassFromSysAttribute(
+        classStr(MyProcessorBase),
+        new MyProcessorAttribute(_type)) as MyProcessorBase;
 
     if (processor)
     {
@@ -1307,13 +1354,14 @@ public static void runProcessor(MyTable _record, MyProcessorType _type)
       'Never calculate exchange rates manually — always use the framework APIs to respect ' +
       'company exchange rate configuration.',
     rules: [
-      'Use ExchangeRateHelper::getExchangeRate() to get the rate between two currencies on a date',
-      'Use CurrencyExchangeHelper::newExchangeDate() factory for converting amounts',
+      'Use CurrencyExchangeHelper::newExchangeDate(Ledger::current(), rateDate) as the entry point for every conversion — the factory takes a LEDGER RecId + date, not a currency pair',
+      'Convert with the calculate* methods on that helper: calculateTransactionToAccounting() (AmountCur → AmountMST), calculateAccountingToTransaction(), calculateTransactionToTransaction()',
+      'ExchangeRateHelper is the read-side helper for the rate itself: getExchangeRate1_Static(ledger, currency, date) / getExchangeRate2_Static() — there is no plain getExchangeRate()',
       'Transaction currency (AmountCur) → Accounting currency (AmountMST): use CurrencyExchangeHelper',
       'Accounting currency is defined per legal entity: CompanyInfo::find().CurrencyCode',
       'Exchange rate types: Default, Budget, Cost accounting — always use the type from Ledger setup',
       'NEVER hard-code exchange rates or calculate manually',
-      'For subledger transactions: use LedgerCurrencyConverter, not manual arithmetic',
+      'For subledger transactions: hand the CurrencyExchangeHelper to the posting API (newTransactionAmountDefault), not manual arithmetic',
       'ExchangeRateType table holds the types; ExchangeRate table holds the actual rates',
       'When inserting subledger lines, let SubledgerJournalizer handle the currency conversion',
     ],
@@ -1321,24 +1369,22 @@ public static void runProcessor(MyTable _record, MyProcessorType _type)
       {
         label: 'Convert transaction currency amount to accounting currency',
         code: `// Convert an amount from transaction currency to accounting currency
-CurrencyCode        fromCurrency = salesLine.CurrencyCode;
-CurrencyCode        toCurrency   = Ledger::accountingCurrency(CompanyInfo::current());
-TransDate           rateDate     = systemDateGet();
-ExchangeRateValue   rate;
+CurrencyExchangeHelper  exchangeHelper;
+CurrencyCode            fromCurrency = salesLine.CurrencyCode;
+TransDate               rateDate     = systemDateGet();
+ExchRate                rate;
+AmountMST               amountMST;
 
-// Get exchange rate
-rate = ExchangeRateHelper::getExchangeRate(
-    ExchangeRateType::find(Ledger::exchangeRateType(CompanyInfo::current())).RecId,
-    fromCurrency,
-    toCurrency,
-    rateDate);
+// The helper is bound to a ledger + a rate date, then reused for every amount
+exchangeHelper = CurrencyExchangeHelper::newExchangeDate(Ledger::current(), rateDate);
 
-// Convert amount
-AmountMST amountMST = CurrencyExchangeHelper::newExchangeDate(
+amountMST = exchangeHelper.calculateTransactionToAccounting(
     fromCurrency,
-    rateDate,
-    Ledger::current())
-    .calculateAmount(salesLine.LineAmount);`,
+    salesLine.LineAmount,
+    true);                  // _roundResult
+
+// Read-side: the rate itself (e.g. to show it on a form)
+rate = ExchangeRateHelper::getExchangeRate1_Static(Ledger::current(), fromCurrency, rateDate);`,
       },
     ],
     related: ['posting-engine', 'financial-dimensions'],
@@ -1437,8 +1483,8 @@ MySalesConfirmedBusinessEvent::newFromContract(contract).send();`,
       '(invoices, SEPA, VAT files). From X++ you can: (1) run an ER format programmatically, ' +
       '(2) extend an ER model mapping via CoC, (3) pass data from X++ to ER via a custom ER data source.',
     rules: [
-      'Run ER format from X++: use ERObjectsFactory to get IERFormatMappingRun, call run()',
-      'Pass parameters to ER: use ERModelDefinitionParamsAction to set user-input field values',
+      'Run ER format from X++: use ERObjectsFactory to get an ERIFormatMappingRun (note the ERI… prefix — there is no IERFormatMappingRun), then call run()',
+      'Pass parameters to ER: build an ERModelDefinitionInputParametersAction (addParameter/applyTo) and hand it to withParameter()',
       'NEVER modify ER configurations in code — use ER designer in D365FO UI or import from LCS',
       'ER configurations are stored in ERSolutionTable / ERVendorTable — do NOT touch DB directly',
       'To extend ER model mapping: implement IERModelMappingExtension on your class (CoC not possible for ER)',
@@ -1455,15 +1501,16 @@ using Microsoft.Dynamics365.LocalizationFramework;
 
 public static void runErFormat(ERFormatMappingId _formatMappingId, FilePath _outputPath)
 {
-    IERFormatMappingRun formatRun = ERObjectsFactory::createFormatMappingRunByFormatMappingId(
-        _formatMappingId);
+    ERIFormatMappingRun formatRun = ERObjectsFactory::createFormatMappingRunByFormatMappingId(
+        _formatMappingId,
+        _outputPath,        // _fileName
+        false,              // _showPromptDialog — false = unattended
+        false,              // _showInfologMessage
+        false);             // _forceRunDraft
 
-    if (formatRun.parmShowPromptDialog(false))
-    {
-        // Optionally pass parameters
-        ERModelDefinitionParamsAction paramsAction = new ERModelDefinitionParamsAction();
-        formatRun.withParameter(paramsAction);
-    }
+    // Optionally push user-input parameter values into the model definition
+    ERModelDefinitionInputParametersAction paramsAction = new ERModelDefinitionInputParametersAction();
+    formatRun.withParameter(paramsAction);
 
     // Run and get output
     formatRun.run();
@@ -1544,9 +1591,9 @@ if (SecurityRights::hasTableAccess(tableNum(MyCustomTable), AccessType::Read))
     summary:
       'D365FO SSRS reports use: TmpTable (TempDB) → DataContract → DP class → Controller → AxReport with RDL design.',
     rules: [
-      '5 objects: TmpTable (TempDB), Contract (DataContractAttribute), DP (extends SRSReportDataProviderBase), Controller (extends SrsReportRunController), AxReport XML',
+      '5 objects: TmpTable (TempDB), Contract (DataContractAttribute), DP (extends SrsReportDataProviderBase), Controller (extends SrsReportRunController), AxReport XML',
       'TmpTable: MUST be TableType=TempDB (NOT InMemory) — required for SSRS data connection',
-      'DP class: [SRSReportParameterAttribute(classStr(MyContract))], processReport() fills TmpTable',
+      'DP class: [SrsReportParameterAttribute(classStr(MyContract))], processReport() fills TmpTable',
       'DP getter: [SRSReportDataSetAttribute(tableStr(MyTmp))] public MyTmp getMyTmp()',
       'Controller: sets report name via ssrsReportStr(), opens dialog, runs report',
       'AxReport XML: DataSet with DataSourceType=ReportDataProvider, Query=SELECT * FROM DPClass.TmpTable',
@@ -1614,59 +1661,93 @@ dim = InventDim::findOrCreate(dim);
     id: 'feature-management',
     title: 'Feature Management & Feature Flighting',
     keywords: ['feature management', 'feature class', 'feature flighting', 'featurestateprovider',
-               'isfeatureenabled', 'feature toggle', 'feature attribute', 'featureclassattribute'],
+               'isfeatureenabled', 'feature toggle', 'feature attribute', 'ifeaturemetadata'],
     summary:
       'D365FO Feature Management allows enabling/disabling features at runtime without redeployment. ' +
-      'ISV/custom features register via FeatureClassAttribute and appear in the Feature Management workspace. ' +
-      'Code checks feature state via FeatureStateProvider::isFeatureEnabled() to branch logic.',
+      'ISV/custom features register by implementing IFeatureMetadata and exporting the class via ' +
+      '[ExportAttribute(...)]; they then appear in the Feature Management workspace. ' +
+      'Code checks feature state via FeatureStateProvider::isFeatureEnabled(MyFeature::instance()).',
     rules: [
-      'Register custom feature: create a class with [FeatureClassAttribute] — it auto-appears in Feature Management workspace',
-      'Feature class: implement static methods label(), description(), module(), isEnabledByDefault()',
-      'Check at runtime: FeatureStateProvider::isFeatureEnabled(classStr(MyFeature)) returns true/false',
-      'NEVER use FeatureStateProvider inside a tight loop — cache the result in a local variable',
-      'Feature states: Enabled, Disabled, EnabledByDefault (user can still disable)',
-      'Always provide a meaningful description — it shows in the workspace and helps admins decide',
-      'For ISV: features can have dependencies on other features via [FeatureDependsOnAttribute]',
+      'Register a custom feature: `[ExportAttribute(identifierStr(Microsoft.Dynamics.ApplicationPlatform.FeatureExposure.IFeatureMetadata))] public final class MyFeature implements IFeatureMetadata` — there is NO FeatureClassAttribute',
+      'The feature class is a singleton: private new(), private static void TypeNew() assigning `instance`, and a public static instance() returning it',
+      'IFeatureMetadata members are INSTANCE methods, all marked [Hookable(false)]: label(), summary(), module(), isEnabledByDefault(), canDisable(), learnMoreUrl(). The description shown in the workspace is summary() — there is no description()',
+      'Check at runtime: FeatureStateProvider::isFeatureEnabled(MyFeature::instance()) — it takes the feature INSTANCE (IFeature), not classStr()',
+      'Convention: wrap that call in a static isEnabled() on the feature class so callers never touch FeatureStateProvider directly',
+      'NEVER call isFeatureEnabled() inside a tight loop — cache the result in a local variable',
+      'Feature states: Enabled, Disabled, EnabledByDefault (user can still disable when canDisable() returns true)',
+      'Always provide a meaningful summary() — it shows in the workspace and helps admins decide',
       'Use Feature Management for gradual rollout — don\'t use configuration keys for new features (CK are compile-time)',
-      'In unit tests, mock feature state via SysTestFeatureStateProvider',
     ],
     examples: [
       {
         label: 'Feature class definition',
-        code: `/// <summary>
+        code: `using System.ComponentModel.Composition;
+using Microsoft.Dynamics.ApplicationPlatform.FeatureExposure;
+
+/// <summary>
 /// My custom feature that enables enhanced validation.
 /// </summary>
-[FeatureClassAttribute]
-public final class MyEnhancedValidationFeature
+[ExportAttribute(identifierStr(Microsoft.Dynamics.ApplicationPlatform.FeatureExposure.IFeatureMetadata))]
+public final class MyEnhancedValidationFeature implements IFeatureMetadata
 {
-    private static MyEnhancedValidationFeature instance = new MyEnhancedValidationFeature();
+    private static MyEnhancedValidationFeature instance;
 
-    public static str label()
+    private void new()
     {
-        return "@MyModel:EnhancedValidationLabel";
     }
 
-    public static str description()
+    private static void TypeNew()
     {
-        return "@MyModel:EnhancedValidationDesc";
+        instance = new MyEnhancedValidationFeature();
     }
 
-    public static str module()
+    [Hookable(false)]
+    public static MyEnhancedValidationFeature instance()
     {
-        return "@MyModel:ModuleName";
+        return MyEnhancedValidationFeature::instance;
     }
 
-    public static boolean isEnabledByDefault()
+    [Hookable(false)]
+    public FeatureLabelId label()
+    {
+        return literalStr("@MyModel:EnhancedValidationLabel");
+    }
+
+    [Hookable(false)]
+    public FeatureLabelId summary()
+    {
+        return literalStr("@MyModel:EnhancedValidationDesc");
+    }
+
+    [Hookable(false)]
+    public int module()
+    {
+        return FeatureModuleV0::SystemAdministration;
+    }
+
+    [Hookable(false)]
+    public boolean isEnabledByDefault()
     {
         return false;
+    }
+
+    [Hookable(false)]
+    public boolean canDisable()
+    {
+        return true;
+    }
+
+    // Convention: callers use this, never FeatureStateProvider directly.
+    internal static boolean isEnabled()
+    {
+        return FeatureStateProvider::isFeatureEnabled(MyEnhancedValidationFeature::instance());
     }
 }`,
       },
       {
         label: 'Runtime feature check',
         code: `// Branch logic based on feature state
-if (FeatureStateProvider::isFeatureEnabled(
-        classStr(MyEnhancedValidationFeature)))
+if (MyEnhancedValidationFeature::isEnabled())   // wraps FeatureStateProvider::isFeatureEnabled(instance())
 {
     // New enhanced validation path
     this.validateEnhanced();

@@ -38,6 +38,17 @@ jobs:
       - name: Unit tests + golden regression gate
         run: npx vitest run
 
+      # Knowledge content is gated the same fail-closed way generated code is:
+      # every named AOT type/API in KNOWLEDGE_BASE must be covered by a
+      # snapshot captured against the real symbol index on the VM (ROADMAP P1).
+      - name: Knowledge audit (snapshot verify)
+        run: npm run eval:knowledge-audit
+
+      # Published reliability metric: a new AOT type or topic without K∧E∧T
+      # visibly drops the number, and stale artifacts fail the build (P4).
+      - name: Coverage matrix up to date
+        run: npm run eval:coverage -- --check
+
       - name: Eval scoreboard (informational)
         if: always()
         run: npm run eval:report || true
