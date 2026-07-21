@@ -65,13 +65,68 @@ support and are the actionable follow-ups:
   `ConDemoNoteHeader` demo fixture provisioned in Contoso first, plus three
   SysOperation classes.
 
+## Plan: unblock the pending goldens
+
+Three ordered steps. Step 1 is the keystone — it blocks ~15 cases, not two.
+
+### 1. Make `ConDemoNoteHeader` a harness-level fixture (root cause, do first)
+
+**Finding (2026-07-21).** The table does not exist anywhere in
+`PackagesLocalDirectory` — verified across all 174 `AxTable` folders, not just
+missing from the index. Yet `eval/` references it from **61 files** (15 case
+specs, ~20 goldens, corpus runs), and
+`eval/goldens/L1-form-basic/ConDemoNoteHeader.metadata.xml` is a golden of the
+table itself, captured 2026-06-30. So it existed then and was lost since.
+
+**Root cause.** The fixture is created as artifact 1 of case `L1-form-basic`,
+and the implementer protocol **rolls back every case after scoring**. A shared
+fixture created by a case therefore cannot survive — each rollback re-breaks
+every other case that depends on it. The Contoso sandbox today holds only the
+residue of the 2026-07-20 captures (`ConDemoCounter`, `ConDemoSetting`,
+`ConDemoTruck`, `ConDemoVehicle` + 2 classes) under
+`Contoso\XppMetadata\Contoso\` — note that path, **not** `Contoso\Contoso\`,
+which is empty scaffold and misleads a naive inventory.
+
+**Action.** Provision it as a named fixture step owned by the harness, outside
+any case's rollback scope, seeded from the golden XML already in the repo (no
+guessing: `NoteId` str/EDT `Num`/Mandatory, `Subject` str/EDT `Name`,
+`TitleField1=Subject`, `TableGroup=Main`, label
+`@TaxTransactionInquiry:HeaderNote`). Then make case rollback fixture-aware so
+it never deletes it again. Until that holds, treat every
+`ConDemoNoteHeader`-dependent golden as unverifiable on this VM.
+
+### 2. Attach the `d365fo` MCP server to implementer sessions
+
+`eval-run` / the `eval-implementer` agent needs the `mcp__d365fo-eval__*`
+tools. A dispatch on 2026-07-21 aborted before doing anything because the
+subagent session inherited **no MCP server config** — the repo has no
+`.mcp.json` (the running server is configured from the user-level
+`~/.mcp.json`), so the grounded tool path was simply absent. Hand-writing XML
+is forbidden by the protocol and would defeat the purpose, so the run stopped
+correctly, but it means no case can be captured until the server is registered
+for the session that runs the implementer.
+
+### 3. Then capture, in dependency order
+
+`L3-custom-service-basic` first — it is the only pending case whose tool path
+is freshly written (`service` / `service-group`) and therefore still entirely
+unexercised. It has no golden and no SysTest, so its first run *captures* the
+golden rather than scoring against one; the honest verdict available is
+pass@build + bp_clean. Its steps 1–2 (the DataContract classes) and the
+AxService/AxServiceGroup shells can be built **without** the fixture, so it can
+partially proceed if step 1 slips — but the service class body selects
+`ConDemoNoteHeader`, so a clean five-artifact build cannot happen before it.
+Then `L3-batch-retryable-basic`, then the remaining `golden_pending` queue.
+
 ## Remaining knowledge-audit scope
 
-- **`d365fo-cli` skill files** (separate repo, not checked out here) still need
-  the `apiSymbols` / `eval:knowledge-audit` treatment — including the
-  `sysoperation-batch-patterns` defects from the original review
-  (`SysRunnable::run()` was confirmed absent from the index) and the
-  `--install-to FleetManagement` demo-model examples.
+The 2026-07-20 knowledge-base audit (KB vs metamodel / real AOT / MS docs) is
+otherwise closed: every P0–P3 finding is fixed and held by
+`tests/knowledge/apiSymbols.test.ts` + `tests/knowledge/exampleValidation.test.ts`
++ `npm run eval:knowledge-audit` (229 refs, 0 findings against the live index),
+with consciously deferred gaps recorded in `src/eval/coverage/taxonomy.ts`.
+Those gates are the durable record — one item is still open:
+
 - **Prove knowledge code *examples* compile (real build, VM)** — the offline BP
   slice is done: `tests/knowledge/exampleValidation.test.ts` routes every
   KNOWLEDGE_BASE example through the `validate_code(mode="syntax")` rules and
