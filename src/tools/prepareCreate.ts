@@ -35,7 +35,7 @@ export const prepareCreateArgsSchema = z.object({
     'class', 'table', 'form', 'enum', 'edt', 'query', 'view',
     'data-entity', 'report', 'menu-item-display', 'menu-item-action',
     'menu-item-output', 'menu', 'security-privilege', 'security-duty', 'security-role',
-    'business-event', 'tile', 'kpi', 'map',
+    'business-event', 'tile', 'kpi', 'map', 'service', 'service-group',
   ]).describe(
     'Type of the new D365FO object. Wholly new standalone objects only — for ' +
     'extending an EXISTING object (table-extension, form-extension, CoC class-extension, ' +

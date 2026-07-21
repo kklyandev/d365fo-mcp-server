@@ -16,10 +16,15 @@ Contoso VM (2026-07-20) zachyceny a zvalidovány — **`L2-occ-retry-basic`**,
 opravě bridge podpory `InstanceRelationType` + rebuild/restart). Zbývají dva
 blokované:
 
-- `L3-custom-service-basic` — TOOL gap: `d365fo_file` nemá `objectType`
-  `service`/`service-group`; navíc chybí fixture `ConDemoNoteHeader`.
+- `L3-custom-service-basic` — TOOL gap zapracován: `d365fo_file` už umí
+  `objectType` `service`/`service-group` (`src/tools/serviceXml.ts`, tvary
+  elementů ověřené proti reálnému AOT; opraveno i chybné tvrzení KB o plochém
+  `<Operations>`). Zbývá fixture `ConDemoNoteHeader`.
 - `L3-batch-retryable-basic` — potřebuje fixture `ConDemoNoteHeader` + tři
   SysOperation třídy.
+
+Obě zbývající case tak visí už jen na `ConDemoNoteHeader` — ten se musí
+naprovizovat v Contoso sandboxu na VM, z repa to udělat nejde.
 
 Golden capture běží na throwaway `Contoso` sandbox modelu (eval invariant §11),
 ne na reálném modelu. Plný rozpis findings je v

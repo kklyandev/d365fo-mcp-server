@@ -46,10 +46,21 @@ support and are the actionable follow-ups:
   defaulted an `edt:"RelationType"` field to `String`, so it had to be re-added
   with `fieldBaseType:"Int64"`; (2) the *derived* table also needs
   `SupportInheritance=Yes` (only `Extends` is not enough).
-- **`L3-custom-service-basic` (blocked — TOOL gap)** — `d365fo_file`'s
-  `objectType` enum has no `service` / `service-group`, so a custom service
-  cannot be created through the grounded tool path. Also depends on the
-  `ConDemoNoteHeader` shared demo fixture, which is absent from the index.
+- **`L3-custom-service-basic` (TOOL gap fixed; still blocked — fixture)** — the
+  `objectType` gap is closed: `service` / `service-group` now go through
+  `d365fo_file` (`src/tools/serviceXml.ts`, element shapes pinned to the real
+  AOT; the knowledge entry's flat `<Operations>` claim was wrong and is fixed
+  to `<ServiceOperations>`/`<AxServiceOperation>`). The case still depends on
+  the `ConDemoNoteHeader` shared demo fixture, which is absent from the index.
+  End-to-end dry run through `handleCreateD365File` (scratch package path, no
+  AOT write) surfaced a **caller-wiring hazard of the same class as the
+  data-entity one below**: `create` prefixes only `objectName`, so
+  `objectName:"DemoNoteServiceGroup" + services:["DemoNoteService"]` yields a
+  group pointing at `DemoNoteService` while the service was written as
+  `ContosoDemoNoteService` — deploys, resolves to nothing. Verbatim
+  cross-references are deliberate (a group may reference a Microsoft service),
+  so this is pinned by tests + a schema warning, not auto-prefixed. Whoever
+  captures the golden must pass FINAL names.
 - **`L3-batch-retryable-basic` (blocked — fixture)** — needs the
   `ConDemoNoteHeader` demo fixture provisioned in Contoso first, plus three
   SysOperation classes.

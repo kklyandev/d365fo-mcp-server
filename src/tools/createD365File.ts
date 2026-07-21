@@ -26,6 +26,7 @@ import { buildAxDataEntityXml } from './dataEntityXml.js';
 import { resolveEdtBaseType, resolveEdtEnumType, heuristicEdtBaseType, isEnumName, bridgeEdtBaseType } from './generateSmartTable.js';
 import { buildAxQueryXml, buildAxViewXml } from './queryViewXml.js';
 import { buildAxMapXml } from './mapXml.js';
+import { buildAxServiceXml, buildAxServiceGroupXml } from './serviceXml.js';
 
 /**
  * Per-project-file mutex to serialise concurrent addToProject calls.
@@ -64,6 +65,7 @@ const CreateD365FileArgsSchema = z.object({
       'security-privilege', 'security-duty', 'security-role',
       'security-duty-extension', 'security-role-extension',
       'business-event', 'tile', 'kpi', 'map',
+      'service', 'service-group',
     ])
     .describe('Type of D365FO object to create'),
   objectName: z
@@ -1540,6 +1542,10 @@ ${defaultParamGroupXml}
         return XmlTemplateGenerator.generateAxTileXml(objectName, properties);
       case 'kpi':
         return XmlTemplateGenerator.generateAxKpiXml(objectName, properties);
+      case 'service':
+        return buildAxServiceXml(objectName, properties);
+      case 'service-group':
+        return buildAxServiceGroupXml(objectName, properties);
       default:
         throw new Error(`Unsupported object type: ${objectType}`);
     }
@@ -3029,6 +3035,8 @@ export class ProjectFileManager {
       tile: 'Tiles',
       kpi: 'KPIs',
       map: 'Maps',
+      service: 'Services',
+      'service-group': 'Service Groups',
     };
     return folderMap[objectType] || 'Classes';
   }
@@ -3071,6 +3079,8 @@ export class ProjectFileManager {
       tile: 'AxTile',
       kpi: 'AxKPI',
       map: 'AxMap',
+      service: 'AxService',
+      'service-group': 'AxServiceGroup',
     };
     return prefixMap[objectType] || 'AxClass';
   }
@@ -3806,6 +3816,8 @@ export async function handleCreateD365File(
       tile: 'AxTile',
       kpi: 'AxKPI',
       map: 'AxMap',
+      service: 'AxService',
+      'service-group': 'AxServiceGroup',
     };
 
     const objectFolder = objectFolderMap[args.objectType];
