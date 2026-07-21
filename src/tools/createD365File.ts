@@ -26,6 +26,8 @@ import { buildAxDataEntityXml } from './dataEntityXml.js';
 import { resolveEdtBaseType, resolveEdtEnumType, heuristicEdtBaseType, isEnumName, bridgeEdtBaseType } from './generateSmartTable.js';
 import { buildAxQueryXml, buildAxViewXml } from './queryViewXml.js';
 import { buildAxMapXml } from './mapXml.js';
+import { buildAxServiceXml, buildAxServiceGroupXml } from './serviceXml.js';
+import { recordCreatedArtifact } from './createdArtifactLedger.js';
 
 /**
  * Per-project-file mutex to serialise concurrent addToProject calls.
@@ -64,6 +66,7 @@ const CreateD365FileArgsSchema = z.object({
       'security-privilege', 'security-duty', 'security-role',
       'security-duty-extension', 'security-role-extension',
       'business-event', 'tile', 'kpi', 'map',
+      'service', 'service-group',
     ])
     .describe('Type of D365FO object to create'),
   objectName: z
@@ -1540,6 +1543,10 @@ ${defaultParamGroupXml}
         return XmlTemplateGenerator.generateAxTileXml(objectName, properties);
       case 'kpi':
         return XmlTemplateGenerator.generateAxKpiXml(objectName, properties);
+      case 'service':
+        return buildAxServiceXml(objectName, properties);
+      case 'service-group':
+        return buildAxServiceGroupXml(objectName, properties);
       default:
         throw new Error(`Unsupported object type: ${objectType}`);
     }
@@ -3029,6 +3036,8 @@ export class ProjectFileManager {
       tile: 'Tiles',
       kpi: 'KPIs',
       map: 'Maps',
+      service: 'Services',
+      'service-group': 'Service Groups',
     };
     return folderMap[objectType] || 'Classes';
   }
@@ -3071,6 +3080,8 @@ export class ProjectFileManager {
       tile: 'AxTile',
       kpi: 'AxKPI',
       map: 'AxMap',
+      service: 'AxService',
+      'service-group': 'AxServiceGroup',
     };
     return prefixMap[objectType] || 'AxClass';
   }
@@ -3227,6 +3238,101 @@ export class ProjectFileManager {
 
     console.error(`[ProjectFileManager] Project file saved successfully`);
     return true; // File successfully added
+  }
+
+  /**
+   * Reverse of {@link addToProject}: remove the <Content Include> entry that
+   * addToProject wrote for `objectName`, and drop the now-orphaned <Folder Include>
+   * when no other Content of the same AOT type remains. Used by undo_last_modification
+   * to clean the .rnrproj after deleting a file it created in a non-git sandbox.
+   * Returns true when an entry was removed, false when nothing matched.
+   */
+  async removeFromProject(
+    projectPath: string,
+    objectType: string,
+    objectName: string,
+  ): Promise<boolean> {
+    return withProjectFileLock(projectPath, () => this._removeFromProjectLocked(projectPath, objectType, objectName));
+  }
+
+  private async _removeFromProjectLocked(
+    projectPath: string,
+    objectType: string,
+    objectName: string,
+  ): Promise<boolean> {
+    let projectXml = '';
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        projectXml = await fs.readFile(projectPath, 'utf-8');
+        break;
+      } catch (err: any) {
+        if ((err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') && attempt < 4) {
+          await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+    }
+    let hadBom = false;
+    if (projectXml.charCodeAt(0) === 0xFEFF) {
+      projectXml = projectXml.slice(1);
+      hadBom = true;
+    }
+    const project = await this.parser.parseStringPromise(projectXml);
+    if (!project.Project || !project.Project.ItemGroup) return false;
+
+    const itemGroups = Array.isArray(project.Project.ItemGroup)
+      ? project.Project.ItemGroup
+      : [project.Project.ItemGroup];
+
+    const displayFolderName = this.getFolderName(objectType);
+    const axFolderPrefix = this.getAxFolderPrefix(objectType);
+    const contentInclude = `${axFolderPrefix}\\${objectName}`;
+
+    let removed = false;
+    for (const group of itemGroups) {
+      if (group.Content === undefined) continue;
+      const contents = Array.isArray(group.Content) ? group.Content : [group.Content];
+      const kept = contents.filter((c: any) => c?.$?.Include !== contentInclude);
+      if (kept.length !== contents.length) {
+        removed = true;
+        group.Content = kept;
+      }
+    }
+
+    if (!removed) return false;
+
+    // Drop the "<Type>\" folder entry only when no remaining Content of this AOT
+    // type references it — never touch a folder still hosting sibling objects.
+    const stillUsesFolder = itemGroups.some((group: any) => {
+      if (group.Content === undefined) return false;
+      const contents = Array.isArray(group.Content) ? group.Content : [group.Content];
+      return contents.some((c: any) => typeof c?.$?.Include === 'string' && c.$.Include.startsWith(`${axFolderPrefix}\\`));
+    });
+    if (!stillUsesFolder) {
+      for (const group of itemGroups) {
+        if (group.Folder === undefined) continue;
+        const folders = Array.isArray(group.Folder) ? group.Folder : [group.Folder];
+        group.Folder = folders.filter((f: any) => f?.$?.Include !== `${displayFolderName}\\`);
+      }
+    }
+
+    const updatedXml = this.builder.buildObject(project);
+    const output = hadBom ? '\uFEFF' + updatedXml : updatedXml;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await fs.writeFile(projectPath, output, 'utf-8');
+        break;
+      } catch (err: any) {
+        if ((err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') && attempt < 4) {
+          await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+    }
+    console.error(`[ProjectFileManager] Removed '${objectName}' from project ${path.basename(projectPath)}`);
+    return true;
   }
 
   /**
@@ -3806,6 +3912,8 @@ export async function handleCreateD365File(
       tile: 'AxTile',
       kpi: 'AxKPI',
       map: 'AxMap',
+      service: 'AxService',
+      'service-group': 'AxServiceGroup',
     };
 
     const objectFolder = objectFolderMap[args.objectType];
@@ -4259,6 +4367,17 @@ export async function handleCreateD365File(
                   `ClusteredIndex=${bp.clusteredIndex ?? '(none)'}`
                 : '';
 
+              // Record the freshly-created file so undo_last_modification can roll
+              // it back even in a non-git sandbox (PackagesLocalDirectory).
+              if (!fileExisted) {
+                recordCreatedArtifact({
+                  filePath: smartResult.filePath,
+                  objectType: args.objectType,
+                  objectName: finalObjectName,
+                  projectPath: projectPathToUse,
+                });
+              }
+
               return {
                 content: [
                   {
@@ -4331,6 +4450,16 @@ export async function handleCreateD365File(
           try { await bridgeRefreshProvider(context.bridge); } catch { /* best-effort */ }
 
           const rawLabelWarning = rawLabelBpWarning(args.properties, finalObjectName);
+
+          // Record the freshly-created file for non-git undo (see smart-table path).
+          if (!fileExisted) {
+            recordCreatedArtifact({
+              filePath: bridgeResult.filePath,
+              objectType: args.objectType,
+              objectName: finalObjectName,
+              projectPath: projectPathToUse,
+            });
+          }
 
           return {
             content: [
@@ -4642,6 +4771,16 @@ export async function handleCreateD365File(
         `1. Add the file to your Visual Studio project (.rnrproj)\n` +
         `2. Build the project to synchronize the object\n` +
         `3. Refresh AOT in Visual Studio to see the new object\n`;
+
+    // Record the freshly-created file for non-git undo (see the bridge paths above).
+    if (!fileExisted) {
+      recordCreatedArtifact({
+        filePath: normalizedFullPath,
+        objectType: args.objectType,
+        objectName: finalObjectName,
+        projectPath: args.addToProject ? projectPathToUse : undefined,
+      });
+    }
 
     // Return success message with file path
     return {

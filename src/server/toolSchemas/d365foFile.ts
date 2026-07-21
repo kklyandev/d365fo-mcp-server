@@ -31,6 +31,7 @@ Model from .mcp.json; prefix auto-applied from EXTENSION_PREFIX. Classes: member
             'security-privilege', 'security-duty', 'security-role',
             'security-duty-extension', 'security-role-extension',
             'business-event', 'tile', 'kpi', 'map',
+            'service', 'service-group',
           ],
           description:
             'Each security/menu-item type maps to its own AOT folder — NEVER use security-privilege for duty or role. ' +
@@ -76,7 +77,11 @@ Model from .mcp.json; prefix auto-applied from EXTENSION_PREFIX. Classes: member
             '• data-entity: primaryTable, fields[{name,dataField?}], dataManagementEnabled? (default false; true only if staging table exists)\n' +
             '• map: label?, developerDocumentation?, fields[{name,type?,edt?,enumType?,stringSize?}], mappingTable?, mappings?[{mapField,mapFieldTo}] (defaults to one connection/field when mappingTable set)\n' +
             '• query: title?, dataSource (root table; table also works), dataSourceName?, fields?[{name,field?}]\n' +
-            '• view: query (existing AxQuery), fields[{name,dataField?}] — dataSource defaults to query'
+            '• view: query (existing AxQuery), fields[{name,dataField?}] — dataSource defaults to query\n' +
+            '• service: serviceClass (defaults to the service name), externalName?, namespace?, description?, operations["opName"] or [{name?,method?,enableIdempotence?,subscriberAccessLevelRead?}]\n' +
+            '• service-group: autoDeploy? (Yes publishes at /api/services), description?, services["MyService"] or [{name?,service?}]\n' +
+            '  ⚠ service/service-group CROSS-REFS (serviceClass, services[].service) are written VERBATIM — only objectName is prefixed. ' +
+            'Pass the FINAL name of the already-created service/class (e.g. "ContosoDemoNoteService", not "DemoNoteService"), else the group resolves to nothing — verbatim lets a group also reference an unprefixed Microsoft service (DimensionService).'
         },
         addToProject: {
           type: 'boolean',
