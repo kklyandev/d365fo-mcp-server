@@ -13,11 +13,15 @@ yet been captured on the VM, so they prove nothing for coverage. This is the
 single biggest lever on the published number (most red E cells in
 `eval/COVERAGE.md` are pending-golden cases). Notable:
 
-- Of the five audit-2026-07-20 topic cases, **`L2-occ-retry-basic`,
-  `L2-table-caching-basic` and `L2-table-inheritance-basic` were captured on
-  the Contoso VM (2026-07-20)** and are green. The remaining two are blocked
-  with concrete findings (below): `L3-custom-service-basic`,
-  `L3-batch-retryable-basic`.
+- `L3-custom-service-basic` and `L3-batch-retryable-basic` were previously
+  blocked (custom-service tool gap; missing `ConDemoNoteHeader` fixture). Both
+  blockers are now cleared — `service`/`service-group` object types and a
+  harness-level fixture (`eval/fixtures/`) landed — so they are ready for VM
+  golden capture (`L3-batch-retryable-basic` still needs its three SysOperation
+  classes authored). When capturing `L3-custom-service-basic`, pass FINAL
+  prefixed names for the service-group cross-references (`create` prefixes only
+  `objectName`, so a group referencing an unprefixed service resolves to
+  nothing).
 - `L4-bridge-drops-data-entity-primarytable-fields-on-create` — encodes the
   data-entity caller-wiring gap (the shared XML builder populates a real query
   when `primaryTable`/`fields` are passed, but callers must know to pass them).
@@ -25,127 +29,6 @@ single biggest lever on the published number (most red E cells in
 
 `eval-run` captures each golden on the VM; flip `golden_pending` to false (or
 remove it) as each lands.
-
-### Findings from the Contoso golden-capture run (2026-07-20)
-
-Three goldens captured clean; the other two are blocked on missing tool/fixture
-support and are the actionable follow-ups:
-
-- **`L2-occ-retry-basic` (captured)** — two KNOWLEDGE_GAPs fixed at the source
-  during capture: `#RetryNum` is **not** a predefined macro (build error
-  `macro 'RetryNum' is not defined`) — use a literal retry ceiling (or
-  `xSession::currentRetryCount()`); the golden uses `>= 5`.
-- **`L2-table-caching-basic` (captured)** — KNOWLEDGE_GAP: `setting` is a
-  **reserved buffer-variable name** in X++ (`Invalid token 'setting'`); the
-  golden renames the buffer to `settingBuffer`.
-- **`L2-table-inheritance-basic` (captured)** — the `InstanceRelationType`
-  bridge gap was fixed (added to `SetAxTableProperty` write + read model +
-  the unsupported-property message) and the golden captured after a bridge
-  rebuild + server restart. Two capture notes: (1) the discriminator field
-  must be `AxTableFieldInt64` with EDT `RelationType` — `d365fo_file(create)`
-  defaulted an `edt:"RelationType"` field to `String`, so it had to be re-added
-  with `fieldBaseType:"Int64"`; (2) the *derived* table also needs
-  `SupportInheritance=Yes` (only `Extends` is not enough).
-- **`L3-custom-service-basic` (TOOL gap fixed; still blocked — fixture)** — the
-  `objectType` gap is closed: `service` / `service-group` now go through
-  `d365fo_file` (`src/tools/serviceXml.ts`, element shapes pinned to the real
-  AOT; the knowledge entry's flat `<Operations>` claim was wrong and is fixed
-  to `<ServiceOperations>`/`<AxServiceOperation>`). The case still depends on
-  the `ConDemoNoteHeader` shared demo fixture, which is absent from the index.
-  End-to-end dry run through `handleCreateD365File` (scratch package path, no
-  AOT write) surfaced a **caller-wiring hazard of the same class as the
-  data-entity one below**: `create` prefixes only `objectName`, so
-  `objectName:"DemoNoteServiceGroup" + services:["DemoNoteService"]` yields a
-  group pointing at `DemoNoteService` while the service was written as
-  `ContosoDemoNoteService` — deploys, resolves to nothing. Verbatim
-  cross-references are deliberate (a group may reference a Microsoft service),
-  so this is pinned by tests + a schema warning, not auto-prefixed. Whoever
-  captures the golden must pass FINAL names.
-- **`L3-batch-retryable-basic` (blocked — fixture)** — needs the
-  `ConDemoNoteHeader` demo fixture provisioned in Contoso first, plus three
-  SysOperation classes.
-
-## Plan: unblock the pending goldens
-
-Three ordered steps. Step 1 is the keystone — it blocks ~15 cases, not two.
-
-### 1. Make `ConDemoNoteHeader` a harness-level fixture (root cause, do first)
-
-**Finding (2026-07-21).** The table does not exist anywhere in
-`PackagesLocalDirectory` — verified across all 174 `AxTable` folders, not just
-missing from the index. Yet `eval/` references it from **61 files** (15 case
-specs, ~20 goldens, corpus runs), and
-`eval/goldens/L1-form-basic/ConDemoNoteHeader.metadata.xml` is a golden of the
-table itself, captured 2026-06-30. So it existed then and was lost since.
-
-**Root cause.** The fixture is created as artifact 1 of case `L1-form-basic`,
-and the implementer protocol **rolls back every case after scoring**. A shared
-fixture created by a case therefore cannot survive — each rollback re-breaks
-every other case that depends on it. The Contoso sandbox today holds only the
-residue of the 2026-07-20 captures (`ConDemoCounter`, `ConDemoSetting`,
-`ConDemoTruck`, `ConDemoVehicle` + 2 classes) under
-`Contoso\XppMetadata\Contoso\` — note that path, **not** `Contoso\Contoso\`,
-which is empty scaffold and misleads a naive inventory.
-
-The source tree `Contoso\Contoso\` holds **zero XML files** — the sandbox is
-completely empty. The `ConDemo*` entries under `Contoso\XppMetadata\` are
-compiler output left behind by wiped runs, not sources, and are never written
-to directly.
-
-**Action (not started — needs sign-off, it changes eval semantics).** Three
-parts: (a) fixture definitions in the repo — `ConDemoNoteHeader` needs no
-guessing, it is recoverable from `eval/goldens/L1-form-basic/`
-(`NoteId` str/EDT `Num`/Mandatory, `Subject` str/EDT `Name`,
-`TitleField1=Subject`, `TableGroup=Main`, label
-`@TaxTransactionInquiry:HeaderNote`), but the full *input* set still has to be
-separated from the ~50 `ConDemo*`/`DemoNote*` names the cases mention, most of
-which are case **outputs** that must NOT be pre-provisioned; (b) a provisioning
-step run before a case and excluded from the wipe, plus a reindex so the tools
-can ground on it; (c) rollback made fixture-aware in step 7. Until that holds,
-treat every `ConDemoNoteHeader`-dependent golden as unverifiable on this VM.
-
-### 2. Attach the `d365fo` MCP server to implementer sessions — DONE (2026-07-21)
-
-`eval-run` / the `eval-implementer` agent needs the `mcp__d365fo-eval__*`
-tools, i.e. a server registered under the key **`d365fo-eval`**. A dispatch on
-2026-07-21 aborted before doing anything because no such server existed: the
-repo had no `.mcp.json`, and the user-level `~/.mcp.json` registered a
-different key (`d365fo-mcp-tools`) pointing at a path that does not exist on
-this machine. Hand-writing XML is forbidden by the protocol, so the run
-correctly stopped instead of faking it.
-
-Fixed by adding a repo-root `.mcp.json` (gitignored — machine-local by
-design) registering `d365fo-eval` against `dist/index.js` in `full` mode.
-Verified by driving the server over stdio: 26 tools exposed, `d365fo_file`
-`objectType` enum carries `service`/`service-group`, and both generate
-cleanly.
-
-**Gotcha worth keeping — this is an invariant §11 hazard.** Setting
-`D365FO_WORKSPACE_PATH` alone does **not** retarget the model: model
-resolution reads `D365FO_MODEL_NAME` (`workspace.modelName`), so
-`config/d365fo-mcp.json`'s real customer model won. The first verification run
-reported `Model: HBReavis` and recommended writing into
-`PackagesLocalDirectory\HBReavis\HBReavis\`. Any eval server registration
-**must** set `D365FO_MODEL_NAME=Contoso` explicitly; with it, paths resolve to
-`Contoso\Contoso\Ax*` as they should. (Note `Contoso\Contoso\` is the source
-tree — `Contoso\XppMetadata\` is compiler output and must never be written.)
-
-**Takes effect on the next session start:** MCP servers are connected at
-client startup, so a session that was already running when `.mcp.json` was
-created still cannot see the server. Restart the session/VS before dispatching
-`eval-run`.
-
-### 3. Then capture, in dependency order
-
-`L3-custom-service-basic` first — it is the only pending case whose tool path
-is freshly written (`service` / `service-group`) and therefore still entirely
-unexercised. It has no golden and no SysTest, so its first run *captures* the
-golden rather than scoring against one; the honest verdict available is
-pass@build + bp_clean. Its steps 1–2 (the DataContract classes) and the
-AxService/AxServiceGroup shells can be built **without** the fixture, so it can
-partially proceed if step 1 slips — but the service class body selects
-`ConDemoNoteHeader`, so a clean five-artifact build cannot happen before it.
-Then `L3-batch-retryable-basic`, then the remaining `golden_pending` queue.
 
 ## Remaining knowledge-audit scope
 
