@@ -22,6 +22,7 @@ import { initializeConfig, getConfigManager } from './utils/configManager.js';
 import { SERVER_MODE, LOCAL_TOOLS, isToolAllowedInMode } from './server/serverMode.js';
 import { TOOL_ANNOTATIONS } from './server/toolAnnotations.js';
 import { apiKeyAuth } from './middleware/apiKeyAuth.js';
+import { VERSION } from './version.js';
 import { setInitializeParams } from './utils/stdioSessionInfo.js';
 import { box, kv, sectionTitle, statusLine, spread, c, glyph, sanitize, supportsUnicode, log, shortPath, startupWarnings } from './utils/terminalUi.js';
 import * as fs from 'fs/promises';
@@ -624,7 +625,7 @@ async function main() {
     const W = 50;
     console.log('');
     for (const line of box([
-      spread(c.bold('D365 F&O MCP Server'), c.dim('v1.0.0'), W),
+      spread(c.bold('D365 F&O MCP Server'), c.dim(`v${VERSION}`), W),
       c.gray('X++ Code Intelligence'),
     ], W)) {
       console.log(line);
@@ -661,7 +662,7 @@ async function main() {
         status: ready ? 'healthy' : 'starting',
         ready,
         service: 'd365fo-mcp-server',
-        version: '1.0.0',
+        version: VERSION,
         message: serverState.statusMessage,
         // Cached-only: a health probe must never trigger a 30-60 s COUNT scan.
         symbols: serverState.symbolIndex?.getCachedSymbolCounts()?.total || 0,

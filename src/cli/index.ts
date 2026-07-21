@@ -28,6 +28,7 @@ import { startCommand } from './commands/start.js';
 import { updateCommand } from './commands/update.js';
 import { askSelect, p } from './ui.js';
 import { isGitCheckout } from './context.js';
+import { VERSION } from '../version.js';
 import { listInstances } from './instances.js';
 
 const program = new Command();
@@ -35,7 +36,7 @@ const program = new Command();
 program
   .name('d365fo-mcp')
   .description('Manage the D365 F&O MCP Server: setup, updates, instances, index builds')
-  .version('1.0.0');
+  .version(VERSION);
 
 program.command('connect')
   .argument('[url]', 'URL of the deployed server (e.g. https://your-server.azurewebsites.net)')
