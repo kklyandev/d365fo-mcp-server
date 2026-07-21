@@ -4,6 +4,7 @@
 
 **26 AI tools that know every X++ class, table, form, and EDT in your D365FO codebase**
 
+[![npm](https://img.shields.io/npm/v/d365fo-mcp.svg?logo=npm&color=cb3837)](https://www.npmjs.com/package/d365fo-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D24.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue.svg)](https://www.typescriptlang.org/)
@@ -106,6 +107,14 @@ npm run doctor       # health check — verifies Node, build, index, bridge
 ```
 
 Day-to-day management runs through the same CLI (`npx d365fo-mcp` or `npm run cli --`): `start`, `update`, `index`, `config` (change one area of the settings without re-running the wizard), and `instance add/list/run/rebuild/upgrade` for multi-instance setups. Every command works non-interactively with arguments, or asks with predefined choices when run bare.
+
+### The npm package
+
+The CLI is published as **[`d365fo-mcp`](https://www.npmjs.com/package/d365fo-mcp)**, so the management commands above are available as `npx d365fo-mcp <command>` without a global install. Inside a checkout `npx` resolves to your local build; elsewhere it fetches the published one.
+
+What it is *not* — yet — is a standalone install path. `setup`, `update` and `index` need the repository itself (`scripts/`, dev dependencies, `git pull`), so run from a bare `npx` they stop and point you back at the one-line installer rather than half-configuring a machine. **Installing the server still means the installer above.**
+
+A checkout-free path is coming for the one case that genuinely doesn't need the repository: a team member connecting to an already-deployed Azure server, where the only local artefact is an `.mcp.json` file.
 
 ### Manual setup
 

@@ -33,6 +33,8 @@ irm https://raw.githubusercontent.com/dynamics365ninja/d365fo-mcp-server/main/in
 
 Safe to re-run — an existing installation is updated (`git pull`) instead of re-cloned. Env-var overrides: `$env:D365FO_MCP_DIR` (install directory), `$env:D365FO_MCP_YES = '1'` (non-interactive defaults), `$env:D365FO_MCP_NO_WIZARD = '1'` (clone + install only). If the wizard completed, continue with [Step 3](#step-3--connect-copilot).
 
+> **Why not `npx d365fo-mcp setup`?** The CLI is on npm as [`d365fo-mcp`](https://www.npmjs.com/package/d365fo-mcp) and the management commands (`start`, `doctor`, `config`, `index`, `instance …`) run through it, but `setup`, `update` and `index` need the repository itself — `scripts/`, dev dependencies and `git pull`. Run from a bare `npx` they stop and refer you back here instead of half-configuring the machine. Installing the server means the one-liner above.
+
 ### Interactive setup
 
 The first-time setup wizard walks you through everything below — scenario selection, C# bridge build, configuration, index build — and prints the `.mcp.json` block to paste in Step 3. It asks only what your scenario needs, explains every question, and saves the answers to `config/d365fo-mcp.json` (secrets to `config/secrets.json`), so no `.env` editing is involved:
