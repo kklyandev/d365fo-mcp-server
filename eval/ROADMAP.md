@@ -13,11 +13,15 @@ yet been captured on the VM, so they prove nothing for coverage. This is the
 single biggest lever on the published number (most red E cells in
 `eval/COVERAGE.md` are pending-golden cases). Notable:
 
-- Of the five audit-2026-07-20 topic cases, **`L2-occ-retry-basic`,
-  `L2-table-caching-basic` and `L2-table-inheritance-basic` were captured on
-  the Contoso VM (2026-07-20)** and are green. The remaining two are blocked
-  with concrete findings (below): `L3-custom-service-basic`,
-  `L3-batch-retryable-basic`.
+- `L3-custom-service-basic` and `L3-batch-retryable-basic` were previously
+  blocked (custom-service tool gap; missing `ConDemoNoteHeader` fixture). Both
+  blockers are now cleared — `service`/`service-group` object types and a
+  harness-level fixture (`eval/fixtures/`) landed — so they are ready for VM
+  golden capture (`L3-batch-retryable-basic` still needs its three SysOperation
+  classes authored). When capturing `L3-custom-service-basic`, pass FINAL
+  prefixed names for the service-group cross-references (`create` prefixes only
+  `objectName`, so a group referencing an unprefixed service resolves to
+  nothing).
 - `L4-bridge-drops-data-entity-primarytable-fields-on-create` — encodes the
   data-entity caller-wiring gap (the shared XML builder populates a real query
   when `primaryTable`/`fields` are passed, but callers must know to pass them).
@@ -26,41 +30,15 @@ single biggest lever on the published number (most red E cells in
 `eval-run` captures each golden on the VM; flip `golden_pending` to false (or
 remove it) as each lands.
 
-### Findings from the Contoso golden-capture run (2026-07-20)
-
-Three goldens captured clean; the other two are blocked on missing tool/fixture
-support and are the actionable follow-ups:
-
-- **`L2-occ-retry-basic` (captured)** — two KNOWLEDGE_GAPs fixed at the source
-  during capture: `#RetryNum` is **not** a predefined macro (build error
-  `macro 'RetryNum' is not defined`) — use a literal retry ceiling (or
-  `xSession::currentRetryCount()`); the golden uses `>= 5`.
-- **`L2-table-caching-basic` (captured)** — KNOWLEDGE_GAP: `setting` is a
-  **reserved buffer-variable name** in X++ (`Invalid token 'setting'`); the
-  golden renames the buffer to `settingBuffer`.
-- **`L2-table-inheritance-basic` (captured)** — the `InstanceRelationType`
-  bridge gap was fixed (added to `SetAxTableProperty` write + read model +
-  the unsupported-property message) and the golden captured after a bridge
-  rebuild + server restart. Two capture notes: (1) the discriminator field
-  must be `AxTableFieldInt64` with EDT `RelationType` — `d365fo_file(create)`
-  defaulted an `edt:"RelationType"` field to `String`, so it had to be re-added
-  with `fieldBaseType:"Int64"`; (2) the *derived* table also needs
-  `SupportInheritance=Yes` (only `Extends` is not enough).
-- **`L3-custom-service-basic` (blocked — TOOL gap)** — `d365fo_file`'s
-  `objectType` enum has no `service` / `service-group`, so a custom service
-  cannot be created through the grounded tool path. Also depends on the
-  `ConDemoNoteHeader` shared demo fixture, which is absent from the index.
-- **`L3-batch-retryable-basic` (blocked — fixture)** — needs the
-  `ConDemoNoteHeader` demo fixture provisioned in Contoso first, plus three
-  SysOperation classes.
-
 ## Remaining knowledge-audit scope
 
-- **`d365fo-cli` skill files** (separate repo, not checked out here) still need
-  the `apiSymbols` / `eval:knowledge-audit` treatment — including the
-  `sysoperation-batch-patterns` defects from the original review
-  (`SysRunnable::run()` was confirmed absent from the index) and the
-  `--install-to FleetManagement` demo-model examples.
+The 2026-07-20 knowledge-base audit (KB vs metamodel / real AOT / MS docs) is
+otherwise closed: every P0–P3 finding is fixed and held by
+`tests/knowledge/apiSymbols.test.ts` + `tests/knowledge/exampleValidation.test.ts`
++ `npm run eval:knowledge-audit` (229 refs, 0 findings against the live index),
+with consciously deferred gaps recorded in `src/eval/coverage/taxonomy.ts`.
+Those gates are the durable record — one item is still open:
+
 - **Prove knowledge code *examples* compile (real build, VM)** — the offline BP
   slice is done: `tests/knowledge/exampleValidation.test.ts` routes every
   KNOWLEDGE_BASE example through the `validate_code(mode="syntax")` rules and

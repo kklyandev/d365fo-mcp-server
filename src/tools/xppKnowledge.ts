@@ -2467,7 +2467,7 @@ finally
   // ── Custom Services & OData Actions ─────────────────────────────────────
   {
     id: 'custom-services',
-    title: 'Custom Services & OData Actions (SysEntryPointAttribute, Service Groups)',
+    title: 'Custom Services & OData Actions (Service Classes, Service Groups)',
     keywords: ['custom service', 'service', 'service group', 'odata action', 'sysentrypointattribute', 'sysentrypoint', 'axservice', 'axservicegroup', 'api services', 'service operation', 'json endpoint', 'integration endpoint', 'bound action', 'unbound action'],
     summary:
       'Custom services expose X++ business logic as callable REST/SOAP operations. A service class holds the ' +
@@ -2475,18 +2475,19 @@ finally
       'OData actions are the entity-bound alternative for verbs that do not fit CRUD.',
     rules: [
       'Service class: a normal X++ class whose PUBLIC methods become operations; each parameter/return type is a [DataContract] class or a primitive',
-      'Authorization: every externally callable operation MUST carry [SysEntryPointAttribute(true)] (checkAccessRights=true) — without it the call is rejected/insecure',
-      'AxService object: <Name>, <Class> (the service class), and <Operations> listing the exposed method names',
-      'AxServiceGroup object: groups one or more services; its name is the URL segment — endpoint is /api/services/<ServiceGroup>/<Service>/<Operation>',
+      'Authorization: do NOT put [SysEntryPointAttribute] on custom service operations — it is deprecated in AX7/D365FO and xppc emits "\'SysEntryPointAttribute\' is obsolete: This attribute is deprecated in AX7." for it (a BP warning that fails a clean build). Modern JSON/SOAP service endpoints enforce access rights without it, so OMIT it. (It IS still the correct pattern for SysOperation framework entry points — this exception applies only to custom services.)',
+      'AxService object: <Name>, <Class> (the service class), <ExternalName>, and <ServiceOperations> holding one <AxServiceOperation> per exposed method — each with <Name> (the external operation name) and <Method> (the X++ method). NOT a flat <Operations> list of names',
+      'AxServiceGroup object: groups one or more services via <Services><AxServiceGroupService><Name>+<Service>; its name is the URL segment — endpoint is /api/services/<ServiceGroup>/<Service>/<Operation>. Set <AutoDeploy>Yes</AutoDeploy> to publish it without a manual deployment step',
+      'Create both through d365fo_file(action="create", objectType="service" | "service-group") — do not hand-write the XML',
       'Data contract parameters: use [DataContractAttribute] classes with [DataMemberAttribute] parm methods — same contract style as SysOperation',
       'OData actions (entity-bound verbs): add a public static method on the data entity decorated with [SysODataActionAttribute("ActionName", true)]; first parameter type controls bound (entity) vs unbound (collection) — call at /data/Entities/Microsoft.Dynamics.DataEntities.ActionName',
       'Return a strongly-typed contract or a container — never raw text; keep operations idempotent where possible',
       'NEVER put long-running work in a synchronous service operation — schedule a SysOperation batch and return a job reference',
-      'Custom services run under the caller\'s security context — do not bypass SysEntryPointAttribute checks',
+      'Custom services run under the caller\'s security context — enforce access with security privileges/duties granted on the service group, not with hand-rolled checks or the deprecated SysEntryPointAttribute',
     ],
     examples: [
       {
-        label: 'Service class + operation with SysEntryPointAttribute',
+        label: 'Service class + operation (no SysEntryPointAttribute — deprecated for custom services)',
         code: `// 1. Data contract for the request payload
 [DataContractAttribute]
 class MyPriceRequestContract
@@ -2507,7 +2508,8 @@ class MyPriceService
     /// <summary>
     /// Returns the current sales price for an item.
     /// </summary>
-    [SysEntryPointAttribute(true)]
+    // No [SysEntryPointAttribute] — deprecated in AX7; custom service endpoints
+    // enforce access rights without it (adding it only raises a BP warning).
     public MyPriceResponseContract getPrice(MyPriceRequestContract _request)
     {
         MyPriceResponseContract response = new MyPriceResponseContract();
@@ -2517,7 +2519,11 @@ class MyPriceService
 }
 
 // 3. AxService lists getPrice; AxServiceGroup publishes it at
-//    /api/services/<Group>/MyPriceService/getPrice`,
+//    /api/services/<Group>/MyPriceService/getPrice
+//    d365fo_file(action="create", objectType="service", objectName="MyPriceService",
+//                properties={serviceClass:"MyPriceService", operations:["getPrice"]})
+//    d365fo_file(action="create", objectType="service-group", objectName="MyPriceServices",
+//                properties={autoDeploy:true, services:["MyPriceService"]})`,
       },
       {
         label: 'OData action bound to a data entity',

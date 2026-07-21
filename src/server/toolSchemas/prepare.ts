@@ -35,7 +35,7 @@ export const prepareTool = {
             'class', 'table', 'form', 'enum', 'edt', 'query', 'view',
             'data-entity', 'report', 'map', 'menu-item-display', 'menu-item-action',
             'menu-item-output', 'menu', 'security-privilege', 'security-duty', 'security-role',
-            'business-event', 'tile', 'kpi',
+            'business-event', 'tile', 'kpi', 'service', 'service-group',
           ],
           description: '[change] D365FO object type — auto-detected when omitted. [create] REQUIRED — type of the new object.',
         },

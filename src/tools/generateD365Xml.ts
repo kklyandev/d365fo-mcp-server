@@ -15,6 +15,7 @@ import { buildAxSecurityPrivilegeXml } from './securityPrivilegeXml.js';
 import { buildAxDataEntityXml } from './dataEntityXml.js';
 import { buildAxQueryXml, buildAxViewXml } from './queryViewXml.js';
 import { buildAxMapXml } from './mapXml.js';
+import { buildAxServiceXml, buildAxServiceGroupXml } from './serviceXml.js';
 
 const GenerateD365XmlArgsSchema = z.object({
   objectType: z
@@ -27,6 +28,7 @@ const GenerateD365XmlArgsSchema = z.object({
       'menu', 'menu-extension',
       'security-privilege', 'security-duty', 'security-role',
       'security-duty-extension', 'security-role-extension', 'map',
+      'service', 'service-group',
     ])
     .describe('Type of D365FO object'),
   objectName: z
@@ -1054,6 +1056,10 @@ ${defaultParamGroupXml}
         return this.generateAxSecurityDutyExtensionXml(objectName, properties);
       case 'security-role-extension':
         return this.generateAxSecurityRoleExtensionXml(objectName, properties);
+      case 'service':
+        return buildAxServiceXml(objectName, properties);
+      case 'service-group':
+        return buildAxServiceGroupXml(objectName, properties);
       default:
         throw new Error(`Unsupported object type: ${objectType}`);
     }
@@ -1500,6 +1506,8 @@ export async function handleGenerateD365Xml(
       'security-duty-extension': 'AxSecurityDutyExtension',
       'security-role-extension': 'AxSecurityRoleExtension',
       map: 'AxMap',
+      service: 'AxService',
+      'service-group': 'AxServiceGroup',
     };
 
     const objectFolder = objectFolderMap[args.objectType];

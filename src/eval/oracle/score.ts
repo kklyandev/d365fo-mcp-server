@@ -13,7 +13,13 @@ export interface BuildResult {
 export interface Score {
   build: 0 | 1;
   bp_clean: 0 | 1;
-  golden_match: 0 | 1;
+  /**
+   * 0|1 when a golden was diffed; `null` when the golden dimension was NOT
+   * evaluated (case is `golden_pending`, or no `*.metadata.xml` golden exists
+   * yet — §6.4). `null` is neither a fabricated pass nor a fail: downstream
+   * pass-counting keys on `=== 1`, so a null is correctly excluded from both.
+   */
+  golden_match: 0 | 1 | null;
   systest: 0 | 1 | null;
   tier_weight: number;
 }
