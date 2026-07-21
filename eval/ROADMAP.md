@@ -87,24 +87,53 @@ residue of the 2026-07-20 captures (`ConDemoCounter`, `ConDemoSetting`,
 `Contoso\XppMetadata\Contoso\` — note that path, **not** `Contoso\Contoso\`,
 which is empty scaffold and misleads a naive inventory.
 
-**Action.** Provision it as a named fixture step owned by the harness, outside
-any case's rollback scope, seeded from the golden XML already in the repo (no
-guessing: `NoteId` str/EDT `Num`/Mandatory, `Subject` str/EDT `Name`,
-`TitleField1=Subject`, `TableGroup=Main`, label
-`@TaxTransactionInquiry:HeaderNote`). Then make case rollback fixture-aware so
-it never deletes it again. Until that holds, treat every
-`ConDemoNoteHeader`-dependent golden as unverifiable on this VM.
+The source tree `Contoso\Contoso\` holds **zero XML files** — the sandbox is
+completely empty. The `ConDemo*` entries under `Contoso\XppMetadata\` are
+compiler output left behind by wiped runs, not sources, and are never written
+to directly.
 
-### 2. Attach the `d365fo` MCP server to implementer sessions
+**Action (not started — needs sign-off, it changes eval semantics).** Three
+parts: (a) fixture definitions in the repo — `ConDemoNoteHeader` needs no
+guessing, it is recoverable from `eval/goldens/L1-form-basic/`
+(`NoteId` str/EDT `Num`/Mandatory, `Subject` str/EDT `Name`,
+`TitleField1=Subject`, `TableGroup=Main`, label
+`@TaxTransactionInquiry:HeaderNote`), but the full *input* set still has to be
+separated from the ~50 `ConDemo*`/`DemoNote*` names the cases mention, most of
+which are case **outputs** that must NOT be pre-provisioned; (b) a provisioning
+step run before a case and excluded from the wipe, plus a reindex so the tools
+can ground on it; (c) rollback made fixture-aware in step 7. Until that holds,
+treat every `ConDemoNoteHeader`-dependent golden as unverifiable on this VM.
+
+### 2. Attach the `d365fo` MCP server to implementer sessions — DONE (2026-07-21)
 
 `eval-run` / the `eval-implementer` agent needs the `mcp__d365fo-eval__*`
-tools. A dispatch on 2026-07-21 aborted before doing anything because the
-subagent session inherited **no MCP server config** — the repo has no
-`.mcp.json` (the running server is configured from the user-level
-`~/.mcp.json`), so the grounded tool path was simply absent. Hand-writing XML
-is forbidden by the protocol and would defeat the purpose, so the run stopped
-correctly, but it means no case can be captured until the server is registered
-for the session that runs the implementer.
+tools, i.e. a server registered under the key **`d365fo-eval`**. A dispatch on
+2026-07-21 aborted before doing anything because no such server existed: the
+repo had no `.mcp.json`, and the user-level `~/.mcp.json` registered a
+different key (`d365fo-mcp-tools`) pointing at a path that does not exist on
+this machine. Hand-writing XML is forbidden by the protocol, so the run
+correctly stopped instead of faking it.
+
+Fixed by adding a repo-root `.mcp.json` (gitignored — machine-local by
+design) registering `d365fo-eval` against `dist/index.js` in `full` mode.
+Verified by driving the server over stdio: 26 tools exposed, `d365fo_file`
+`objectType` enum carries `service`/`service-group`, and both generate
+cleanly.
+
+**Gotcha worth keeping — this is an invariant §11 hazard.** Setting
+`D365FO_WORKSPACE_PATH` alone does **not** retarget the model: model
+resolution reads `D365FO_MODEL_NAME` (`workspace.modelName`), so
+`config/d365fo-mcp.json`'s real customer model won. The first verification run
+reported `Model: HBReavis` and recommended writing into
+`PackagesLocalDirectory\HBReavis\HBReavis\`. Any eval server registration
+**must** set `D365FO_MODEL_NAME=Contoso` explicitly; with it, paths resolve to
+`Contoso\Contoso\Ax*` as they should. (Note `Contoso\Contoso\` is the source
+tree — `Contoso\XppMetadata\` is compiler output and must never be written.)
+
+**Takes effect on the next session start:** MCP servers are connected at
+client startup, so a session that was already running when `.mcp.json` was
+created still cannot see the server. Restart the session/VS before dispatching
+`eval-run`.
 
 ### 3. Then capture, in dependency order
 
