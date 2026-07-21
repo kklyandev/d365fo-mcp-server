@@ -4,8 +4,8 @@ Two very different jobs share this page. Pick yours — each path is self-contai
 
 | Your situation | Path | Effort |
 |---|---|---|
+| You are setting up your own D365FO VM — **the usual case** | [**B–E — Install**](#paths-be--install-on-your-d365fo-vm) | 10 min, or ~25 with a local index |
 | Your team already runs a deployed server | [**A — Connect**](#path-a--connect-to-a-server-someone-else-deployed) | ~2 min, nothing installed |
-| You are setting up your own D365FO VM | [**B–E — Install**](#paths-be--install-on-your-d365fo-vm) | 10 min, or ~25 with a local index |
 | One machine serving several D365FO environments | **F — Multi-instance** | [SETUP.md](SETUP.md#scenario-f-multiple-instances--one-machine-multiple-d365fo-environments) |
 
 Both paths finish with the [instruction file](#the-instruction-file-required) and [verification](#verify) at the bottom — those two are shared.
@@ -14,6 +14,8 @@ Both paths finish with the [instruction file](#the-instruction-file-required) an
 
 
 # Path A — connect to a server someone else deployed
+
+Only if someone has already deployed a shared server for your team — otherwise skip to [Paths B–E](#paths-be--install-on-your-d365fo-vm).
 
 Nothing is installed locally: the whole configuration is one entry naming a remote URL. You need only your editor and the server URL from whoever deployed it (plus an API key, if that deployment enforces one).
 

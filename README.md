@@ -15,6 +15,12 @@
 
 *Grounded AI development for Dynamics 365 Finance & Operations — works with GitHub Copilot and Claude Code*
 
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_d365fo-0098FF?style=flat-square&logo=githubcopilot&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=d365fo&inputs=%5B%7B%22type%22%3A%22promptString%22%2C%22id%22%3A%22d365fo_server_url%22%2C%22description%22%3A%22D365FO%20MCP%20server%20URL%20(e.g.%20https%3A%2F%2Fyour-server.azurewebsites.net%2Fmcp%2F)%22%7D%5D&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22%24%7Binput%3Ad365fo_server_url%7D%22%7D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_d365fo-24bfa5?style=flat-square&logo=githubcopilot&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=d365fo&quality=insiders&inputs=%5B%7B%22type%22%3A%22promptString%22%2C%22id%22%3A%22d365fo_server_url%22%2C%22description%22%3A%22D365FO%20MCP%20server%20URL%20(e.g.%20https%3A%2F%2Fyour-server.azurewebsites.net%2Fmcp%2F)%22%7D%5D&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22%24%7Binput%3Ad365fo_server_url%7D%22%7D)
+[![Add to Cursor](https://img.shields.io/badge/Cursor-Add_d365fo-000000?style=flat-square&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=d365fo&config=eyJ1cmwiOiJodHRwczovL3lvdXItc2VydmVyLmF6dXJld2Vic2l0ZXMubmV0L21jcC8ifQ%3D%3D)
+
+*These connect an editor to a server that is already deployed — see [Quick Start](#quick-start) if you still need to set one up.*
+
 </div>
 
 ---
@@ -68,14 +74,16 @@ Structural violations (wrong order, missing container, disallowed control) **blo
 
 ## Quick Start
 
-Two entry points, depending on whether a server already exists:
+**Installing on your own D365FO VM** — the usual case. One line in PowerShell installs the prerequisites, clones the repository and runs the setup wizard, which builds the C# bridge and the metadata index for you:
 
 ```powershell
-# Your team already runs one — connects your editor, nothing installed
-npx d365fo-mcp connect https://your-server.azurewebsites.net
-
-# Setting up your own D365FO VM — installs prerequisites, clones, runs the wizard
 irm https://raw.githubusercontent.com/dynamics365ninja/d365fo-mcp-server/main/install.ps1 | iex
+```
+
+**Your team already runs a shared server?** Then you install nothing — point your editor at it:
+
+```powershell
+npx d365fo-mcp connect https://your-server.azurewebsites.net
 ```
 
 Both paths in full — prerequisites, editor configuration for every scenario, the required instruction file, and how to verify grounding actually works: **[docs/QUICK_START.md](docs/QUICK_START.md)**
