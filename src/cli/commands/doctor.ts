@@ -91,6 +91,31 @@ function legacyEnvChecks(target: Target, label: string): CheckResult[] {
   }];
 }
 
+/**
+ * better-sqlite3 is a native module, and npm 12 blocks install scripts that the
+ * root package.json does not pre-approve in `allowScripts`. A blocked build
+ * still exits 0 with only a warning, so the .node binding goes missing silently
+ * and the install looks clean — the failure would otherwise first appear when
+ * the server opens the index. Loading it here turns that into a named problem.
+ */
+async function checkNativeBinding(): Promise<CheckResult> {
+  try {
+    // Importing the module is not enough: better-sqlite3 resolves the addon
+    // lazily on first use, so a missing binding only surfaces when a database
+    // is actually opened. An in-memory one touches no disk.
+    const { default: Database } = await import('better-sqlite3');
+    new Database(':memory:').close();
+    return { severity: 'ok', message: 'better-sqlite3 native binding loads' };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message.split('\n')[0] : String(err);
+    return {
+      severity: 'fail',
+      message: `better-sqlite3 native binding unavailable — ${detail}`,
+      fix: 'npm install-scripts approve better-sqlite3 && npm rebuild better-sqlite3',
+    };
+  }
+}
+
 async function probeHealth(port: number, label: string): Promise<CheckResult> {
   try {
     const res = await fetch(`http://localhost:${port}/health`, { signal: AbortSignal.timeout(1500) });
@@ -119,9 +144,12 @@ export async function doctorCommand(): Promise<void> {
     : { severity: 'fail', message: `Node.js ${process.versions.node} — ${REQUIRED_NODE_MAJOR}.x required (package.json engines)`, fix: 'install Node 24 LTS' });
 
   // Install + build
-  emit(fs.existsSync(resolve(repoRoot, 'node_modules'))
+  const hasNodeModules = fs.existsSync(resolve(repoRoot, 'node_modules'));
+  emit(hasNodeModules
     ? { severity: 'ok', message: 'Dependencies installed (node_modules)' }
     : { severity: 'fail', message: 'node_modules missing', fix: 'npm install' });
+  // Only meaningful once the dependencies exist — otherwise it just restates the failure above.
+  if (hasNodeModules) emit(await checkNativeBinding());
   emit(fs.existsSync(paths.distEntry)
     ? { severity: 'ok', message: 'Server built (dist/index.js)' }
     : { severity: 'fail', message: 'dist/index.js missing — server not built', fix: 'npm run build' });
