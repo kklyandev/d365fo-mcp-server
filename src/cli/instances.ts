@@ -5,6 +5,7 @@
  */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
+import { configCandidates } from '../config/configFile.js';
 import { settingByPath } from '../config/settings.js';
 import { paths } from './context.js';
 import { openInstanceStore, readSetting, saveStore, writeSetting } from './settingsStore.js';
@@ -26,7 +27,10 @@ export function listInstances(): Instance[] {
     .filter(e => e.isDirectory())
     .map(e => {
       const dir = join(paths.instancesDir, e.name);
-      return { name: e.name, dir, envFile: join(dir, '.env'), configFile: join(dir, 'd365fo-mcp.json') };
+      // Accept either instance layout: the top-level d365fo-mcp.json, or the
+      // config/ form an older build's wizard wrote. Prefer the top-level one.
+      const configFile = configCandidates(dir).find(p => fs.existsSync(p)) ?? join(dir, 'd365fo-mcp.json');
+      return { name: e.name, dir, envFile: join(dir, '.env'), configFile };
     })
     .filter(i => fs.existsSync(i.configFile) || fs.existsSync(i.envFile))
     .map(i => {
@@ -55,7 +59,7 @@ export function createInstance(name: string, port: number): Instance {
   const dir = join(paths.instancesDir, name);
   const envFile = join(dir, '.env');
   const configFile = join(dir, 'd365fo-mcp.json');
-  if (fs.existsSync(configFile) || fs.existsSync(envFile)) {
+  if (configCandidates(dir).some(p => fs.existsSync(p)) || fs.existsSync(envFile)) {
     throw new Error(`Instance '${name}' already exists.`);
   }
   fs.mkdirSync(join(dir, 'data'), { recursive: true });
