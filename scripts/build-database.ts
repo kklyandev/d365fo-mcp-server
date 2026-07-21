@@ -179,12 +179,18 @@ async function buildDatabase() {
   const startTime = Date.now();
   
   if (modelsToRebuild.length > 0) {
-    // Index specific models in a SINGLE pass (not one call per model): the FTS index is
-    // rebuilt from scratch — O(all symbols in the DB) — once at the end of the call, so
-    // looping here would repeat that full rebuild N times.
+    // Index specific models in a SINGLE pass (not one call per model): a per-model loop
+    // would repeat the whole end-of-call FTS maintenance N times.
+    //
+    // FTS strategy: `custom` scopes the build to the custom models — a small fraction of
+    // the database (~10K of ~1.2M symbols here) — so the triggers maintain symbols_fts far
+    // more cheaply than re-tokenising every row (measured 327s vs 5s of real indexing work
+    // on a cold cache). `standard` covers nearly the whole database, where the bulk rebuild
+    // still wins.
+    const ftsStrategy = EXTRACT_MODE === 'custom' ? 'incremental' : 'rebuild';
     log.detail(`${modelsToRebuild.length} model(s): ${modelsToRebuild.slice(0, 10).join(', ')}${modelsToRebuild.length > 10 ? '...' : ''}`);
     log.detail('Incremental build: standard models in database will be preserved');
-    await symbolIndex.indexMetadataDirectory(INPUT_PATH, modelsToRebuild);
+    await symbolIndex.indexMetadataDirectory(INPUT_PATH, modelsToRebuild, { ftsStrategy });
   } else if (EXTRACT_MODE === 'all' || RESUME) {
     // Full rebuild (or resume): index every model in the directory in one bulk pass.
     log.detail(`All models from: ${shortPath(INPUT_PATH)}`);
@@ -282,12 +288,16 @@ async function buildDatabase() {
       let grandTotalModels = 0;
 
       if (isIncrementalCustomBuild) {
-        symbolIndex.clearLabelsForModels(modelsToRebuild);
+        // Both steps stay O(scope): the labels_fts triggers maintain the index for the
+        // cleared and re-inserted rows, instead of two delete-all + re-INSERT passes over
+        // every en-US label in the database (485K rows here, 284s on a cold cache).
+        symbolIndex.clearLabelsForModels(modelsToRebuild, { ftsStrategy: 'incremental' });
         for (const rootPath of validRoots) {
           const { totalLabels, modelsIndexed } = await indexAllLabels(
             symbolIndex,
             rootPath,
             (modelName) => modelsToRebuild.includes(modelName),
+            { ftsStrategy: 'incremental' },
           );
           grandTotalLabels += totalLabels;
           grandTotalModels += modelsIndexed;
@@ -344,7 +354,16 @@ async function buildDatabase() {
     // ANALYZE + optimize: persist query-planner stats into the DB so the production
     // server can open it with zero warmup cost (skipped when SKIP_FTS=true because
     // build-fts will run these tasks at the end of phase 2).
-    symbolIndex.runPostBuildTasks();
+    //
+    // ANALYZE reads the whole database (309s cold for 2 GB + 585 MB here) and an
+    // incremental build changes well under 1% of the rows, which does not move the
+    // planner's stats — so run it on a full rebuild only, or on demand via ANALYZE=true.
+    if (EXTRACT_MODE === 'all' || process.env.ANALYZE === 'true') {
+      symbolIndex.runPostBuildTasks();
+    } else {
+      log.info(`Skipping ANALYZE for incremental ${EXTRACT_MODE} build (use ANALYZE=true to force)`);
+      log.detail('Planner statistics from the last full rebuild stay valid');
+    }
   }
 
   // Show breakdown by type

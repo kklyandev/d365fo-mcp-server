@@ -60,7 +60,13 @@ npm run extract-metadata
 npm run build-database
 ```
 
-Takes a few minutes. Use after every code change or sprint.
+Use after every code change or sprint. Cost scales with your custom models, not with the
+database: every step is scoped to them, including full-text index maintenance and ANALYZE
+(which run over the whole database on an `all` rebuild only). On a ~1.2M-symbol instance
+a 3-model, ~10K-symbol build takes well under a minute.
+
+`ANALYZE=true npm run build-database` forces the query-planner statistics to be recomputed
+if you ever need them refreshed without a full rebuild.
 
 ### Everything (first-time setup or after D365FO upgrade)
 

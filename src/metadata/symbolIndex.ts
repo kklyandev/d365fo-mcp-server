@@ -723,33 +723,41 @@ export class XppSymbolIndex {
   /**
    * Create FTS triggers for keeping symbols_fts in sync
    * Extracted to allow disabling during bulk inserts and re-enabling after
+   *
+   * symbols_fts is an external-content table, so removals and updates MUST hand the OLD
+   * column values back to FTS5 via the 'delete' command. A plain `DELETE FROM symbols_fts`
+   * (or `UPDATE symbols_fts SET`) cannot work: the trigger runs AFTER the content row is
+   * already gone, leaving FTS5 nothing to re-derive the row's terms from — it fails with
+   * "missing row N from content table" and strands the old terms in the index.
+   *
+   * Dropped and recreated rather than CREATE-IF-NOT-EXISTS so databases still carrying the
+   * earlier (broken) definitions are repaired on the next index run.
    */
   private createFTSTriggers(): void {
+    this.db.exec('DROP TRIGGER IF EXISTS symbols_ai;');
+    this.db.exec('DROP TRIGGER IF EXISTS symbols_ad;');
+    this.db.exec('DROP TRIGGER IF EXISTS symbols_au;');
+
     this.db.exec(`
-      CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
+      CREATE TRIGGER symbols_ai AFTER INSERT ON symbols BEGIN
         INSERT INTO symbols_fts(rowid, name, type, parent_name, signature, description, tags, source_snippet, inline_comments)
         VALUES (new.id, new.name, new.type, new.parent_name, new.signature, new.description, new.tags, new.source_snippet, new.inline_comments);
       END;
     `);
 
     this.db.exec(`
-      CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
-        DELETE FROM symbols_fts WHERE rowid = old.id;
+      CREATE TRIGGER symbols_ad AFTER DELETE ON symbols BEGIN
+        INSERT INTO symbols_fts(symbols_fts, rowid, name, type, parent_name, signature, description, tags, source_snippet, inline_comments)
+        VALUES ('delete', old.id, old.name, old.type, old.parent_name, old.signature, old.description, old.tags, old.source_snippet, old.inline_comments);
       END;
     `);
 
     this.db.exec(`
-      CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
-        UPDATE symbols_fts SET
-          name = new.name,
-          type = new.type,
-          parent_name = new.parent_name,
-          signature = new.signature,
-          description = new.description,
-          tags = new.tags,
-          source_snippet = new.source_snippet,
-          inline_comments = new.inline_comments
-        WHERE rowid = new.id;
+      CREATE TRIGGER symbols_au AFTER UPDATE ON symbols BEGIN
+        INSERT INTO symbols_fts(symbols_fts, rowid, name, type, parent_name, signature, description, tags, source_snippet, inline_comments)
+        VALUES ('delete', old.id, old.name, old.type, old.parent_name, old.signature, old.description, old.tags, old.source_snippet, old.inline_comments);
+        INSERT INTO symbols_fts(rowid, name, type, parent_name, signature, description, tags, source_snippet, inline_comments)
+        VALUES (new.id, new.name, new.type, new.parent_name, new.signature, new.description, new.tags, new.source_snippet, new.inline_comments);
       END;
     `);
   }
@@ -1302,14 +1310,30 @@ export class XppSymbolIndex {
    *   - a model name   → index just that one model
    *   - an array       → index exactly those models in a SINGLE pass
    *
-   * Pass an array rather than calling this once per model: the FTS index is rebuilt from
-   * scratch ONCE at the end of the call (and the FTS triggers dropped/recreated once), both
-   * O(all symbols in the DB), so a per-model loop turns a scoped rebuild into N full-table
-   * rebuilds.
+   * Pass an array rather than calling this once per model: with the default
+   * `ftsStrategy: 'rebuild'` the FTS index is rebuilt from scratch ONCE at the end of the
+   * call, which is O(all symbols in the DB), so a per-model loop turns a scoped rebuild
+   * into N full-table rebuilds.
+   *
+   * `ftsStrategy` picks how symbols_fts is brought up to date:
+   *   - 'rebuild'     (default) drop the FTS triggers, bulk-insert, then re-tokenise the
+   *                   WHOLE symbols table. Cost is O(all symbols) regardless of scope —
+   *                   right for a full or near-full rebuild, where it beats per-row triggers.
+   *   - 'incremental' keep the FTS triggers live so only the touched rows are re-tokenised.
+   *                   Cost is O(scope). Use it when the scope is a small fraction of the
+   *                   database (a custom-model build: ~10K of ~1.2M symbols, where the full
+   *                   rebuild cost 327s against 5s of actual indexing work).
    */
-  async indexMetadataDirectory(metadataPath: string, modelNames?: string | string[]): Promise<void> {
+  async indexMetadataDirectory(
+    metadataPath: string,
+    modelNames?: string | string[],
+    opts?: { ftsStrategy?: 'rebuild' | 'incremental' },
+  ): Promise<void> {
     const skipFts = process.env.SKIP_FTS === 'true';
     const resumable = process.env.RESUME === 'true';
+    // Incremental FTS only makes sense for a scoped pass; an unscoped one touches
+    // every row anyway, so the bulk rebuild is strictly cheaper.
+    const incrementalFts = opts?.ftsStrategy === 'incremental' && modelNames !== undefined && !skipFts;
 
     const requested = modelNames === undefined
       ? undefined
@@ -1337,10 +1361,22 @@ export class XppSymbolIndex {
 
     const startTime = Date.now();
 
-    // Disable FTS triggers during bulk insert — we rebuild FTS once at the end
-    this.db.exec('DROP TRIGGER IF EXISTS symbols_ai;');
-    this.db.exec('DROP TRIGGER IF EXISTS symbols_au;');
-    this.db.exec('DROP TRIGGER IF EXISTS symbols_ad;');
+    if (incrementalFts) {
+      // Keep the FTS triggers live so each touched row maintains symbols_fts itself.
+      // createFTSTriggers() is CREATE TRIGGER IF NOT EXISTS, so this also repairs a
+      // database left trigger-less by an interrupted SKIP_FTS build.
+      this.createFTSTriggers();
+      // Rows are written with INSERT OR REPLACE. SQLite fires delete triggers for the
+      // rows a REPLACE displaces ONLY when recursive triggers are enabled; without this
+      // the displaced row's symbols_fts entry would survive as an orphan pointing at a
+      // rowid that no longer exists in the content table.
+      this.db.pragma('recursive_triggers = ON');
+    } else {
+      // Disable FTS triggers during bulk insert — we rebuild FTS once at the end
+      this.db.exec('DROP TRIGGER IF EXISTS symbols_ai;');
+      this.db.exec('DROP TRIGGER IF EXISTS symbols_au;');
+      this.db.exec('DROP TRIGGER IF EXISTS symbols_ad;');
+    }
 
     // Prepare progress statement (executes inside each model's transaction)
     const markProgress = resumable
@@ -1506,7 +1542,11 @@ export class XppSymbolIndex {
       console.log(''); // New line after progress
     }
 
-    if (skipFts) {
+    if (incrementalFts) {
+      // FTS was maintained row-by-row by the triggers — nothing left to do.
+      this.db.pragma('recursive_triggers = OFF');
+      log.ok(`Indexed ${models.length} model(s) in ${duration}s (FTS updated incrementally)`);
+    } else if (skipFts) {
       // Phase 1 of two-phase CI build: symbols only, FTS deferred to build-fts step
       log.info(`Skipping FTS rebuild (SKIP_FTS=true) - run 'npm run build-fts' to finish`);
       this.createFTSTriggers();
@@ -3066,6 +3106,11 @@ export class XppSymbolIndex {
     const placeholders = modelNames.map(() => '?').join(',');
     this.invalidateSymbolCounts();
 
+    // The symbols_ad trigger is what removes the cleared rows from symbols_fts. It is
+    // normally already in place, but an interrupted SKIP_FTS build can leave the database
+    // trigger-less — recreate it (IF NOT EXISTS) so a clear can never orphan FTS rows.
+    this.createFTSTriggers();
+
     // Wrap all deletes in a single transaction so the database never ends up
     // in a partially-cleared state if one statement fails mid-way.
     const deleteAll = this.db.transaction(() => {
@@ -3286,12 +3331,20 @@ export class XppSymbolIndex {
       comment?: string;
       filePath: string;
     }>,
-    opts?: { skipFtsRebuild?: boolean },
+    opts?: { skipFtsRebuild?: boolean; keepTriggers?: boolean },
   ): void {
-    // Disable FTS triggers during bulk insert
-    this.labelsDb.exec(`DROP TRIGGER IF EXISTS labels_ai`);
-    this.labelsDb.exec(`DROP TRIGGER IF EXISTS labels_ad`);
-    this.labelsDb.exec(`DROP TRIGGER IF EXISTS labels_au`);
+    if (opts?.keepTriggers) {
+      // Scoped/incremental insert: let the triggers maintain labels_fts per row instead of
+      // re-tokenising every en-US label afterwards. Recursive triggers are required so the
+      // rows displaced by INSERT OR REPLACE fire labels_ad and don't leave orphaned FTS
+      // entries pointing at dead rowids.
+      this.labelsDb.pragma('recursive_triggers = ON');
+    } else {
+      // Disable FTS triggers during bulk insert
+      this.labelsDb.exec(`DROP TRIGGER IF EXISTS labels_ai`);
+      this.labelsDb.exec(`DROP TRIGGER IF EXISTS labels_ad`);
+      this.labelsDb.exec(`DROP TRIGGER IF EXISTS labels_au`);
+    }
 
     const insert = this.labelsDb.prepare(`
       INSERT OR REPLACE INTO labels (label_id, label_file_id, model, language, text, comment, file_path)
@@ -3305,6 +3358,12 @@ export class XppSymbolIndex {
     });
 
     insertMany(entries);
+
+    if (opts?.keepTriggers) {
+      // labels_fts is already up to date — the triggers maintained it row by row.
+      this.labelsDb.pragma('recursive_triggers = OFF');
+      return;
+    }
 
     // Rebuild FTS unless the caller will do a single rebuild after all batches
     if (!opts?.skipFtsRebuild) {
@@ -3556,10 +3615,13 @@ export class XppSymbolIndex {
   /**
    * Remove all labels for the given models (used during incremental rebuild)
    */
-  clearLabelsForModels(models: string[]): void {
+  clearLabelsForModels(models: string[], opts?: { ftsStrategy?: 'rebuild' | 'incremental' }): void {
     const placeholders = models.map(() => '?').join(',');
     this.labelsDb.prepare(`DELETE FROM labels WHERE model IN (${placeholders})`).run(...models);
-    this.rebuildLabelsFts();
+    // 'incremental': the labels_ad trigger already dropped each deleted row from labels_fts,
+    // so the full delete-all + re-INSERT of every en-US label (O(all labels)) is pure waste
+    // when only a handful of models were cleared.
+    if (opts?.ftsStrategy !== 'incremental') this.rebuildLabelsFts();
   }
 
   /**
